@@ -1,19 +1,22 @@
 /**
- * The mock's re-implementation of `run/fork/post/gate.fn.js` — the whole access
- * and adoption decision of a fork, over the same three inputs the rule's three
+ * The mock's re-implementation of `run/fork/post/gate.fn.js` — the adoption
+ * decision of a fork (which rows come along, and whether the sent definition
+ * can still address them), over the same three inputs the rule's three
  * `data_query` steps hand the real gate (the parent row, its step rows, any row
  * already wearing the new id). `forkGate.fn.parity.test.ts` runs the authored
  * `.fn.js` and this side by side over one case table, so the two cannot drift
  * with nothing to say so (the `analyze.ts` / `deleteGate` arrangement).
+ *
+ * Access is no longer this gate's business (spec 11 D26): whether the caller
+ * may reach the PARENT run at all is `mockGate`'s decision, taken in
+ * `handlers.ts` before this function is ever called — the same split as the
+ * real rule's `runGate` step ahead of `gate.fn.js`.
  *
  * Pure: reads its arguments, touches no `db`. The handler in `handlers.ts` does
  * the two writes the rule's `create` + `copy` steps do.
  */
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
-
-/** The roles the gate treats as "may fork anyone's run" — the delete gate's set. */
-const ADMIN_ROLES = new Set(['admin', 'owner'])
 
 /** `graph.ts` `TERMINAL_STEP`: a row the rule will copy as-is, whatever it says. */
 const TERMINAL = new Set(['succeeded', 'failed', 'skipped', 'cancelled'])
@@ -22,7 +25,7 @@ const TERMINAL = new Set(['succeeded', 'failed', 'skipped', 'cancelled'])
 export type ForkedStepRow = StepRow & { rowKey: string }
 
 export type ForkGateResult =
-  | { status: 400 | 403 | 404 | 409; error: string }
+  | { status: 400 | 404 | 409; error: string }
   | { status: 200; createRun: boolean; run: RunRow; rows: ForkedStepRow[] }
 
 export interface ForkGateInput {
@@ -30,7 +33,7 @@ export interface ForkGateInput {
   rows: ServerStepRow[]
   existing: ServerRunRow | null
   body: Record<string, unknown>
-  user: { id?: string; role?: string } | undefined
+  user: { id?: string; email?: string; role?: string } | undefined
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -96,13 +99,6 @@ export function forkGate({ parent, rows, existing, body, user }: ForkGateInput):
   const parentJobs = isObj(parentDef.jobs) ? parentDef.jobs : {}
   if (!isObj(parentJobs[job]) || !isObj(sentJobs[job])) return { status: 404, error: `job not found: ${job}` }
   if (parent.status === 'running') return { status: 409, error: 'cancel the run first' }
-  const admin = ADMIN_ROLES.has(String(user?.role ?? '').toLowerCase())
-  // `undefined !== undefined` is `false` — an id-less user must never fall
-  // through that comparison just because a row with no `startedBy` is *also*
-  // id-less (gate.fn.js's `!caller.id ||` guard, mirrored here).
-  if (!admin && (!user?.id || parent.startedBy !== user.id)) {
-    return { status: 403, error: 'only the run owner or an admin can fork a run' }
-  }
   if (existing && (existing.forkedFrom !== from || existing.forkJob !== job)) {
     return { status: 409, error: 'run id already in use' }
   }
@@ -135,6 +131,7 @@ export function forkGate({ parent, rows, existing, body, user }: ForkGateInput):
       headless: false,
       unattended: body.unattended === true,
       ...(user?.id ? { startedBy: user.id } : {}),
+      ...(user?.email ? { startedByEmail: user.email } : {}),
       startedAt: now,
       leaseOwner: String(body.owner ?? ''),
       leaseUntil: now + 60_000,

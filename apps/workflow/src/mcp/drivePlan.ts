@@ -6,7 +6,7 @@
  * implementation's own `index.json` says which repo that is (`driver.repo`,
  * written by `workflow index --driver-repo`). Which implementation, though,
  * depends on the mode: a `run` names it in the body (there is no run row yet);
- * a `resume` gets it from the run row the `find` query already read, because
+ * a `resume` gets it from the run row the `run` query already read, because
  * the caller passes nothing but the id. So the URL of the fetch is a step's
  * output, not a constant — which is exactly what a function step is for. CE
  * step conditions are simple paths, so `hasIndex` is the flag the `index` step
@@ -47,6 +47,13 @@ export interface DrivePlan {
   appOrigin: string
   /** The body's `mode`, unjudged (the gate judges it). */
   mode: string
+  /**
+   * `mode === 'resume'` — the flag the rule's `runGate` step is gated on
+   * (spec 11 D28). Only a resume names an existing run, so only a resume has
+   * a run for the shared gate to open; a `run` skips the gate entirely, and
+   * the `driveGate` one step later reads `steps.runGate` accordingly.
+   */
+  isResume: boolean
   /** The body's `id`, unjudged. */
   runId: string
 }
@@ -59,7 +66,7 @@ function str(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-export function handler(data: { request?: FnRequest; steps?: { find?: unknown } }): DrivePlan {
+export function handler(data: { request?: FnRequest; steps?: { run?: unknown } }): DrivePlan {
   const request = data?.request ?? { body: undefined, headers: {}, method: 'POST', path: '' }
   const body = isPlainObject(request.body) ? request.body : {}
   const path = str(request.path)
@@ -72,7 +79,7 @@ export function handler(data: { request?: FnRequest; steps?: { find?: unknown } 
   // `resume` carries the id alone, so the row is the only place the implementation
   // can come from; `run` has no row yet, so the body is. A mode this rule does not
   // know plans no fetch and is refused by the gate.
-  const row = fieldsOf(rows(data?.steps?.find)[0] ?? {})
+  const row = fieldsOf(rows(data?.steps?.run)[0] ?? {})
   const named = mode === 'run' ? str(body.impl) : mode === 'resume' ? str(row.impl) : ''
   const impl = IMPL_PATTERN.test(named) ? named : ''
 
@@ -87,6 +94,7 @@ export function handler(data: { request?: FnRequest; steps?: { find?: unknown } 
     host,
     appOrigin,
     mode,
+    isResume: mode === 'resume',
     runId: str(body.id),
   }
 }

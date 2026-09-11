@@ -207,10 +207,22 @@ export function createExecutors(deps: ExecutorDeps): Record<ToolName, Executor> 
     }
     const wanted = stringArg(args, 'status')
     const limit = typeof args.limit === 'number' && args.limit >= 1 ? Math.min(Math.floor(args.limit), 50) : 20
-    const read = deps.store.dispatch(workflowApi.endpoints.listRuns.initiate({ impl, workflow }, { forceRefetch: true }))
+    // The caller's own runs unless they asked for all of them (spec 11, D27) —
+    // the ask goes to the list endpoint, which is where the role is checked;
+    // this surface never decides it.
+    const scope = stringArg(args, 'scope') === 'all' ? ('all' as const) : undefined
+    const read = deps.store.dispatch(workflowApi.endpoints.listRuns.initiate({ impl, workflow, scope }, { forceRefetch: true }))
     try {
       const res = await read
       if (res.error || !res.data) {
+        // The one refusal that is not a failure: `scope: 'all'` without the
+        // project owner/admin role is a deliberate 403 (spec 11 D27), and
+        // saying "the runs could not be listed" would read as a transport
+        // hiccup worth retrying instead of an answer about who may ask.
+        if ((res.error as { status?: number } | undefined)?.status === 403) {
+          const message = 'Listing everyone’s runs needs the project owner or admin role'
+          return errorResult(message, { errors: { scope: 'forbidden' } })
+        }
         const message = `The runs could not be listed (${JSON.stringify(res.error)})`
         return errorResult(message, { errors: { runs: message } })
       }

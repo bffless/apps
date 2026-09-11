@@ -5,9 +5,18 @@
  * rule set answers.
  */
 import { http, HttpResponse } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { db, nextId } from '../mocks/db'
+import { FINISHED_RUN } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { putFile, uploadBlob, uploadFile } from './upload'
+
+// Gated (spec 11 D29): the `runs/run_1/…` scopes below name a run, so it must
+// exist and be reachable — seeded once, owned by the mock's default member
+// (the identity every test in this file runs as; none of them switch it).
+beforeEach(() => {
+  db.runs.set('run_1', { ...FINISHED_RUN.run, runId: 'run_1', _id: nextId() })
+})
 
 function file(name = 'photo.png', bytes = 'hello-bytes', type = 'image/png'): File {
   return new File([bytes], name, { type })

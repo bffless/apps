@@ -1,6 +1,15 @@
 /** The dev worker; started from `main.tsx` when the master switch is on. */
 import { setupWorker } from 'msw/browser'
-import { MOCK_ADMIN, seedFinishedRun, seedObject, seedRenderedRun, seedScriptRun, seedWaitingRun, setMockUser } from './db'
+import {
+  MOCK_ADMIN,
+  MOCK_OTHER,
+  seedFinishedRun,
+  seedObject,
+  seedRenderedRun,
+  seedScriptRun,
+  seedWaitingRun,
+  setMockUser,
+} from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 import { RENDERED_RUN_FILES } from './fixtures/renderedRun'
 import { SCRIPT_RUN_FILES } from './fixtures/scriptRun'
@@ -51,9 +60,15 @@ function seedRenderedFiles(): void {
  * Mock-only — a real session's role comes from CE, never from the URL — and it
  * exists so a browser (or Playwright) can walk the branches only an admin
  * reaches, above all deleting a run someone else started.
+ *
+ * `?as=other` runs it as a third identity that owns none of the seeded runs
+ * (spec 11) — the branches that must refuse (404) rather than admit.
  */
-if (new URLSearchParams(globalThis.location?.search ?? '').get('as') === 'admin') {
+const mockAs = new URLSearchParams(globalThis.location?.search ?? '').get('as')
+if (mockAs === 'admin') {
   setMockUser(MOCK_ADMIN)
+} else if (mockAs === 'other') {
+  setMockUser(MOCK_OTHER)
 }
 
 /**

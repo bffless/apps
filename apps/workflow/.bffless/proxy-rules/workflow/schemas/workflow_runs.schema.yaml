@@ -23,3 +23,7 @@ fields:
   # forked at. Absent on every run that was started from kickoff.
   - { name: forkedFrom, type: string, required: false }
   - { name: forkJob, type: string, required: false }
+  # Spec 11 (D28/D26): the dispatched driver's nonce (cleared at terminal status) and a
+  # denormalised owner email for lists. Both optional → adopted live via `--adopt-fields`.
+  - { name: driveKey, type: string, required: false }
+  - { name: startedByEmail, type: string, required: false }

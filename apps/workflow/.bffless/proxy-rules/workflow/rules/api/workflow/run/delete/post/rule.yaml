@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 16
 pipeline:
   name: Delete workflow run
-  description: "POST { id }: owner (startedBy == user.id) or admin; terminal runs only (409 while running). Deletes the run's storage prefix first (retryable), then the workflow_files records under it, the step rows, the run row. Every step is idempotent, so a call that fails part-way is fixed by calling again with the same id. The per-workflow inputs/ area is never touched (D18)."
+  description: "POST { id }: terminal runs only (409 while running); visible to the owner, or a project owner/admin who asked (`x-workflow-scope: all`), via the shared gate (D26). Deletes the run's storage prefix first (retryable), then the workflow_files records under it, the step rows, the run row. Every step is idempotent, so a call that fails part-way is fixed by calling again with the same id. The per-workflow inputs/ area is never touched (D18)."
   steps:
     - id: run
       name: run
@@ -12,25 +12,38 @@ pipeline:
         limit: 1
         filters:
           runId: { op: eq, value: request.body.id }
-    - id: gate
-      name: gate
+    # The shared gate (spec 11 D26): may this caller reach this run at all?
+    - id: runGate
+      name: runGate
       handler: function_handler
-      code: ./gate.fn.js
-    # Three refusals, not one: response_handler's `status` must be a literal number
-    # (response.handler.ts validateConfig — an expression string is a ConfigurationError),
-    # so each status is its own step gated on its own flag. Exactly one of the four
-    # responders below ever runs, and a skipped step leaves the response to the last one
-    # that did (pipeline-execution.service.ts) — which is why every later step is gated
-    # on `steps.gate.ok` too.
+      code: ../../../../../../mcp-fn/runGate.fn.js
+    # One refusal: response_handler's `status` must be a literal number
+    # (response.handler.ts validateConfig — an expression string is a
+    # ConfigurationError), so the gate's flag gets its own status-carrying
+    # step. A skipped step leaves the response to the last one that ran
+    # (pipeline-execution.service.ts) — which is why `gate` below (and every
+    # step past it) is gated on `steps.runGate.ok`.
     - id: refuse-404
       name: refuse-404
       handler: response_handler
       config:
-        condition: steps.gate.notFound
-        body: "{{{steps.gate.result}}}"
+        condition: steps.runGate.notFound
+        body: "{{{steps.runGate.result}}}"
         status: 404
         headers: { Cache-Control: no-store }
         contentType: application/json
+    - id: gate
+      name: gate
+      handler: function_handler
+      code: ./gate.fn.js
+      config:
+        condition: steps.runGate.ok
+    # `gate` no longer decides who may delete — the shared gate above already
+    # did (ownership, D26) — it decides only whether THIS run may be deleted
+    # right now: terminal, and where its bytes live. `running` is the one
+    # refusal left that needs its own literal-status responder (`status` must
+    # be a literal number, same constraint as above); every step past `gate`
+    # is gated on `steps.gate.ok` too, for the same reason.
     - id: refuse-409
       name: refuse-409
       handler: response_handler
@@ -40,15 +53,6 @@ pipeline:
         status: 409
         headers: { Cache-Control: no-store }
         contentType: application/json
-    - id: refuse-403
-      name: refuse-403
-      handler: response_handler
-      config:
-        condition: steps.gate.forbidden
-        body: "{{{steps.gate.result}}}"
-        status: 403
-        headers: { Cache-Control: no-store }
-        contentType: application/json
     # Bytes first: a half-done delete that is retried must never leave a row pointing at
     # objects that are already gone.
     #
@@ -56,16 +60,17 @@ pipeline:
     # fails after `file_delete` succeeded, the pipeline stops there and the run row
     # survives with its bytes gone. That run is NOT stuck — every step here is
     # idempotent, so the fix is to POST the same `{ id }` again: the gate still passes
-    # (the row is still there, still terminal, same owner), `file_delete` answers
-    # `{ deleted: 0 }` for a prefix that matches nothing rather than erroring, and the
-    # three deletes resume. So a *transient* failure costs one retry and the reported
-    # `files` count drops to 0 on the successful attempt — expected, not a regression.
-    # A *persistent* `recs` failure (a missing schema, a filter CE rejects) fails every
-    # retry at the same step and does leave a run that cannot be deleted through this
-    # rule; that is an operator fix — correct the schema/filter and retry, or drop the
-    # row from the admin panel. Deliberately no `dryRun` mode: a preview of what would
-    # be swept is a second code path over the same filters, and the 200's `records`
-    # count already reports the sweep after the fact.
+    # (the row is still there, still terminal, still reachable to the same caller),
+    # `file_delete` answers `{ deleted: 0 }` for a prefix that matches nothing rather
+    # than erroring, and the three deletes resume. So a *transient* failure costs one
+    # retry and the reported `files` count drops to 0 on the successful attempt —
+    # expected, not a regression. A *persistent* `recs` failure (a missing schema, a
+    # filter CE rejects) fails every retry at the same step and does leave a run that
+    # cannot be deleted through this rule; that is an operator fix — correct the
+    # schema/filter and retry, or drop the row from the admin panel. Deliberately no
+    # `dryRun` mode: a preview of what would be swept is a second code path over the
+    # same filters, and the 200's `records` count already reports the sweep after the
+    # fact.
     #
     # `prefix` is a TEMPLATE, not a bare expression
     # (file-delete.handler.ts resolveAndGuard -> evaluateTemplate); it is relative to the
@@ -131,4 +136,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:run] }
-description: "Delete a run: its storage prefix, its file records, its step rows and the run row — owner or admin, terminal runs only. Kickoff inputs are kept (D18)."
+description: "Delete a run: its storage prefix, its file records, its step rows and the run row — terminal runs only. Kickoff inputs are kept (D18). Visible to the owner, or a project owner/admin who asked (`x-workflow-scope: all`), via the shared gate (spec 11 D26)."

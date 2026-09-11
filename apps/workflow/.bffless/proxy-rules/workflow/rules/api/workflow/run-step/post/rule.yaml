@@ -2,12 +2,40 @@ targetUrl: pipeline
 order: 14
 pipeline:
   name: Upsert workflow run step
-  description: "POST { runId, key, patch } — one row per (job, matrix index, step); spec 05 write path. Query by (runId,key), then create or read-merge-write."
+  description: "POST { runId, key, patch } — one row per (job, matrix index, step); spec 05 write path. Query by (runId,key), then create or read-merge-write. Gated by the shared run gate (spec 11 D26): a step row belongs to its PARENT run, so the caller must be able to reach that run before writing one of its rows."
   steps:
+    - id: run
+      name: run
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: request.body.runId }
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../mcp-fn/runGate.fn.js
+    # One refusal: response_handler's `status` must be a literal number
+    # (response.handler.ts validateConfig — an expression string is a
+    # ConfigurationError), so the gate's flag gets its own status-carrying
+    # step. A skipped step leaves the response to the last one that ran
+    # (pipeline-execution.service.ts) — which is why `find`, `merge` AND
+    # `respond` are ALL gated on `steps.runGate.ok` below.
+    - id: refuse-404
+      name: refuse-404
+      handler: response_handler
+      config:
+        condition: steps.runGate.notFound
+        body: "{{{steps.runGate.result}}}"
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
     - id: find
       name: find
       handler: data_query
       config:
+        condition: steps.runGate.ok
         schemaId: $schema:workflow_run_steps
         limit: 1
         filters:
@@ -17,6 +45,8 @@ pipeline:
       name: merge
       handler: function_handler
       code: ./merge.fn.js
+      config:
+        condition: steps.runGate.ok
     - id: create
       name: create
       handler: data_create
@@ -68,10 +98,11 @@ pipeline:
       name: respond
       handler: response_handler
       config:
+        condition: steps.runGate.ok
         body: '{"ok":true}'
         status: 200
         contentType: application/json
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:run] }
-description: "Upsert one step row keyed <job>/<index>/<step>. The lease serializes writers, so query-then-write is race-safe in practice."
+description: "Upsert one step row keyed <job>/<index>/<step>. The lease serializes writers, so query-then-write is race-safe in practice. Behind the shared run gate (spec 11 D26): a caller who cannot reach the parent run gets 404, never a stray step row."

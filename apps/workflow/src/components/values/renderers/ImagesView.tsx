@@ -13,6 +13,7 @@
  * ref at all falls back to `JsonTree`, the same "still show something"
  * fallback every renderer in this directory shares.
  */
+import { viewUrl } from '../../../lib/scope'
 import { downloadHref, isLoadableUrl } from '../../../lib/url'
 import type { FileRef } from '../../../lib/runner/types'
 import { FileCard } from '../FileCard'
@@ -23,10 +24,13 @@ function ImageItem({ fileRef }: { fileRef: FileRef }) {
   const isImage = fileRef.contentType?.startsWith('image/') && isLoadableUrl(fileRef.url)
   if (!isImage) return <FileCard refValue={fileRef} />
 
+  // The widened ask is applied here, where the url becomes a sink the browser
+  // fetches itself — never on the ref (apps#665 review).
+  const url = viewUrl(fileRef.url)
   return (
     <div className="images-grid-item">
-      <img src={fileRef.url} alt={fileRef.name} />
-      <a className="images-grid-download" href={downloadHref(fileRef.url)} download>
+      <img src={url} alt={fileRef.name} />
+      <a className="images-grid-download" href={downloadHref(url)} download>
         Download
       </a>
     </div>

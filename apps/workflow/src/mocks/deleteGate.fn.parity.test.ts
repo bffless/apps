@@ -6,13 +6,19 @@
  * execute the authored `.fn.js` source in isolation; it is never used by the app
  * or the mock at runtime. Same shape as `confine.fn.parity.test.ts`.
  *
- * The gate is the whole access decision for deletion, and it is the one piece of
- * that rule CI could not see at all: the mock mirrored its branches by hand, so
- * the two could drift with nothing to say so. One case table drives both sides —
- * the raw `handler()` call against `gate.fn.js`, and a real request to the mock
- * endpoint — plus the assertion the two counts in the 200 exist to support: that
- * the pattern the gate builds is the pattern that selects this run's
- * `workflow_files` rows and no others (apps#381).
+ * The gate is no longer the WHOLE access decision (spec 11 D26 moved
+ * ownership to the shared `runGate` ahead of it — proven in
+ * `runGate.fn.parity.test.ts`) — it decides only whether a run this caller can
+ * ALREADY reach may be deleted right now: terminal, and where its bytes live.
+ * Two tables drive the two halves that were once one: `FN_CASES` exercises
+ * `gate.fn.js` directly, over what it still decides — `notFound` (defensive:
+ * `gate` only runs once `runGate` is `ok`, so this is unreachable in
+ * production), `running`, and success, whatever the caller — and `MOCK_CASES`
+ * exercises the composed `/api/workflow/run/delete` endpoint, where
+ * ownership (via `mockGate`) is back in the picture. Plus the assertion the
+ * two counts in the 200 exist to support: that the pattern the gate builds is
+ * the pattern that selects this run's `workflow_files` rows and no others
+ * (apps#381).
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -21,12 +27,14 @@ import { fileURLToPath } from 'node:url'
 import {
   MOCK_ADMIN,
   MOCK_MEMBER,
+  MOCK_OTHER,
   MOCK_UPLOADS_ROOT,
   db,
   fileRecordsMatching,
   seedFinishedRun,
   seedObject,
   setMockUser,
+  type MockUser,
 } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 
@@ -49,18 +57,13 @@ interface GateResult {
   ok: boolean
   notFound: boolean
   running: boolean
-  forbidden: boolean
   recordId: string | null
   prefix: string
   prefixLike: string
   result?: { ok: boolean; error?: string }
 }
 
-type GateHandler = (ctx: {
-  steps: { run: unknown }
-  request: { body: Record<string, unknown> }
-  user?: { id?: string; email?: string; role?: string }
-}) => GateResult
+type GateHandler = (ctx: { steps: { run: unknown } }) => GateResult
 
 function loadFnHandler(): GateHandler {
   const src = readFileSync(FN_PATH, 'utf8')
@@ -84,48 +87,82 @@ const ROW = {
 }
 
 /**
- * The refusal matrix, and the status each flag's own `response_handler` answers.
- * `status: 200` is the success path — no refusal flag, and no `result` at all
- * (only the three refusal responders render `{{{steps.gate.result}}}`).
+ * What `gate.fn.js` still decides, called directly — no `runGate` in front of
+ * it here, so `notFound` is exercised for completeness (the same defensive
+ * `!row` branch `run/lease/post/gate.fn.js` keeps) even though the real
+ * pipeline never reaches it that way. Whoever the caller is — even someone
+ * who never started the run — is irrelevant to this function now: ownership
+ * is the shared gate's answer, proven separately.
  */
-const CASES: {
+const FN_CASES: { desc: string; row: Record<string, unknown> | null; status: number; error?: string }[] = [
+  { desc: 'an unknown run', row: null, status: 404, error: 'run not found' },
+  { desc: 'a run that is still running', row: { ...ROW, status: 'running' }, status: 409, error: 'cancel the run first' },
+  { desc: 'a caller who did not start it — ownership is the shared gate’s job now', row: ROW, status: 200 },
+]
+
+/**
+ * The composed `/api/workflow/run/delete` endpoint: `mockGate` decides
+ * reachability first (spec 11 D26), same as the real rule's `runGate` step
+ * ahead of `gate.fn.js`; only then does `running` (409) get a look-in. The
+ * former 403 rows (a non-owner, an id-less caller) are 404 here — indistinguishable
+ * from an unknown id (D26) — and an admin now needs BOTH `projectRole`
+ * `owner`/`admin` AND to have asked (`x-workflow-scope: all`, D27): asking is
+ * never assumed, even from the role that could ask.
+ */
+const MOCK_CASES: {
   desc: string
-  row: Record<string, unknown> | null
-  user: { id?: string; email?: string; role?: string } | undefined
+  row?: Record<string, unknown> | null
+  user: MockUser
+  headers?: Record<string, string>
   status: number
   error?: string
 }[] = [
-  { desc: 'an unknown run', row: null, user: { id: OWNER, role: 'user' }, status: 404, error: 'run not found' },
-  {
-    desc: 'a run that is still running',
-    row: { ...ROW, status: 'running' },
-    user: { id: OWNER, role: 'user' },
-    status: 409,
-    error: 'cancel the run first',
-  },
+  { desc: 'an unknown run', row: null, user: MOCK_MEMBER, status: 404, error: 'run not found' },
   {
     desc: 'a member who did not start it',
-    row: ROW,
-    user: { id: 'someone_else', role: 'user' },
-    status: 403,
-    error: 'only the run owner or an admin can delete a run',
+    user: MOCK_OTHER,
+    status: 404,
+    error: 'run not found',
   },
   {
     desc: 'an id-less caller against a row with no startedBy',
     row: { ...ROW, startedBy: undefined },
-    user: undefined,
-    status: 403,
-    error: 'only the run owner or an admin can delete a run',
+    user: { ...MOCK_OTHER, id: '' },
+    status: 404,
+    error: 'run not found',
   },
-  { desc: 'the owner', row: ROW, user: { id: OWNER, role: 'user' }, status: 200 },
-  { desc: 'an admin who did not start it', row: ROW, user: { id: 'user_admin', role: 'admin' }, status: 200 },
-  // Global roles are `admin | user | member` (ce `users.dto.ts`), so `owner` is
-  // never a role CE hands a pipeline — the allow-list entry is inert, and kept
-  // per the M2 plan's wording. This case pins it as *accepted if it ever
-  // arrives*, so the branch cannot be dropped by accident or grow teeth
-  // unnoticed. It is asserted against the fn only: the mock has no way to
-  // produce a role CE does not issue.
-  { desc: 'the inert `owner` role in the allow-list', row: ROW, user: { id: 'x', role: 'owner' }, status: 200 },
+  {
+    desc: 'a project admin who did not ask for all-scope',
+    user: MOCK_ADMIN,
+    status: 404,
+    error: 'run not found',
+  },
+  {
+    desc: 'a project admin who asked (x-workflow-scope: all)',
+    user: MOCK_ADMIN,
+    headers: { 'x-workflow-scope': 'all' },
+    status: 200,
+  },
+  { desc: 'the owner', user: MOCK_MEMBER, status: 200 },
+  {
+    desc: 'the owner, on a run that is still running',
+    row: { ...ROW, status: 'running' },
+    user: MOCK_MEMBER,
+    status: 409,
+    error: 'cancel the run first',
+  },
+  {
+    // The shared gate runs BEFORE `running` gets a look-in (`gate`'s own
+    // `condition: steps.runGate.ok`) — a non-owner asking about a running run
+    // must see the same 404 an unreachable run always gets, never the 409 a
+    // reachable one would, or a run's mere existence leaks through the status
+    // code alone (D26).
+    desc: 'a member who did not start it, on a run that is still running',
+    row: { ...ROW, status: 'running' },
+    user: MOCK_OTHER,
+    status: 404,
+    error: 'run not found',
+  },
 ]
 
 describe('run-delete gate.fn.js parity with the mock re-implementation', () => {
@@ -135,13 +172,12 @@ describe('run-delete gate.fn.js parity with the mock re-implementation', () => {
     handler = loadFnHandler()
   })
 
-  it.each(CASES)('gate.fn.js: $desc', ({ row, user, status, error }) => {
-    const result = handler({ steps: { run: row ? [row] : [] }, request: { body: { id: RUN_ID } }, user })
+  it.each(FN_CASES)('gate.fn.js: $desc', ({ row, status, error }) => {
+    const result = handler({ steps: { run: row ? [row] : [] } })
 
     expect(result.ok).toBe(status === 200)
     expect(result.notFound).toBe(status === 404)
     expect(result.running).toBe(status === 409)
-    expect(result.forbidden).toBe(status === 403)
     if (status === 200) {
       expect(result.recordId).toBe(ROW.id)
       expect(result.prefix).toBe(RUN_PREFIX)
@@ -166,32 +202,25 @@ describe('run-delete gate.fn.js parity with the mock re-implementation', () => {
       seedObject(INPUT_KEY, file)
     })
 
-    it.each(CASES.filter((c) => c.user?.role !== 'owner'))(
-      'mock /api/workflow/run/delete: $desc',
-      async ({ row, user, status, error }) => {
-        if (row === null) {
-          db.runs.delete(RUN_ID)
-        } else if (row.status === 'running' || row.startedBy === undefined) {
-          const seeded = { ...db.runs.get(RUN_ID)!, status: String(row.status) as 'running' | 'succeeded' }
-          if (row.startedBy === undefined) delete seeded.startedBy
-          db.runs.set(RUN_ID, seeded)
-        }
-        setMockUser(
-          user?.role === 'admin'
-            ? MOCK_ADMIN
-            : { ...MOCK_MEMBER, id: user?.id ?? '', role: user?.role ?? 'user' },
-        )
+    it.each(MOCK_CASES)('mock /api/workflow/run/delete: $desc', async ({ row, user, headers, status, error }) => {
+      if (row === null) {
+        db.runs.delete(RUN_ID)
+      } else if (row) {
+        const seeded = { ...db.runs.get(RUN_ID)!, status: String(row.status) as 'running' | 'succeeded' }
+        if (row.startedBy === undefined) delete seeded.startedBy
+        db.runs.set(RUN_ID, seeded)
+      }
+      setMockUser(user)
 
-        const res = await fetch('/api/workflow/run/delete', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ id: RUN_ID }),
-        })
+      const res = await fetch('/api/workflow/run/delete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ id: RUN_ID }),
+      })
 
-        expect(res.status).toBe(status)
-        if (status !== 200) expect((await res.json()).error).toBe(error)
-      },
-    )
+      expect(res.status).toBe(status)
+      if (status !== 200) expect((await res.json()).error).toBe(error)
+    })
 
     /**
      * The assertion the 200's `records` count exists for. The sweep is an
@@ -204,7 +233,7 @@ describe('run-delete gate.fn.js parity with the mock re-implementation', () => {
      * back at the project-namespaced `storage_path`.
      */
     it('the pattern gate.fn.js builds selects this run’s workflow_files rows and no others', () => {
-      const gate = handler({ steps: { run: [ROW] }, request: { body: { id: RUN_ID } }, user: { id: OWNER } })
+      const gate = handler({ steps: { run: [ROW] } })
 
       // The two shapes the anchor rides on: `sub_dir` starts at `workflows/`,
       // `storage_path` does not — it carries CE's uploads head. If the mock (or

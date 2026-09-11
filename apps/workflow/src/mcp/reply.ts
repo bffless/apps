@@ -28,6 +28,7 @@ import type { Plan } from './plan'
 import { NEED_IMPL_WORKFLOW, NEED_RUN_ID, NOT_CONFINED, REFUSALS } from './refusals'
 import { fieldsOf, rows, runsWithWaiting, stepUpdated, type Row } from './rows'
 import type { FnDeployment, FnRequest, Route } from './route'
+import { admittedRun, type RunGate } from './runGate'
 import { pipelineError, pipelineResult } from './toolResults'
 
 /** What an `http_request` step with `failOnError: false` answers. */
@@ -42,8 +43,13 @@ export interface StepOutputs {
   route?: Route
   plan?: Plan
   run?: unknown
+  /** The shared ownership gate over `run` (spec 11, D26) — every read of the run goes through it. */
+  runGate?: Partial<RunGate>
   steps?: unknown
+  /** The caller's own runs (`steps.route.isMine`); absent when the rule ran the other query. */
   runs?: unknown
+  /** Every run of the workflow (`steps.route.isAll`, D27); absent when the rule ran `runs`. */
+  runsAll?: unknown
   waiting?: unknown
   aliases?: HttpStep
   index?: HttpStep
@@ -213,12 +219,21 @@ function describe(route: Route, steps: StepOutputs): CallToolResult {
   return textResult(describeText(described), { ...described })
 }
 
-/** The run a run-scoped tool named, as rows, or the page's refusal. */
+/** `No such run` — what an unknown id and a run this caller cannot reach both answer (spec 11, D26: 404, never 403). */
+function noSuchRun(runId: string): CallToolResult {
+  return errorResult(`No such run: ${runId}`, { errors: { runId: 'No such run' } })
+}
+
+/**
+ * The run a run-scoped tool named, as rows, or the page's refusal — the row
+ * the GATE admitted (`admittedRun`), never one re-derived from the `run`
+ * query, so nothing downstream can read a run no door opened (spec 11, D26).
+ */
 function resolveRun(route: Route, steps: StepOutputs): { ok: true; run: Row; stepRows: Row[] } | { ok: false; result: CallToolResult } {
   if (route.runId === '') return { ok: false, result: refuse('runId', NEED_RUN_ID) }
-  const run = rows(steps.run)[0]
-  if (!run) return { ok: false, result: errorResult(`No such run: ${route.runId}`, { errors: { runId: 'No such run' } }) }
-  return { ok: true, run: fieldsOf(run), stepRows: rows(steps.steps).map(fieldsOf) }
+  const run = admittedRun(steps as unknown as Record<string, unknown>)
+  if (!run) return { ok: false, result: noSuchRun(route.runId) }
+  return { ok: true, run, stepRows: rows(steps.steps).map(fieldsOf) }
 }
 
 export function snapshotOf(run: Row, stepRows: Row[]) {
@@ -255,11 +270,21 @@ function outputs(route: Route, steps: StepOutputs): CallToolResult {
 }
 
 function runs(route: Route, steps: StepOutputs): CallToolResult {
+  // The one 403 of the ownership model, and it belongs to the LISTS (spec 11,
+  // D27): an explicit `scope: "all"` from a caller without the project
+  // owner/admin role is told so, rather than quietly narrowed to their own.
+  if (route.scopeForbidden) {
+    return errorResult('scope=all needs the project owner or admin role on this project', { errors: { scope: 'forbidden' } })
+  }
   if (!route.isRuns) return refuse('workflow', NEED_IMPL_WORKFLOW)
   const wanted = str(route.args.status)
   const limitArg = route.args.limit
   const limit = typeof limitArg === 'number' && limitArg >= 1 ? Math.min(Math.floor(limitArg), RUNS_MAX) : RUNS_DEFAULT
-  const listed = runsWithWaiting(steps.runs, steps.waiting)
+  // Whichever of the rule's two queries ran: a skipped step leaves no output
+  // at all (CE's executor writes `stepOutputs` only for steps that ran), so
+  // the absent one is `undefined` and never an empty list to be mistaken for
+  // "no runs".
+  const listed = runsWithWaiting(steps.runs !== undefined ? steps.runs : steps.runsAll, steps.waiting)
     .filter((row) => typeof row.runId === 'string' && typeof row.status === 'string')
     .filter((row) => wanted === undefined || row.status === wanted)
     .sort((a, b) => (typeof b.startedAt === 'number' ? b.startedAt : 0) - (typeof a.startedAt === 'number' ? a.startedAt : 0))
@@ -290,6 +315,10 @@ function sign(route: Route, steps: StepOutputs): CallToolResult {
   const path = str(route.args.path)
   if (path === undefined) return refuse('path', '`path` is required')
   if (!route.isSign) return refuse('path', NOT_CONFINED)
+  // A key under a run is that run's (spec 11, D29): the gate judged the run the
+  // PATH names, and a refusal reads as an unknown run — never as "this file is
+  // someone else's", which would confirm it exists.
+  if (route.needsRun && steps.runGate?.ok !== true) return noSuchRun(route.runId)
   const url = str(steps.signed?.url)
   if (url === undefined) return refuse('path', `${route.signPath}: the sign rule returned no url`)
   return textResult(`Signed ${route.signPath} for ${SIGN_EXPIRES_IN} s: ${url}`, { path: route.signPath, url, expiresIn: SIGN_EXPIRES_IN })
@@ -438,10 +467,20 @@ function driveOutcome(steps: StepOutputs, dispatched: () => CallToolResult): Cal
   })
 }
 
-/** Where a start's own refusal belongs in `errors` (spec 07 keys it by what failed): the workflow, the tool, or the inputs. */
-function driveErrorKey(message: string): string {
+/**
+ * Where a start's own refusal belongs in `errors` (spec 07 keys it by what
+ * failed): the workflow, the tool, the drive rule, or the inputs.
+ *
+ * `NO_RANDOM` (D28) is the drive rule saying this CE exposes no
+ * `utils.randomToken`, so the driver's nonce cannot be minted. That is a
+ * property of the server, like `DISPATCH_FAILED` — keyed `drive`, the same
+ * vocabulary `driveOutcome` uses for the codes the rule itself returns, and
+ * never `inputs`, which would send a model off rewriting a fine request.
+ */
+export function driveErrorKey(message: string): string {
   if (message === REFUSALS.noWorkflow) return 'workflow'
-  return message.indexOf('NO_DRIVER') === 0 ? 'tool' : 'inputs'
+  if (message.indexOf('NO_DRIVER') === 0) return 'tool'
+  return message.indexOf('NO_RANDOM') === 0 ? 'drive' : 'inputs'
 }
 
 /** `workflow.start`: the implementation's driver is dispatched, and the caller is handed the id it can poll. */
@@ -517,6 +556,14 @@ function notServed(tool: string): CallToolResult {
 function callTool(route: Route, steps: StepOutputs): CallToolResult {
   const tool = route.tool
   if (tool === '') return refuse('tool', 'A tool `name` is required')
+  // `await` and `cancel` explain themselves rather than act — but only about a
+  // run this caller can reach. Naming one they cannot must answer exactly what
+  // naming an unknown id answers (spec 11, D26), or the refusal itself
+  // confirms the run exists. Every other run-scoped tool goes through
+  // `resolveRun`, which reads the row the gate admitted.
+  if ((tool === 'workflow.await' || tool === 'workflow.cancel') && route.runId !== '' && steps.runGate?.ok !== true) {
+    return noSuchRun(route.runId)
+  }
   switch (tool) {
     case 'workflow.list':
       return list(route, steps)

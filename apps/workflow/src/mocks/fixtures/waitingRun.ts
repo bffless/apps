@@ -55,7 +55,11 @@ const run: RunRow = {
   inputs: INPUTS,
   status: 'running',
   headless: false,
-  startedBy: 'user_fixture',
+  // Owned by the mock's default member (Decision 12) — literal, not imported, to
+  // avoid a cycle with `mocks/db.ts` (which imports this fixture). Keep in sync
+  // with `MOCK_MEMBER` there.
+  startedBy: 'user_mock',
+  startedByEmail: 'workflow-ci@example.test',
   startedAt: T0,
   finishedAt: null,
   leaseOwner: null,

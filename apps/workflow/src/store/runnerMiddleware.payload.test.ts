@@ -20,7 +20,7 @@ import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, StepKey } from '../lib/runner/types'
 import { stepKey } from '../lib/runner/types'
 import type { RunStore } from '../lib/runStore'
-import { db } from '../mocks/db'
+import { db, mockUser, nextId } from '../mocks/db'
 import { server } from '../mocks/server'
 import { flush, pumpUntil, virtualClock } from '../test/helloHarness'
 import type { AppStore } from './index'
@@ -67,6 +67,13 @@ function fakeRunStore(): {
   const store: RunStore = {
     async createRun(row) {
       writes.push({ op: 'create', row })
+      // The offload below goes through the REAL files trio (this file's own
+      // banner), which is now gated by run ownership (spec 11 D29): the gate
+      // reads `db.runs`, not this fake's own `writes` log, so the row needs a
+      // mirror there too — `startedBy` stamped the way the mock's real
+      // `POST /api/workflow/runs` handler stamps it, or every offload upload
+      // this run makes would 404 against a run nothing here ever persisted.
+      db.runs.set(row.runId, { ...row, startedBy: mockUser().id, _id: nextId() })
     },
     async patchRun(id, patch) {
       writes.push({ op: 'patch', id, patch })

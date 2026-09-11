@@ -77,11 +77,12 @@ export function sourceRev() {
 /**
  * One entry per function step shared by the tool rules, plus the `run/drive`
  * rule's two steps (`drivePlan`/`driveGate`, ADR-0006) — a hand-written rule,
- * but its functions are built and held fresh here like every other. The RFC
- * 9728 document is not here: CE's `oauth_protected_resource` handler serves it
- * with no function of ours.
+ * but its functions are built and held fresh here like every other — plus
+ * `runGate`, the ownership gate every rule that names a run imports (spec 11,
+ * D26). The RFC 9728 document is not here: CE's `oauth_protected_resource`
+ * handler serves it with no function of ours.
  */
-export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'drivePlan', 'driveGate']
+export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'drivePlan', 'driveGate', 'runGate']
 
 export const OUT_DIR = join(SET, 'mcp-fn')
 
@@ -167,10 +168,25 @@ function stepDefs(ruleDir) {
     plan: fn('plan'),
     merge: fn('merge'),
     reply: fn('reply'),
+    // The ONE ownership gate (spec 11, D26), the same bundle the eleven
+    // hand-written rules import: it judges the `run` query above it, and every
+    // later step that reads the run is conditioned on `steps.runGate.ok`.
+    // Unlike those rules the tool rules render no literal-status responder —
+    // an MCP tool answers a CallToolResult, so `reply` says "No such run".
+    runGate: fn('runGate'),
     run: query('run', 'steps.route.needsRun', 'workflow_runs', 1, { runId: { op: 'eq', value: 'steps.route.runId' } }),
-    steps: query('steps', 'steps.route.needsRun', 'workflow_run_steps', 1000, { runId: { op: 'eq', value: 'steps.route.runId' } }),
-    runs: query('runs', 'steps.route.isRuns', 'workflow_runs', 50, { impl: { op: 'eq', value: 'steps.route.impl' }, workflow: { op: 'eq', value: 'steps.route.workflow' } }),
-    waiting: query('waiting', 'steps.route.isRuns', 'workflow_run_steps', 1000, { status: { op: 'eq', value: 'waiting' } }),
+    steps: query('steps', 'steps.runGate.ok', 'workflow_run_steps', 1000, { runId: { op: 'eq', value: 'steps.route.runId' } }),
+    // Listing is filtered, not gated: a `data_query` filter is static YAML and
+    // `eq` has no wildcard, so "mine or everything" is two conditional queries
+    // and `route` picks one (spec 11 §Listing: two queries, D27). `user.id`
+    // resolves to null for a caller CE could not tie to a person, which
+    // eq-matches nothing — an unresolvable caller sees an empty list.
+    runs: query('runs', 'steps.route.isMine', 'workflow_runs', 50, { impl: { op: 'eq', value: 'steps.route.impl' }, workflow: { op: 'eq', value: 'steps.route.workflow' }, startedBy: { op: 'eq', value: 'user.id' } }),
+    runsAll: query('runsAll', 'steps.route.isAll', 'workflow_runs', 50, { impl: { op: 'eq', value: 'steps.route.impl' }, workflow: { op: 'eq', value: 'steps.route.workflow' } }),
+    // `listRuns`, not `isRuns`: a refused `scope: "all"` (D27) runs NEITHER run
+    // query, so the step rows they would be decorated with are work for a
+    // listing that never happens — `reply` answers 403 off `scopeForbidden`.
+    waiting: query('waiting', 'steps.route.listRuns', 'workflow_run_steps', 1000, { status: { op: 'eq', value: 'waiting' } }),
     // CE's alias API in-process (spec 06); the caller's credential is forwarded, so CE answers the member's own alias list.
     aliases: { id: 'aliases', name: 'aliases', handler: 'http_request', config: { condition: 'steps.route.isAliases', url: 'steps.route.aliasesUrl', method: 'GET', forwardAuth: true, failOnError: false } },
     // `describe` reads the listing off the index; `start` reads the driver repo off the same file (ADR-0006), so one flag gates one step.
@@ -182,7 +198,14 @@ function stepDefs(ruleDir) {
     island: http('island', 'steps.plan.hasIsland', 'steps.plan.islandUrl', 'steps.plan.islandPath'),
     pipelinePost: http('pipelinePost', 'steps.plan.isPipelinePost', 'steps.plan.pipelineUrl', 'steps.plan.pipelinePath', { method: 'POST', body: 'steps.plan.pipelineBody' }),
     pipelineGet: http('pipelineGet', 'steps.plan.isPipelineGet', 'steps.plan.pipelineUrl', 'steps.plan.pipelinePath'),
-    signed: { id: 'signed', name: 'signed', handler: 'signed_url', config: { condition: 'steps.route.isSign', path: 'steps.route.signStoragePath', expiresIn: 3600 } },
+    // `steps.runGate.ok` alone, and that is enough: `route` only leaves the
+    // gate reachable-ok for a path that is really signable — a confined key
+    // under a run the caller may reach (the owner/drive/all doors), or a
+    // member-wide `inputs/` key (the `runless` door). An unconfined path
+    // raises neither flag, so the gate refuses and this step is skipped
+    // rather than handed an empty `path` (which CE answers INVALID_PATH to,
+    // failing the whole pipeline instead of answering the refusal).
+    signed: { id: 'signed', name: 'signed', handler: 'signed_url', config: { condition: 'steps.runGate.ok', path: 'steps.route.signStoragePath', expiresIn: 3600 } },
     // The harness's own run/drive rule, in-process as the caller (ADR-0006): the one
     // place a run is dispatched, posted the body `plan` built. `driveUrl`/`drivePath`
     // are copied from `route` onto `plan` so this step reads a single source.

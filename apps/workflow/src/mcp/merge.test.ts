@@ -1,10 +1,21 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { POSTER_A, RUN_ID, formStepRows, runRow, stepRows } from './fixtures/index'
-import { handler as merge } from './merge'
+import { handler as mergeOf } from './merge'
 import { TOOLS_PATH, handler as routeOf, type FnRequest } from './route'
+import { handler as runGate, type FnUser } from './runGate'
 
 const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
+/** The member who started the fixture run, so the shared gate's owner door admits them (spec 11, D26). */
+const MEMBER: FnUser = { id: 'member@example.com', projectRole: 'contributor' }
+
+/**
+ * `merge` as its rule reaches it: after the `run` query AND the `runGate` step
+ * that judges it (spec 11, D26), so the write is merged onto the row the gate
+ * admitted. A run this caller cannot reach reads as no run at all.
+ */
+const merge = (data: Parameters<typeof mergeOf>[0], user: FnUser | undefined = MEMBER) =>
+  mergeOf({ ...data, steps: { ...data.steps, runGate: runGate({ steps: { route: data.steps.route, run: data.steps.run }, user }) } })
 const request = (name: string, body: unknown): FnRequest => ({ body, headers: { host: 'h.example' }, method: 'POST', path: `${TOOLS_PATH}${name.replace(/^workflow\./, '')}` })
 const call = (name: string, args: Record<string, unknown>) =>
   routeOf({ request: request(name, args), deployment: DEPLOYMENT })
@@ -23,6 +34,14 @@ describe('merge: refusals', () => {
     expect(errors(held)).toHaveProperty('lease')
     const lapsed = merge({ steps: { route: call('workflow.submit', { runId: RUN_ID, step: STEP, outputs: { line: 'x' } }), run: run({ leaseOwner: 'tab', leaseUntil: Date.now() - 1 }), steps: stepRows() } })
     expect(lapsed.update).toBe(true)
+  })
+
+  it('reads another member’s run as no run at all (spec 11, D26)', () => {
+    const steps = { route: call('workflow.submit', { runId: RUN_ID, step: STEP, outputs: { line: 'Hello, world!', index: 0 } }), run: run(), steps: stepRows() }
+    expect(merge({ steps }).update).toBe(true)
+    const hidden = merge({ steps }, { id: 'user_other', projectRole: 'contributor' })
+    expect(hidden.update).toBe(false)
+    expect(text(hidden)).toBe(`No such run: ${RUN_ID}`)
   })
 
   it('needs a waiting island step', () => {

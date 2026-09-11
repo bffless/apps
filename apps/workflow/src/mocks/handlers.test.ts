@@ -11,9 +11,11 @@ import { fileURLToPath } from 'node:url'
 import {
   MOCK_ADMIN,
   MOCK_MEMBER,
+  MOCK_OTHER,
   MOCK_UPLOADS_ROOT,
   db,
   filesUnder,
+  nextId,
   seedFinishedRun,
   seedObject,
   setMockUser,
@@ -95,9 +97,12 @@ describe('the run record surface', () => {
     expect(run.finishedAt).toBe(99)
     expect(run.impl).toBe('hello')
 
+    // Gated (spec 11 D26): an unknown id refuses the same way an invisible
+    // run does — `{ ok:false, error:'run not found' }`, `steps.runGate.result`
+    // on the real rule's `refuse-404` responder.
     const missing = await json('/api/workflow/run/update', { id: 'run_nope', patch: { status: 'failed' } })
     expect(missing.status).toBe(404)
-    expect(await missing.json()).toMatchObject({ code: 'NOT_FOUND' })
+    expect(await missing.json()).toEqual({ ok: false, error: 'run not found' })
   })
 
   it('upserts a step row, merging the patch onto what is there', async () => {
@@ -135,8 +140,11 @@ describe('the run record surface', () => {
     const forced = await (await json('/api/workflow/run/lease', { id: RUN_ID, owner: 'tab-b', takeover: true })).json()
     expect(forced.ok).toBe(true)
 
-    const unknown = await (await json('/api/workflow/run/lease', { id: 'run_nope', owner: 'tab-a' })).json()
-    expect(unknown).toMatchObject({ ok: false, error: 'run not found' })
+    // Gated (spec 11 D26): an unknown run refuses 404, not lease's old 200
+    // `{ ok:false, error:'run not found' }`.
+    const unknownRes = await json('/api/workflow/run/lease', { id: 'run_nope', owner: 'tab-a' })
+    expect(unknownRes.status).toBe(404)
+    expect(await unknownRes.json()).toEqual({ ok: false, error: 'run not found' })
   })
 
   it('grants an expired lease to the next tab', async () => {
@@ -148,7 +156,7 @@ describe('the run record surface', () => {
   })
 })
 
-/** The run whose rows the fixture seeds; `user_fixture` started it, not the default member. */
+/** The run whose rows the fixture seeds; read off the fixture rather than assumed (Decision 12: the mock's default member). */
 const OWNER = FINISHED_RUN.run.startedBy!
 const RUN_PREFIX = `workflows/hello/hello/runs/${RUN_ID}/`
 const INPUT_KEY = 'workflows/hello/hello/inputs/photo.png'
@@ -179,11 +187,17 @@ describe('run deletion (rows + file-prefix GC)', () => {
     expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
   })
 
-  it('refuses a run another member started (403) and deletes nothing', async () => {
+  it('refuses a run another member started (404, spec 11 D26) and deletes nothing', async () => {
+    // The fixture is owned by the mock's default member (Decision 12) — a
+    // *different* identity is what makes this "another member", not the default.
+    // Gated by the shared run gate ahead of the delete rule's own `gate.fn.js`
+    // (spec 11 D26): unreachable answers the same 404 an unknown id does,
+    // never a 403 — `deleteGate.fn.parity.test.ts` covers this branch in full.
+    setMockUser(MOCK_OTHER)
     const res = await json('/api/workflow/run/delete', { id: RUN_ID })
 
-    expect(res.status).toBe(403)
-    expect((await res.json()).error).toBe('only the run owner or an admin can delete a run')
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe('run not found')
     expect(db.runs.has(RUN_ID)).toBe(true)
     expect(filesUnder(RUN_PREFIX)).toHaveLength(2)
   })
@@ -249,6 +263,8 @@ describe('run deletion (rows + file-prefix GC)', () => {
     ).json()
     await fetch(prepared.uploadUrl, { method: 'PUT', body: new Uint8Array([7, 7, 7]) })
     await json('/api/workflow/files/register', {
+      impl: 'hello',
+      workflow: 'hello',
       storageKey: prepared.storageKey,
       originalName: 'extra.bin',
     })
@@ -272,9 +288,10 @@ describe('run deletion (rows + file-prefix GC)', () => {
   // Final review, finding 4: `undefined !== undefined` is `false` — an
   // id-less caller (`function_handler` could not resolve one to a person)
   // must never fall through the ownership comparison just because a row
-  // written before `startedBy` existed is *also* id-less. Mirrors
-  // `run/delete/post/gate.fn.js`'s `!caller.id ||` guard.
-  it('refuses an id-less caller even when the row also has no startedBy (403, not a false-positive match)', async () => {
+  // written before `startedBy` existed is *also* id-less. Mirrors the shared
+  // gate's `!caller.id ||` guard (`mockGate`, spec 11 D26) — ownership moved
+  // there, out of `run/delete/post/gate.fn.js`.
+  it('refuses an id-less caller even when the row also has no startedBy (404, not a false-positive match)', async () => {
     const row = { ...db.runs.get(RUN_ID)! }
     delete row.startedBy
     db.runs.set(RUN_ID, row)
@@ -282,15 +299,22 @@ describe('run deletion (rows + file-prefix GC)', () => {
 
     const res = await json('/api/workflow/run/delete', { id: RUN_ID })
 
-    expect(res.status).toBe(403)
-    expect((await res.json()).error).toBe('only the run owner or an admin can delete a run')
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe('run not found')
     expect(db.runs.has(RUN_ID)).toBe(true)
   })
 
-  it('lets an admin delete a run they did not start', async () => {
+  // An admin no longer gets in on the role alone (D27): the shared gate's
+  // all-scope door also needs the ask, here the header the SPA sends while
+  // the person's "All runs" toggle is on.
+  it('lets a project admin who asked (x-workflow-scope: all) delete a run they did not start', async () => {
     setMockUser(MOCK_ADMIN)
 
-    const res = await json('/api/workflow/run/delete', { id: RUN_ID })
+    const res = await fetch('/api/workflow/run/delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workflow-scope': 'all' },
+      body: JSON.stringify({ id: RUN_ID }),
+    })
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true, deleted: { files: 2, records: 2 } })
@@ -373,13 +397,36 @@ describe('whoami', () => {
 
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
-    expect(await res.json()).toEqual(MOCK_MEMBER)
+    // Exactly the four fields `me.fn.js` picks (`whoami.fn.parity.test.ts`).
+    // `projectRole` is a gate signal AND a contract field (spec 11 D27): the
+    // SPA renders the "All runs" toggle from it, which is the one thing it
+    // cannot work out for itself.
+    expect(await res.json()).toEqual({
+      id: MOCK_MEMBER.id,
+      email: MOCK_MEMBER.email,
+      role: MOCK_MEMBER.role,
+      projectRole: MOCK_MEMBER.projectRole,
+    })
   })
 
   it('answers the admin identity the mock switch selects (?as=admin)', async () => {
     setMockUser(MOCK_ADMIN)
 
-    expect(await (await fetch('/api/workflow/whoami')).json()).toEqual(MOCK_ADMIN)
+    expect(await (await fetch('/api/workflow/whoami')).json()).toEqual({
+      id: MOCK_ADMIN.id,
+      email: MOCK_ADMIN.email,
+      role: MOCK_ADMIN.role,
+      projectRole: MOCK_ADMIN.projectRole,
+    })
+  })
+
+  // CE renders a null as an empty string, and an identity with no permission
+  // row for this project has no project role at all — the key still arrives,
+  // because an absent one would make the reader guess (`me.fn.js`'s contract).
+  it('keeps the key, empty, for an identity with no project role', async () => {
+    setMockUser({ id: 'user_key', email: '', role: 'user' })
+
+    expect(await (await fetch('/api/workflow/whoami')).json()).toMatchObject({ projectRole: '' })
   })
 })
 
@@ -429,6 +476,9 @@ describe('the files quartet', () => {
   })
 
   it('signs a confined path with an absolute url an opaque-origin frame can load', async () => {
+    // Gated (spec 11 D29): the path names a run, so it must exist and be
+    // reachable — seeded here, owned by the mock's default member.
+    db.runs.set('run_1', { ...FINISHED_RUN.run, runId: 'run_1', _id: nextId() })
     const res = await json('/api/workflow/files/sign', {
       path: 'workflows/hello/interactive/runs/run_1/poster.svg',
     })

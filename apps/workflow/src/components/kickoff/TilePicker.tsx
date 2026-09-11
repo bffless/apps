@@ -19,6 +19,7 @@
  * option list is run-row JSON, and a cross-origin image is a beacon that
  * carries the member's session — same-origin, or presigned by this page (D6).
  */
+import { viewUrl } from '../../lib/scope'
 import { isLoadableUrl } from '../../lib/url'
 import { FileCard } from '../values/FileCard'
 import { isFileRef } from '../values/fileRef'
@@ -31,13 +32,16 @@ import type { Option, OptionPreview } from './options'
  * either way.
  */
 export function TilePreview({ preview, label }: { preview: OptionPreview | undefined; label: string }) {
+  // `viewUrl` carries the widened ask (apps#665 review) onto the `src` itself —
+  // the only channel a browser-built sink has — and leaves a presigned (D6) or
+  // cross-origin url alone, so the gate above still judges the same string.
   if (typeof preview === 'string') {
-    return isLoadableUrl(preview) ? <img className="tile-image" src={preview} alt={label} /> : null
+    return isLoadableUrl(preview) ? <img className="tile-image" src={viewUrl(preview)} alt={label} /> : null
   }
   if (!isFileRef(preview)) return null
   const contentType = typeof preview.contentType === 'string' ? preview.contentType : ''
   if (contentType.startsWith('image/') && isLoadableUrl(preview.url)) {
-    return <img className="tile-image" src={preview.url} alt={preview.name || label} />
+    return <img className="tile-image" src={viewUrl(preview.url)} alt={preview.name || label} />
   }
   return <FileCard refValue={preview} />
 }

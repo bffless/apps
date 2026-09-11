@@ -19,6 +19,7 @@
 import { isUnavailablePayload } from './runner/payload'
 import type { UnavailablePayload } from './runner/payload'
 import type { FileRef } from './runner/types'
+import { scopeHeaders, viewUrl } from './scope'
 import { isServeUrl } from './url'
 
 function messageOf(err: unknown): string {
@@ -36,7 +37,16 @@ export async function fetchPayload(ref: FileRef): Promise<unknown> {
   // the same rule a `script` step's `ctx.files.fetch` is held to.
   if (!isServeUrl(ref.url)) return unavailable(ref, 'url refused')
   try {
-    const res = await fetch(ref.url, { credentials: 'same-origin' })
+    // The widened ask travels with it (spec 11 D27): the serve route is gated by
+    // the same `runGate` every other run-scoped route is, so an owner/admin who
+    // asked for all-scope and opened someone else's run would otherwise read a
+    // page of "payload unavailable" chips — the fetch 404s without the header
+    // the rest of the SPA sends (`lib/http.ts`, `store/workflowApi.ts`).
+    // `viewUrl` puts the ask on the url as well as the header (apps#665
+    // review): the ref itself no longer carries one, since it may be persisted,
+    // and this is a sink like any other. The header is what CE actually reads
+    // here — the query string is belt to its braces, and costs nothing.
+    const res = await fetch(viewUrl(ref.url), { credentials: 'same-origin', headers: scopeHeaders() })
     if (!res.ok) return unavailable(ref, `the payload request answered ${res.status}`)
     return await res.json()
   } catch (err) {

@@ -9,6 +9,21 @@ pipeline:
       name: route
       handler: function_handler
       code: ../../../../../../mcp-fn/route.fn.js
+    - id: run
+      name: run
+      handler: data_query
+      config:
+        condition: steps.route.needsRun
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId:
+            op: eq
+            value: steps.route.runId
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/runGate.fn.js
     - id: reply
       name: reply
       handler: function_handler

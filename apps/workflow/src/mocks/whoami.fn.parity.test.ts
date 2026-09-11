@@ -4,10 +4,11 @@
  * `confine.fn.parity.test.ts`: the authored `.fn.js` cannot be imported, so it
  * is executed from source here and nowhere else.
  *
- * What it has to hold: three keys, always present, always strings — that is the
+ * What it has to hold: four keys, always present, always strings — that is the
  * contract the SPA reads (`runStore`/`RunHeader` decide whether to offer Delete
- * from it), and CE hands the handler `undefined` for a caller it cannot tie to
- * a person. And the reason for the change at all: a value carrying a `"` or a
+ * from it, and `projectRole` decides whether the "All runs" toggle exists at
+ * all, spec 11 D27), and CE hands the handler `undefined` for a caller it
+ * cannot tie to a person. And the reason for the change at all: a value carrying a `"` or a
  * `\` now round-trips, where the template would have produced a body no JSON
  * parser accepts.
  */
@@ -31,7 +32,7 @@ const FN_PATH = join(
   'me.fn.js',
 )
 
-type Me = { id: string; email: string; role: string }
+type Me = { id: string; email: string; role: string; projectRole: string }
 type MeHandler = (ctx: { user?: Record<string, unknown> }) => Me
 
 function loadFnHandler(): MeHandler {
@@ -47,22 +48,42 @@ describe('whoami me.fn.js', () => {
     handler = loadFnHandler()
   })
 
-  it('answers the three fields for a resolved member', () => {
-    expect(handler({ user: { id: 'user_1', email: 'a@b.test', role: 'user', groups: [] } })).toEqual({
+  it('answers the four fields for a resolved member', () => {
+    expect(
+      handler({
+        user: { id: 'user_1', email: 'a@b.test', role: 'user', projectRole: 'owner', groups: [] },
+      }),
+    ).toEqual({
       id: 'user_1',
       email: 'a@b.test',
       role: 'user',
+      projectRole: 'owner',
+    })
+  })
+
+  // `projectRole` is what the SPA renders the "All runs" toggle from (spec 11
+  // §Why `projectRole`), and CE only started sending it with the release this
+  // harness requires — an older CE, or a caller with no permission row for
+  // this project, leaves it absent, which must read as "no toggle", not as a
+  // missing key the reader has to guess at.
+  it('keeps `projectRole` an empty string for a caller CE reports no project role for', () => {
+    expect(handler({ user: { id: 'user_1', email: 'a@b.test', role: 'user' } })).toEqual({
+      id: 'user_1',
+      email: 'a@b.test',
+      role: 'user',
+      projectRole: '',
     })
   })
 
   it.each([
     ['no user at all (an API key with no person)', undefined],
-    ['a user whose fields are null', { id: null, email: null, role: null }],
-  ])('keeps all three keys, as empty strings, for %s', (_desc, user) => {
+    ['a user whose fields are null', { id: null, email: null, role: null, projectRole: null }],
+  ])('keeps all four keys, as empty strings, for %s', (_desc, user) => {
     expect(handler({ user: user as Record<string, unknown> | undefined })).toEqual({
       id: '',
       email: '',
       role: '',
+      projectRole: '',
     })
   })
 
@@ -70,9 +91,9 @@ describe('whoami me.fn.js', () => {
   // into `'{"id":"…"}'`, so one quote or backslash produced a body the client
   // could not parse. `{{{steps.me}}}` hands the escaping to CE.
   it('survives values a hand-built JSON template would have broken', () => {
-    const me = handler({ user: { id: 'a"b', email: 'c\\d@e.test', role: 'us"er' } })
+    const me = handler({ user: { id: 'a"b', email: 'c\\d@e.test', role: 'us"er', projectRole: 'own"er' } })
 
-    expect(me).toEqual({ id: 'a"b', email: 'c\\d@e.test', role: 'us"er' })
+    expect(me).toEqual({ id: 'a"b', email: 'c\\d@e.test', role: 'us"er', projectRole: 'own"er' })
     expect(JSON.parse(JSON.stringify(me))).toEqual(me)
   })
 

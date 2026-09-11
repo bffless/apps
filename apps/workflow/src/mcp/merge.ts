@@ -24,6 +24,7 @@ import type { Annotation } from '../lib/runner/types'
 import { snapshotOf } from './reply'
 import { fieldsOf, recordIdOf, rows, type Row } from './rows'
 import type { Route } from './route'
+import { admittedRun } from './runGate'
 
 /** The columns `run-step`'s upsert writes; the `data_update` step lists the same. */
 export const STEP_ROW_FIELDS = [
@@ -73,7 +74,15 @@ function declaredStep(definition: unknown, job: string, stepId: string): Step | 
   }
 }
 
-export function handler(data: { steps: { route?: Route; run?: unknown; steps?: unknown } }): MergeResult {
+export function handler(data: {
+  steps: {
+    route?: Route
+    run?: unknown
+    /** The shared ownership gate over `run` (spec 11, D26): the write lands on the row it ADMITTED, or on nothing. */
+    runGate?: unknown
+    steps?: unknown
+  }
+}): MergeResult {
   const route = data.steps?.route
   if (!route || !WRITE_TOOLS.has(route.tool)) {
     return { update: false, recordId: null, result: errorResult('Not a write', { errors: { tool: 'Not a write' } }), key: '' }
@@ -83,9 +92,10 @@ export function handler(data: { steps: { route?: Route; run?: unknown; steps?: u
 
   if (route.runId === '') return refuse('runId', 'Pass runId — the MCP endpoint has no current run')
   if (key === '') return refuse('step', '`step` is required')
-  const runRow = rows(data.steps.run)[0]
-  if (!runRow) return { ...refuse('runId', `No such run: ${route.runId}`), key }
-  const run = fieldsOf(runRow)
+  // The row the GATE admitted, never one re-derived from the query: a run this
+  // caller cannot reach refuses exactly as an unknown id does (spec 11, D26).
+  const run = admittedRun(data.steps as unknown as Record<string, unknown>)
+  if (!run) return { ...refuse('runId', `No such run: ${route.runId}`), key }
   if (run.status !== 'running') return { ...refuse('runId', `Run ${route.runId} is ${String(run.status)}; only a running run takes a submit`), key }
   const leaseOwner = typeof run.leaseOwner === 'string' ? run.leaseOwner : ''
   const leaseUntil = typeof run.leaseUntil === 'number' ? run.leaseUntil : 0

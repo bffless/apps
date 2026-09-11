@@ -111,7 +111,12 @@ var __mcp = (() => {
       impl: { ...IMPL, description: "The implementation alias; defaults to the current run\u2019s (or the page\u2019s) on the harness page." },
       workflow: { ...WORKFLOW, description: "The workflow id; defaults to the current run\u2019s (or the page\u2019s) on the harness page." },
       status: { type: "string", enum: ["running", "succeeded", "failed", "cancelled"], description: "Only runs in this status." },
-      limit: { type: "integer", minimum: 1, maximum: 50, description: "At most this many runs, newest first (default 20)." }
+      limit: { type: "integer", minimum: 1, maximum: 50, description: "At most this many runs, newest first (default 20)." },
+      scope: {
+        type: "string",
+        enum: ["mine", "all"],
+        description: "mine (default): runs you started. all: every run of the workflow \u2014 project owner/admin only, and only when asked (D27); refused with errors.scope otherwise."
+      }
     },
     required: [],
     additionalProperties: false
@@ -184,7 +189,7 @@ var __mcp = (() => {
     "workflow.start": "Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person\u2019s values; a refusal names each bad input. On the harness page it returns the run id and its first snapshot and moves the page to the run. Over the MCP endpoint it dispatches the implementation\u2019s headless driver and answers `pending` with the run id; poll workflow.status until the row exists (about a minute), then complete its interactive steps here.",
     "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src). Outputs are File refs, never bytes \u2014 pass a ref\u2019s `path` to workflow.sign for a fetchable URL; the ref\u2019s own `url` is the harness page\u2019s session-only path.",
     "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
-    "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
+    "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on. Lists your own runs unless scope is all.",
     "workflow.submitStep": "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value. In an agent host that renders this tool\u2019s UI, call it with `values: {}` for an island or form step: the step\u2019s own UI is shown and the person completes it there \u2014 do not invent values for them.",
     "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes. Pass a ref\u2019s `path` to workflow.sign for a fetchable URL; the ref\u2019s own `url` is the harness page\u2019s session-only path.",
     "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media. This is how a caller without the harness page\u2019s session \u2014 an island, an agent over the MCP endpoint \u2014 reads a run\u2019s files; the ref\u2019s own `url` is the page\u2019s session-only path.",
@@ -245,7 +250,7 @@ var __mcp = (() => {
     const appOrigin = host === "" ? "" : `https://${host}`;
     const siblingBase = siblingBaseOf(path, appOrigin, DRIVE_PATH);
     const mode = str(body.mode);
-    const row = fieldsOf(rows(data?.steps?.find)[0] ?? {});
+    const row = fieldsOf(rows(data?.steps?.run)[0] ?? {});
     const named = mode === "run" ? str(body.impl) : mode === "resume" ? str(row.impl) : "";
     const impl = IMPL_PATTERN.test(named) ? named : "";
     const indexPath = impl === "" ? "" : `/w/${impl}/.bffless/workflows/index.json`;
@@ -259,6 +264,7 @@ var __mcp = (() => {
       host,
       appOrigin,
       mode,
+      isResume: mode === "resume",
       runId: str(body.id)
     };
   }

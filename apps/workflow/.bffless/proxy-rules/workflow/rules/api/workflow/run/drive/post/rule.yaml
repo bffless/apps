@@ -2,16 +2,29 @@ targetUrl: pipeline
 order: 22
 pipeline:
   name: Drive a run
-  description: "POST { id, mode: run|resume, impl?, workflow?, inputs? } — dispatch the implementation's workflow-drive.yml (repository_dispatch, event workflow-drive) through the project's GitHub integration (ADR-0006). Refuses on a live lease, a terminal run, a missing driver."
+  description: "POST { id, mode: run|resume, impl?, workflow?, inputs? } — dispatch the implementation's workflow-drive.yml (repository_dispatch, event workflow-drive) through the project's GitHub integration (ADR-0006). Writes the run's ownership claim for the requester (spec 11 D28) before dispatching. Refuses on a live lease, a terminal run, a missing driver, a run this caller cannot reach, or an id another member has claimed."
   steps:
     # The run row `id` names, if there is one: `resume` needs it (it carries the
     # implementation, the lease and the status), `run` needs its ABSENCE — an id
     # already taken is RUN_EXISTS, the same backstop `runs/post` applies.
-    - id: find
-      name: find
+    # Named `run` because the shared gate below reads `steps.run` (spec 11 D26).
+    - id: run
+      name: run
       handler: data_query
       config:
         schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: request.body.id }
+    # Any claim already standing for this id (spec 11 §Attribution, D28). A
+    # claim of the caller's OWN is reused — a retry after a dispatch that never
+    # landed must not mint a second key — and one of someone else's is
+    # RUN_EXISTS: an id that is spoken for is spoken for.
+    - id: claim
+      name: claim
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_run_claims
         limit: 1
         filters:
           runId: { op: eq, value: request.body.id }
@@ -35,10 +48,55 @@ pipeline:
           x-forwarded-host: steps.plan.host
         forwardAuth: true
         failOnError: false
+    # The shared run gate (spec 11 D26) — but only for a `resume`, which is the
+    # one mode that names an EXISTING run: a run this caller cannot reach then
+    # refuses exactly the way an unknown id does (RUN_NOT_FOUND, worded by the
+    # gate below, since this rule answers a coded 400 rather than a 404). In
+    # `mode: run` the step is skipped, `steps.runGate` is undefined, and the
+    # gate's `run` branch never looks at it.
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/runGate.fn.js
+      config:
+        condition: steps.plan.isResume
     - id: gate
       name: gate
       handler: function_handler
       code: ../../../../../../mcp-fn/driveGate.fn.js
+    # The claim, BEFORE the dispatch (spec 11 §Attribution, D28). A driver that
+    # picks up a dispatch and finds no claim would make ITSELF the run's owner,
+    # which is the outcome the claim exists to prevent — so the row is written
+    # first and a dispatch that then fails simply leaves a claim behind, which
+    # the next call with the same id reuses (`steps.gate.writeClaim` is false
+    # for the caller's own standing claim).
+    - id: claimWrite
+      name: claimWrite
+      handler: data_create
+      config:
+        condition: steps.gate.writeClaim
+        schemaId: $schema:workflow_run_claims
+        fields:
+          runId: steps.gate.claim.runId
+          impl: steps.gate.claim.impl
+          workflow: steps.gate.claim.workflow
+          startedBy: steps.gate.claim.startedBy
+          startedByEmail: steps.gate.claim.startedByEmail
+          driveKey: steps.gate.claim.driveKey
+          createdAt: steps.gate.claim.createdAt
+    # `resume` needs no claim — the run row already records its owner — only a
+    # fresh nonce on the row itself, which is what opens the gate's `drive` door
+    # for the dispatched job (D26 door 2). Minted fresh every time, so a key
+    # handed to a previous driver stops working the moment a new one is sent.
+    - id: rekey
+      name: rekey
+      handler: data_update
+      config:
+        condition: steps.gate.rekey
+        schemaId: $schema:workflow_runs
+        recordId: steps.gate.recordId
+        fields:
+          driveKey: steps.gate.driveKey
     # The dispatch itself. The token is the PROJECT's GitHub integration, never
     # the caller's: a member with workflow:run may drive a run without holding
     # any GitHub credential. A step that fails fails the pipeline, and that is
@@ -64,6 +122,11 @@ pipeline:
           harness_url: steps.gate.payload.harness_url
           workflow: steps.gate.payload.workflow
           inputs: steps.gate.payload.inputs
+          # The nonce (D28) — present in BOTH modes. `workflow-drive.yml` passes
+          # it to the driver, which injects it as `x-workflow-drive-key` on every
+          # request the driven page makes. It reaches the driver here and
+          # nowhere else: the 202 below is a receipt, not a key delivery.
+          drive_key: steps.gate.payload.drive_key
     # Two responders, one per status: response_handler's `status` must be a
     # literal number (ce response.handler.ts validateConfig), and the gate raises
     # exactly one of the two flags, so exactly one of these ever runs.
@@ -88,4 +151,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:run] }
-description: "Dispatch the driver for a run (ADR-0006). 202 dispatched · 400 { code } refused · the pipeline's own error when GitHub refuses (DISPATCH_FAILED)."
+description: "Dispatch the driver for a run (ADR-0006). Claims the run for the requester first (spec 11 D28): a workflow_run_claims row on `run`, a fresh driveKey on the row on `resume`, and the nonce in client_payload. 202 dispatched · 400 { code } refused · the pipeline's own error when GitHub refuses (DISPATCH_FAILED)."

@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os'
 // says `UsageError`, not `Error`; re-exported so importers keep using `./args.js`.
 export { UsageError }
 
-export const USAGE = `workflow-live walk <m1|interactive|hello|headless|studio-audit|studio-headless|page-tools|mcp|mcp-app|oauth|driven|capture-url|all>
+export const USAGE = `workflow-live walk <m1|interactive|hello|headless|studio-audit|studio-headless|page-tools|mcp|mcp-app|oauth|driven|ownership|capture-url|all>
   [--harness https://workflow.j5s.dev] [--out DIR] [--dispatch] [--clip PATH] [--run RUN_ID] [--park-only] [--timeout 90m]
 
-env: WORKFLOW_EMAIL/WORKFLOW_PASSWORD (or WORKFLOW_CI_EMAIL/WORKFLOW_CI_PASSWORD); optional ADMIN_API_KEY; optional WORKFLOW_APP_TOKEN (mcp: skips the walk's own mint)
+env: WORKFLOW_EMAIL/WORKFLOW_PASSWORD (or WORKFLOW_CI_EMAIL/WORKFLOW_CI_PASSWORD); optional ADMIN_API_KEY; optional WORKFLOW_APP_TOKEN (mcp: skips the walk's own mint); optional WORKFLOW_EMAIL_2/WORKFLOW_PASSWORD_2 or WORKFLOW_APP_TOKEN_2 (ownership: member B, no CI alias)
 exit: 0 all checks passed · 1 a check failed · 2 blocked (precondition missing / driver fault)`
 
 export interface WalkArgs {

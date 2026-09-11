@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import type { FnUser } from './runGate'
 import { RESOURCES_PATH, STEP_VIEW_RESOURCE_PATH, TOOLS_PATH, confinedSignPath, handler, kindOfPath, siblingBaseOf, type FnRequest } from './route'
 
 const HEADERS = { 'x-forwarded-host': 'h.example', host: 'localhost:3000' }
@@ -71,6 +72,94 @@ describe('route', () => {
     expect(runs.isRuns).toBe(true)
     expect(runs.impl).toBe('hello')
     expect(route(call('workflow.runs', { impl: 'hello' })).isRuns).toBe(false)
+  })
+
+  /**
+   * `workflow.runs` is FILTERED, not gated (spec 11): one of two queries runs,
+   * and which one is the caller's own ask plus their project role (D27) — the
+   * MCP twin of `runs/get`'s `scope.fn.js`, reading the ask off the tool
+   * arguments rather than the query string.
+   */
+  describe('the scope a workflow.runs call asked for (D27)', () => {
+    const LIST = { impl: 'hello', workflow: 'interactive' }
+    const scoped = (args: Record<string, unknown>, user?: FnUser) => handler({ request: call('workflow.runs', args), deployment: DEPLOYMENT, user })
+    const OWNER: FnUser = { id: 'u', projectRole: 'owner' }
+    const MEMBER: FnUser = { id: 'u', projectRole: 'contributor' }
+    const flags = (r: { isMine: boolean; isAll: boolean; scopeForbidden: boolean }) => [r.isMine, r.isAll, r.scopeForbidden]
+
+    /**
+     * The `waiting` step-row query is conditioned on `listRuns`, not `isRuns`
+     * (fix round 2): a refused `scope: "all"` runs NEITHER run query, so the
+     * rows it would decorate are work for a listing `reply` answers with a 403.
+     * A CE step `condition` is a single path, so the "and" has to be a flag.
+     */
+    it('runs the listing’s step-row query only when the listing itself runs', () => {
+      expect(scoped(LIST, MEMBER).listRuns).toBe(true)
+      expect(scoped({ ...LIST, scope: 'all' }, OWNER).listRuns).toBe(true)
+      expect(scoped({ ...LIST, scope: 'all' }, MEMBER).listRuns).toBe(false)
+      // Not a listing at all: neither flag is raised.
+      expect(scoped({ impl: 'hello', scope: 'all' }, MEMBER).listRuns).toBe(false)
+      expect(scoped({ impl: 'hello', scope: 'all' }, MEMBER).isRuns).toBe(false)
+    })
+
+    it('defaults to the caller’s own runs, for every role', () => {
+      expect(flags(scoped(LIST, MEMBER))).toEqual([true, false, false])
+      expect(flags(scoped(LIST, OWNER))).toEqual([true, false, false])
+      expect(flags(scoped({ ...LIST, scope: 'mine' }, OWNER))).toEqual([true, false, false])
+    })
+
+    it('widens only for an owner or admin who asked', () => {
+      expect(flags(scoped({ ...LIST, scope: 'all' }, OWNER))).toEqual([false, true, false])
+      expect(flags(scoped({ ...LIST, scope: 'all' }, { id: 'u', projectRole: 'ADMIN' }))).toEqual([false, true, false])
+    })
+
+    it('refuses an asked-for scope=all the caller has no role for — the one 403 in the model', () => {
+      expect(flags(scoped({ ...LIST, scope: 'all' }, MEMBER))).toEqual([false, false, true])
+      expect(flags(scoped({ ...LIST, scope: 'all' }))).toEqual([false, false, true])
+      expect(flags(scoped({ ...LIST, scope: 'all' }, { id: 'u' }))).toEqual([false, false, true])
+    })
+
+    it('says nothing about scope for a call that is not a listing', () => {
+      const none = scoped({ impl: 'hello', scope: 'all' }, MEMBER)
+      expect(flags(none)).toEqual([false, false, false])
+      const status = handler({ request: call('workflow.status', { runId: 'run_1', scope: 'all' }), deployment: DEPLOYMENT, user: MEMBER })
+      expect(flags(status)).toEqual([false, false, false])
+    })
+  })
+
+  /**
+   * `workflow.sign` is run-scoped through the path it signs, not through an
+   * argument (spec 11 D29): a `runs/<runId>/` key belongs to that run, and
+   * every other confined key (`inputs/…`) is member-wide, which is `runless`.
+   * Mirrors `files/sign/post/confine.fn.js`, case-insensitive `runs` included.
+   */
+  describe('the run a sign path names (D29)', () => {
+    const RUN = 'run_01TEST'
+    const signOf = (args: Record<string, unknown>) => route(call('workflow.sign', args))
+
+    it('gates a run path on that run', () => {
+      const r = signOf({ path: `workflows/hello/interactive/runs/${RUN}/pick/0/choose/poster.svg` })
+      expect([r.isSign, r.needsRun, r.runless]).toEqual([true, true, false])
+      expect(r.runId).toBe(RUN)
+      expect(signOf({ path: `workflows/hello/interactive/RUNS/${RUN}/x.svg` }).runId).toBe(RUN)
+      // The path decides, never the argument: a signable key is judged by the run it is under.
+      expect(signOf({ runId: 'run_other', path: `workflows/hello/interactive/runs/${RUN}/x.svg` }).runId).toBe(RUN)
+    })
+
+    it('leaves a member-wide path runless, so the gate admits it with nothing to judge (D18)', () => {
+      const r = signOf({ path: 'workflows/hello/interactive/inputs/a.png' })
+      expect([r.isSign, r.needsRun, r.runless]).toEqual([true, false, true])
+      expect(r.runId).toBe('')
+      expect(signOf({ runId: RUN, path: 'workflows/hello/interactive/inputs/a.png' }).needsRun).toBe(false)
+    })
+
+    it('leaves an unsignable path neither — the gate refuses and nothing is signed', () => {
+      for (const path of ['../x', 'other/x', 'workflows/hello/interactive/runs/not-a-run/x.svg']) {
+        const r = signOf({ path })
+        expect([r.needsRun, r.runless], path).toEqual([false, path.startsWith('workflows/')])
+      }
+      expect(route(call('workflow.status', { runId: 'run_1' })).runless).toBe(false)
+    })
   })
 
   it('names the discovery URLs, for the list tool and for the resources-list rule', () => {

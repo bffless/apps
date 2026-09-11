@@ -10,7 +10,7 @@ function handler({ steps, request, user }) {
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
   const body = isObj(request && request.body) ? request.body : {}
-  const parent = rows(steps.parent)[0] || null
+  const parent = rows(steps.run)[0] || null
   const existing = rows(steps.existing)[0] || null
 
   // CE hands a function_handler `user` as { id, email, role, groups }, or `undefined`
@@ -18,14 +18,12 @@ function handler({ steps, request, user }) {
   // throw: a throw is a generic FUNCTION_ERROR, not a status we get to choose — so every
   // refusal is a returned flag that one literal-status response_handler is gated on.
   const caller = user || {}
-  const role = String(caller.role || '').toLowerCase()
 
   const refuse = (kind, error) => ({
     ok: false,
     badRequest: kind === 'badRequest',
     notFound: kind === 'notFound',
     conflict: kind === 'conflict',
-    forbidden: kind === 'forbidden',
     createRun: false,
     runId: '',
     run: null,
@@ -47,6 +45,10 @@ function handler({ steps, request, user }) {
     return refuse('badRequest', 'definition and yaml are required')
   }
 
+  // Defensive: this step only runs when `steps.runGate.ok` — the shared gate
+  // (spec 11 D26) has already found and admitted the parent row, ownership
+  // included — so `!parent` below is a no-op in practice, not a path a caller
+  // can reach.
   if (!parent) return refuse('notFound', 'run not found')
   const pf = fieldsOf(parent)
   const parentJobs = isObj(pf.definition) && isObj(pf.definition.jobs) ? pf.definition.jobs : {}
@@ -58,15 +60,6 @@ function handler({ steps, request, user }) {
   }
   // A live run still holds a lease and is still writing rows; cancelling is the way out.
   if (pf.status === 'running') return refuse('conflict', 'cancel the run first')
-  // Owner or admin only — the delete gate's rule, verbatim. `role` is CE's *global*
-  // role (users.dto.ts: admin | user | member); 'owner' is accepted for the
-  // project-role vocabulary. A row written before startedBy existed is admin-only.
-  const admin = role === 'admin' || role === 'owner'
-  // `undefined !== undefined` is `false` — an id-less caller must never fall through
-  // that comparison just because a row with no `startedBy` is *also* id-less.
-  if (!admin && (!caller.id || pf.startedBy !== caller.id)) {
-    return refuse('forbidden', 'only the run owner or an admin can fork a run')
-  }
   // A retry must land on the row the first call made. An `id` that already names
   // some other run would have this call add step rows to it.
   if (existing) {
@@ -146,7 +139,6 @@ function handler({ steps, request, user }) {
     badRequest: false,
     notFound: false,
     conflict: false,
-    forbidden: false,
     createRun: !existing,
     runId: id,
     // The new run row: the parent's identity and inputs, the body's (the alias's
@@ -165,6 +157,7 @@ function handler({ steps, request, user }) {
       headless: false,
       unattended: body.unattended === true,
       startedBy: caller.id || null,
+      startedByEmail: caller.email || null,
       startedAt: now,
       leaseOwner: String(body.owner || ''),
       leaseUntil: now + 60000,

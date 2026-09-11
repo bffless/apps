@@ -1462,6 +1462,20 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
         return
       }
       if (!outcome.ok) {
+        // Same principle as the `stale` branch just above: a write whose
+        // generation the tab has since moved past belongs to a run this tab
+        // no longer drives (a reset, a fresh adoption, a brand-new
+        // `run.started`) — its failure is moot now, and acting on it would be
+        // actively harmful. `controllers` is a MODULE-LEVEL singleton ("only
+        // one live run is ever driven per tab"; see its own comment above),
+        // so an unguarded `abortAll()` here would tear down whatever run
+        // GENUINELY is current, on the say-so of one that no longer is. This
+        // was always reachable in principle (a write can fail for reasons
+        // that have nothing to do with a stale generation — a network blip,
+        // an expired session) but had no observable trigger before the run
+        // gate (spec 11 D26) made "the row is gone" a real, everyday failure
+        // — e.g. a background retry outliving the run it was writing to.
+        if (generation !== currentGeneration) return
         listenerApi.dispatch(runPaused(pauseMessage(event, outcome.error)))
         runnerControllers.abortAll()
         // Wait clocks too (review round 1): a parked run's writes are failing,

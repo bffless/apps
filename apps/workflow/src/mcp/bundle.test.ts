@@ -9,10 +9,10 @@
  * compares, scans, and runs it in a `node:vm` context shaped like CE's.
  */
 import { readFileSync } from 'node:fs'
-import vm from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { ENTRIES, SET, bundle, outFile, packageJsonForRev, renderedRules, sourceRev } from '../../scripts/build-mcp.mjs'
+import { runInCeSandbox } from '../test/ceSandbox'
 
 /**
  * Verbatim `PROHIBITED_PATTERNS` from
@@ -34,51 +34,6 @@ const PROHIBITED_PATTERNS = [
   /\bBuffer\s*\(/,
   /\bBuffer\s*\./,
 ]
-
-/** The sandbox CE builds (function-runner.service.ts `run`), minus `utils` — nothing here signs anything. */
-function ceSandbox(data: unknown): vm.Context {
-  const logs: string[] = []
-  const log = (...args: unknown[]) => {
-    logs.push(args.map(String).join(' '))
-  }
-  return vm.createContext({
-    data,
-    Math,
-    Date,
-    JSON,
-    Array,
-    Object,
-    String,
-    Number,
-    Boolean,
-    RegExp,
-    Map,
-    Set,
-    WeakMap,
-    WeakSet,
-    Promise,
-    Symbol,
-    BigInt,
-    parseInt,
-    parseFloat,
-    isNaN,
-    isFinite,
-    decodeURI,
-    decodeURIComponent,
-    encodeURI,
-    encodeURIComponent,
-    console: { log, warn: log, error: log },
-    __result__: undefined,
-  })
-}
-
-/** Run a bundle the way CE does and return `handler(data)`'s settled value. */
-export async function runInCeSandbox(code: string, data: unknown): Promise<unknown> {
-  const sandbox = ceSandbox(data)
-  const wrapped = `(async function () { ${code}\n if (typeof handler !== 'function') throw new Error('no handler'); __result__ = await handler(data) })()`
-  await new vm.Script(wrapped, { filename: 'user-function.js' }).runInContext(sandbox, { timeout: 5000 })
-  return sandbox.__result__
-}
 
 const SMOKE_DATA = {
   request: { body: {}, query: {}, headers: {}, method: 'POST', path: '/api/workflow/mcp-tools/status' },

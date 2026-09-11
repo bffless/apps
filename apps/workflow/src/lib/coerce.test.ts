@@ -3,7 +3,9 @@
  * types the engine works with (09: real and mock go through one `toX()`), so
  * every shape CE has been observed to answer with is pinned here.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { writeScope } from './scope'
+import { downloadHref } from './url'
 import {
   fileUrl,
   toAliasList,
@@ -155,6 +157,15 @@ describe('toRunRow', () => {
     expect('waitingOn' in toRunRow({ ...flat, waitingOn: null })).toBe(false)
   })
 
+  // Spec 11 (D28/D26): a denormalised owner email is read like any other optional
+  // string, but `driveKey` — the driver's nonce — must never reach the client row.
+  it('reads `startedByEmail` when present, and never coerces `driveKey` onto the row', () => {
+    const row = toRunRow({ ...flat, startedByEmail: 'user@example.test', driveKey: 'nonce-abc' })
+    expect(row.startedByEmail).toBe('user@example.test')
+    expect('driveKey' in row).toBe(false)
+    expect('startedByEmail' in toRunRow(flat)).toBe(false)
+  })
+
   it('reads a flat record and keeps the server id at _id (R4)', () => {
     const row = toRunRow(flat)
     expect(row._id).toBe('rec_1')
@@ -239,7 +250,21 @@ describe('toWhoami', () => {
   })
 
   it("treats CE's empty strings for an API-key caller as unknown, not as values", () => {
-    expect(toWhoami({ id: '', email: '', role: '' })).toEqual({ id: '' })
+    expect(toWhoami({ id: '', email: '', role: '', projectRole: '' })).toEqual({ id: '' })
+  })
+
+  // The project role (spec 11 §Why `projectRole`) — what the SPA renders the
+  // "All runs" toggle from. An older CE sends no such key at all, and CE sends
+  // an empty string for a caller with no permission row for this project;
+  // both mean "no toggle", so both must drop rather than arrive as a value.
+  it('reads the project role, and drops it when there is none to read', () => {
+    expect(toWhoami({ id: 'user_1', role: 'user', projectRole: 'owner' })).toEqual({
+      id: 'user_1',
+      role: 'user',
+      projectRole: 'owner',
+    })
+    expect('projectRole' in toWhoami({ id: 'user_1', projectRole: '' })).toBe(false)
+    expect('projectRole' in toWhoami({ id: 'user_1' })).toBe(false)
   })
 
   it('never throws on a body that is not an object', () => {
@@ -335,5 +360,45 @@ describe('toFileRef', () => {
     expect(fileUrl('workflows/hello/hello/runs/run_1/slow/0/start/poster.png')).toBe(
       '/api/uploads/workflows/hello/hello/runs/run_1/slow/0/start/poster.png',
     )
+  })
+})
+
+/**
+ * `fileUrl` is **pure** (apps#665 review): the widened ask is a property of the
+ * viewer, not of the file, and this function's answer is persisted — it is the
+ * fallback `toFileRef` (and `fileRefIndex`, and `imageMap`) builds a ref's
+ * `url` from, and a File ref can be written back onto a run or step row. One
+ * session's `?scope=all` in a stored record would be state that belongs to a
+ * browser tab. The ask is applied at the sinks instead: `lib/scope.ts`'s
+ * `viewUrl`, pinned in `scope.test.ts`.
+ */
+describe('fileUrl and the all-scope ask (D27)', () => {
+  const PATH = 'workflows/hello/hello/runs/run_1/slow/0/start/poster.png'
+  const PLAIN = `/api/uploads/${PATH}`
+
+  afterEach(() => {
+    writeScope('mine')
+  })
+
+  it('carries no query, widened or not', () => {
+    expect(fileUrl(PATH)).toBe(PLAIN)
+
+    writeScope('all')
+    expect(fileUrl(PATH)).toBe(PLAIN)
+  })
+
+  it('leaves the Download action the only thing on the query', () => {
+    writeScope('all')
+
+    expect(downloadHref(fileUrl(PATH))).toBe(`${PLAIN}?download=1`)
+  })
+
+  it('never puts a viewer’s ask into a File ref — not even the fallback url', () => {
+    writeScope('all')
+
+    const ref = toFileRef({ path: PATH, name: 'poster.png', contentType: 'image/png', size: 12 })
+
+    expect(ref.url).toBe(PLAIN)
+    expect(JSON.stringify(ref)).not.toContain('scope=all')
   })
 })

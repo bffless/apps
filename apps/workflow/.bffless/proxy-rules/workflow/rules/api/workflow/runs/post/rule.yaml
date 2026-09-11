@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 10
 pipeline:
   name: Create workflow run
-  description: "Insert the workflow_runs row at run start (event run.started, spec 05). The client sends the full row: runId, definition snapshot, yaml text, inputs (File refs), lease fields. Refuses a duplicate runId (07 `runId=`, ADR-0006) with 409 RUN_EXISTS — the page checks first, this is only the backstop for the race between that read and this insert."
+  description: "Insert the workflow_runs row at run start (event run.started, spec 05). The client sends the full row: runId, definition snapshot, yaml text, inputs (File refs), lease fields. Ownership comes from `admit` (spec 11 D28): the claim `run/drive` wrote, when the request carries its nonce (the claim is then consumed), otherwise the session's own member. Refuses a duplicate runId (07 `runId=`, ADR-0006) — or a claimed id the request cannot redeem — with 409 RUN_EXISTS."
   steps:
     # Duplicate check first (07 `runId=`): a driver that mints its own id
     # before the browser exists can race the page's own pre-insert read, so
@@ -15,16 +15,30 @@ pipeline:
         limit: 1
         filters:
           runId: { op: eq, value: request.body.runId }
-    - id: exists
-      name: exists
+    # Any ownership claim `run/drive` wrote for this id (spec 11 §Attribution,
+    # D28): the run about to be inserted may have been dispatched, in which case
+    # the session posting it is the DRIVER's, not the requester's.
+    - id: claim
+      name: claim
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_run_claims
+        limit: 1
+        filters:
+          runId: { op: eq, value: request.body.runId }
+    # Who the run belongs to, decided in one place: the claim's member when the
+    # request carries the claim's nonce, the session's otherwise — and a 409
+    # when the id is taken OR a claim stands that this request cannot redeem.
+    - id: admit
+      name: admit
       handler: function_handler
-      code: ./exists.fn.js
+      code: ./admit.fn.js
     - id: create
       name: create
       handler: data_create
       config:
         schemaId: $schema:workflow_runs
-        condition: steps.exists.fresh
+        condition: steps.admit.fresh
         fields:
           runId: request.body.runId
           impl: request.body.impl
@@ -37,7 +51,12 @@ pipeline:
           status: request.body.status
           headless: request.body.headless
           unattended: request.body.unattended
-          startedBy: user.id
+          # Never `user.id`: on a driven run that session is the driver's
+          # (D28). `admit` is the one place that decides, and a `startedBy` or
+          # `driveKey` in the BODY is never read.
+          startedBy: steps.admit.startedBy
+          startedByEmail: steps.admit.startedByEmail
+          driveKey: steps.admit.driveKey
           startedAt: request.body.startedAt
           leaseOwner: request.body.leaseOwner
           leaseUntil: request.body.leaseUntil
@@ -45,15 +64,26 @@ pipeline:
           # A forked run's parent and fork job (apps#501); absent on a kickoff run.
           forkedFrom: request.body.forkedFrom
           forkJob: request.body.forkJob
+    # The claim is spent: one dispatch, one run. Deleting it after `create`
+    # (rather than before) keeps the order that makes a failed insert
+    # retryable — a claim outliving a create that never happened is redeemable
+    # again, while a claim deleted first would leave the retry unattributable.
+    - id: consume
+      name: consume
+      handler: data_delete
+      config:
+        condition: steps.admit.claimed
+        schemaId: $schema:workflow_run_claims
+        recordId: steps.admit.claimRecordId
     # Exactly one of `duplicate`/`respond` ever runs (both gated on
-    # `steps.exists`, one on each side of it) — a skipped response_handler
+    # `steps.admit`, one on each side of it) — a skipped response_handler
     # leaves the response to whichever one did (pipeline-execution.service.ts),
     # which is why `respond` below is gated too rather than left to run always.
     - id: duplicate
       name: duplicate
       handler: response_handler
       config:
-        condition: steps.exists.exists
+        condition: steps.admit.exists
         status: 409
         body: '{"code":"RUN_EXISTS","error":"a run with this id already exists"}'
         contentType: application/json
@@ -61,11 +91,11 @@ pipeline:
       name: respond
       handler: response_handler
       config:
-        condition: steps.exists.fresh
+        condition: steps.admit.fresh
         body: "{{{steps.create}}}"
         status: 200
         contentType: application/json
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:run] }
-description: "Create a workflow run row (run.started). auth_required; startedBy from the session. Refuses a duplicate runId with 409 RUN_EXISTS (07 `runId=`)."
+description: "Create a workflow run row (run.started). auth_required; startedBy from the drive claim when its nonce is presented, else from the session (spec 11 D28). Refuses a duplicate — or unredeemed-claim — runId with 409 RUN_EXISTS (07 `runId=`)."

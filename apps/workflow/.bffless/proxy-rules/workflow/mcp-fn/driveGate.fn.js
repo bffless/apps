@@ -110,7 +110,12 @@ var __mcp = (() => {
       impl: { ...IMPL, description: "The implementation alias; defaults to the current run\u2019s (or the page\u2019s) on the harness page." },
       workflow: { ...WORKFLOW, description: "The workflow id; defaults to the current run\u2019s (or the page\u2019s) on the harness page." },
       status: { type: "string", enum: ["running", "succeeded", "failed", "cancelled"], description: "Only runs in this status." },
-      limit: { type: "integer", minimum: 1, maximum: 50, description: "At most this many runs, newest first (default 20)." }
+      limit: { type: "integer", minimum: 1, maximum: 50, description: "At most this many runs, newest first (default 20)." },
+      scope: {
+        type: "string",
+        enum: ["mine", "all"],
+        description: "mine (default): runs you started. all: every run of the workflow \u2014 project owner/admin only, and only when asked (D27); refused with errors.scope otherwise."
+      }
     },
     required: [],
     additionalProperties: false
@@ -183,7 +188,7 @@ var __mcp = (() => {
     "workflow.start": "Start a run of a workflow with the given inputs. Validated exactly as the kickoff form validates a person\u2019s values; a refusal names each bad input. On the harness page it returns the run id and its first snapshot and moves the page to the run. Over the MCP endpoint it dispatches the implementation\u2019s headless driver and answers `pending` with the run id; poll workflow.status until the row exists (about a minute), then complete its interactive steps here.",
     "workflow.status": "The run snapshot: status, the steps in flight, every reached step\u2019s status, the outputs so far, and `waitingOn` \u2014 for each waiting step what would satisfy it (its kind, its evaluated inputs, an island\u2019s declared outputs and src). Outputs are File refs, never bytes \u2014 pass a ref\u2019s `path` to workflow.sign for a fetchable URL; the ref\u2019s own `url` is the harness page\u2019s session-only path.",
     "workflow.await": 'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
-    "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.",
+    "workflow.runs": "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on. Lists your own runs unless scope is all.",
     "workflow.submitStep": "Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person\u2019s submit runs; a refusal names each bad value. In an agent host that renders this tool\u2019s UI, call it with `values: {}` for an island or form step: the step\u2019s own UI is shown and the person completes it there \u2014 do not invent values for them.",
     "workflow.outputs": "The run\u2019s outputs \u2014 File refs (`{ path, name, contentType, size, url }`), never bytes. Pass a ref\u2019s `path` to workflow.sign for a fetchable URL; the ref\u2019s own `url` is the harness page\u2019s session-only path.",
     "workflow.sign": "Exchange a File ref\u2019s `path` for a short-lived presigned GET URL (`{ url, expiresIn }`), the same one islands get to show media. This is how a caller without the harness page\u2019s session \u2014 an island, an agent over the MCP endpoint \u2014 reads a run\u2019s files; the ref\u2019s own `url` is the page\u2019s session-only path.",
@@ -212,6 +217,17 @@ var __mcp = (() => {
   })));
   var BY_NAME = new Map(CATALOG.map((tool) => [tool.name, tool]));
 
+  // src/mcp/runGate.ts
+  function isPlainObject2(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+  function admittedRun(steps) {
+    if (!isPlainObject2(steps)) return void 0;
+    const gate = steps.runGate;
+    if (!isPlainObject2(gate) || gate.ok !== true) return void 0;
+    return isPlainObject2(gate.run) ? gate.run : void 0;
+  }
+
   // src/mcp/drivePlan.ts
   var IMPL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$/;
 
@@ -220,7 +236,7 @@ var __mcp = (() => {
   var DRIVER_REPO_PATTERN = /^([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)$/;
   var TERMINAL = ["succeeded", "failed", "cancelled"];
   var EVENT_TYPE = "workflow-drive";
-  function isPlainObject2(value) {
+  function isPlainObject3(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
   }
   function str(value) {
@@ -229,16 +245,20 @@ var __mcp = (() => {
   function jsonBody(step) {
     if (step?.ok !== true) return null;
     const body = step.body;
-    if (isPlainObject2(body)) return body;
+    if (isPlainObject3(body)) return body;
     if (typeof body === "string") {
       try {
         const parsed = JSON.parse(body);
-        return isPlainObject2(parsed) ? parsed : null;
+        return isPlainObject3(parsed) ? parsed : null;
       } catch {
         return null;
       }
     }
     return null;
+  }
+  function gateRecordId(steps) {
+    const gate = steps.runGate;
+    return isPlainObject3(gate) && typeof gate.recordId === "string" ? gate.recordId : "";
   }
   function refuse(code, message) {
     return {
@@ -251,14 +271,20 @@ var __mcp = (() => {
       repo: "",
       eventType: EVENT_TYPE,
       payload: {},
-      response: JSON.stringify({ code, message })
+      response: JSON.stringify({ code, message }),
+      writeClaim: false,
+      rekey: false,
+      recordId: "",
+      driveKey: "",
+      claim: null
     };
   }
   function handler(data) {
     const request = data?.request ?? { body: void 0, headers: {}, method: "POST", path: "" };
     const steps = data?.steps ?? {};
     const plan = steps.plan ?? {};
-    const body = isPlainObject2(request.body) ? request.body : {};
+    const body = isPlainObject3(request.body) ? request.body : {};
+    const user = isPlainObject3(data?.user) ? data.user : {};
     const runId = str(body.id);
     const mode = str(body.mode);
     const impl = str(body.impl);
@@ -270,27 +296,75 @@ var __mcp = (() => {
     if (mode === "run") {
       if (!IMPL_PATTERN.test(impl)) return refuse("BAD_REQUEST", "`impl` must name the implementation alias to run");
       if (workflow === "") return refuse("BAD_REQUEST", "`workflow` must name the workflow to run");
-      if (!isPlainObject2(body.inputs)) return refuse("BAD_REQUEST", "`inputs` must be a JSON object of input values");
+      if (!isPlainObject3(body.inputs)) return refuse("BAD_REQUEST", "`inputs` must be a JSON object of input values");
     }
     const harnessUrl = str(plan.appOrigin);
     if (harnessUrl === "") return refuse("BAD_REQUEST", "this request carries no host, so the driver would have no harness URL to call back");
-    const matched = rows(steps.find);
-    const row = fieldsOf(matched[0] ?? {});
-    if (mode === "resume" && matched.length === 0) return refuse("RUN_NOT_FOUND", "no run with this id \u2014 start one instead");
+    const mint = typeof data?.utils?.randomToken === "function" ? data.utils.randomToken : null;
+    if (mint === null) {
+      return refuse("NO_RANDOM", "this CE exposes no utils.randomToken \u2014 the driver nonce cannot be minted");
+    }
+    const matched = rows(steps.run);
+    if (mode === "resume" && !(isPlainObject3(steps.runGate) && steps.runGate.ok === true)) {
+      return refuse("RUN_NOT_FOUND", "no run with this id \u2014 start one instead");
+    }
     if (mode === "run" && matched.length > 0) return refuse("RUN_EXISTS", "a run with this id already exists \u2014 resume it instead");
+    const row = admittedRun(steps) ?? {};
     const status = str(row.status);
-    if (matched.length > 0 && TERMINAL.indexOf(status) !== -1) return refuse("RUN_TERMINAL", `this run is already ${status}`);
+    if (TERMINAL.indexOf(status) !== -1) return refuse("RUN_TERMINAL", `this run is already ${status}`);
     const heldBy = str(row.leaseOwner);
     const until = typeof row.leaseUntil === "number" ? row.leaseUntil : 0;
     if (heldBy !== "" && until > Date.now()) return refuse("LEASE_LIVE", `this run is open in ${heldBy} \u2014 resume it there, or wait for the lease to expire`);
     const index = jsonBody(steps.index);
-    const driver = index !== null && isPlainObject2(index.driver) ? index.driver : {};
+    const driver = index !== null && isPlainObject3(index.driver) ? index.driver : {};
     const parts = DRIVER_REPO_PATTERN.exec(str(driver.repo));
     if (parts === null) {
       return refuse("NO_DRIVER", "this implementation publishes no driver repo \u2014 run it on the harness page instead");
     }
     const [full, owner, repo] = parts;
-    const payload = mode === "run" ? { mode, run_id: runId, harness_url: harnessUrl, workflow: `${impl}/${workflow}`, inputs: body.inputs } : { mode, run_id: runId, harness_url: harnessUrl };
+    let writeClaim = false;
+    let rekey = false;
+    let recordId = "";
+    let driveKey;
+    let claim = null;
+    if (mode === "resume") {
+      driveKey = mint(24);
+      rekey = true;
+      recordId = gateRecordId(steps) || str(row.id);
+    } else {
+      const callerId = str(user.id);
+      if (callerId === "") return refuse("BAD_REQUEST", "the endpoint could not tie this caller to a member");
+      const held = rows(steps.claim);
+      const existing = held.length > 0 ? fieldsOf(held[0]) : null;
+      if (existing !== null && str(existing.startedBy) !== callerId) {
+        return refuse("RUN_EXISTS", "this run id is already claimed by another member");
+      }
+      if (existing !== null) {
+        driveKey = str(existing.driveKey);
+        claim = {
+          runId,
+          impl,
+          workflow,
+          startedBy: callerId,
+          startedByEmail: str(existing.startedByEmail),
+          driveKey,
+          createdAt: typeof existing.createdAt === "number" ? existing.createdAt : Date.now()
+        };
+      } else {
+        driveKey = mint(24);
+        writeClaim = true;
+        claim = {
+          runId,
+          impl,
+          workflow,
+          startedBy: callerId,
+          startedByEmail: str(user.email),
+          driveKey,
+          createdAt: Date.now()
+        };
+      }
+    }
+    const payload = mode === "run" ? { mode, run_id: runId, harness_url: harnessUrl, workflow: `${impl}/${workflow}`, inputs: body.inputs, drive_key: driveKey } : { mode, run_id: runId, harness_url: harnessUrl, drive_key: driveKey };
     return {
       dispatch: true,
       refused: false,
@@ -301,7 +375,14 @@ var __mcp = (() => {
       repo,
       eventType: EVENT_TYPE,
       payload,
-      response: JSON.stringify({ dispatched: true, runId, repo: full, eventType: EVENT_TYPE })
+      // The receipt the caller reads. The nonce is NOT in it: it reaches the
+      // driver through `client_payload` and nowhere else.
+      response: JSON.stringify({ dispatched: true, runId, repo: full, eventType: EVENT_TYPE }),
+      writeClaim,
+      rekey,
+      recordId,
+      driveKey,
+      claim
     };
   }
   return __toCommonJS(driveGate_exports);

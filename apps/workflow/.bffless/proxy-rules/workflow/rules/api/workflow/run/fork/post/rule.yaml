@@ -2,23 +2,50 @@ targetUrl: pipeline
 order: 18
 pipeline:
   name: Fork workflow run
-  description: "POST { id, from, job, definition, yaml, workflowVersion, owner, unattended }: start a NEW run `id` that re-runs `job` and everything downstream of it in parent `from`, adopting the parent's rows for every other job as-is (apps#501, #491). `definition`/`yaml`/`workflowVersion` are the alias's CURRENT file — the fork runs under it, and is refused when an adopted row's job, step or recorded output names are absent from it. Owner or admin; terminal parents only. Adopted rows keep pointing at the parent's files (no copy); the run row records forkedFrom + forkJob. Idempotent on `id`: the run row is created once and the copy is insert-only, so a retry leaves one run row and one copy of each adopted row."
+  description: "POST { id, from, job, definition, yaml, workflowVersion, owner, unattended }: start a NEW run `id` that re-runs `job` and everything downstream of it in parent `from`, adopting the parent's rows for every other job as-is (apps#501, #491). `definition`/`yaml`/`workflowVersion` are the alias's CURRENT file — the fork runs under it, and is refused when an adopted row's job, step or recorded output names are absent from it. Terminal parents only. Adopted rows keep pointing at the parent's files (no copy); the run row records forkedFrom + forkJob. Idempotent on `id`: the run row is created once and the copy is insert-only, so a retry leaves one run row and one copy of each adopted row. Visible to the owner, or a project owner/admin who asked (`x-workflow-scope: all`), via the shared gate (spec 11 D26)."
   steps:
     # `limit`, not `pageSize`: CE's data-query.handler.ts reads `limit` (default
     # 100). 1000 is the same cap `run/get` intends for one run's rows; a run
     # with more step rows than that would be copied short, not refused.
-    - id: parent
-      name: parent
+    - id: run
+      name: run
       handler: data_query
       config:
         schemaId: $schema:workflow_runs
         limit: 1
         filters:
           runId: { op: eq, value: request.body.from }
+    # The shared gate (spec 11 D26): may this caller reach the PARENT run at
+    # all? Ownership of the fork is the parent's ownership — the new run under
+    # `id` does not exist yet, so there is nothing else to gate.
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/runGate.fn.js
+    # One refusal: response_handler's `status` must be a literal number
+    # (response.handler.ts validateConfig — an expression string is a
+    # ConfigurationError), so the gate's flag gets its own status-carrying
+    # step. A skipped step leaves the response to the last one that ran
+    # (pipeline-execution.service.ts) — which is why `rows`, `existing`,
+    # `gate` and every step past it are gated on `steps.runGate.ok` below.
+    # Two 404 responders exist in this rule on purpose: this one
+    # (`refuse-404-run`) for a parent the caller cannot reach, and
+    # `refuse-404` further down for a job neither definition has — the shared
+    # gate's business, and `gate.fn.js`'s, kept apart.
+    - id: refuse-404-run
+      name: refuse-404-run
+      handler: response_handler
+      config:
+        condition: steps.runGate.notFound
+        body: "{{{steps.runGate.result}}}"
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
     - id: rows
       name: rows
       handler: data_query
       config:
+        condition: steps.runGate.ok
         schemaId: $schema:workflow_run_steps
         limit: 1000
         filters:
@@ -27,6 +54,7 @@ pipeline:
       name: existing
       handler: data_query
       config:
+        condition: steps.runGate.ok
         schemaId: $schema:workflow_runs
         limit: 1
         filters:
@@ -35,12 +63,15 @@ pipeline:
       name: gate
       handler: function_handler
       code: ./gate.fn.js
-    # Four refusals, not one: response_handler's `status` must be a literal number
+      config:
+        condition: steps.runGate.ok
+    # Three refusals here, not one: response_handler's `status` must be a literal number
     # (response.handler.ts validateConfig — an expression string is a ConfigurationError),
-    # so each status is its own step gated on its own flag. Exactly one of the five
-    # responders below ever runs, and a skipped step leaves the response to the last one
-    # that did (pipeline-execution.service.ts) — which is why every later step is gated
-    # on `steps.gate.ok` too. Same shape as `run/delete`.
+    # so each status is its own step gated on its own flag. Exactly one responder in this
+    # rule ever runs, and a skipped step leaves the response to the last one that did
+    # (pipeline-execution.service.ts) — which is why every step past `gate` is gated on
+    # `steps.gate.ok` too. Ownership is no longer `gate.fn.js`'s business — the shared gate
+    # above already decided it — so there is no `refuse-403` here any more.
     - id: refuse-400
       name: refuse-400
       handler: response_handler
@@ -71,15 +102,6 @@ pipeline:
         status: 409
         headers: { Cache-Control: no-store }
         contentType: application/json
-    - id: refuse-403
-      name: refuse-403
-      handler: response_handler
-      config:
-        condition: steps.gate.forbidden
-        body: "{{{steps.gate.result}}}"
-        status: 403
-        headers: { Cache-Control: no-store }
-        contentType: application/json
     # The run row, once: `createRun` is false when `existing` found the row a
     # previous call of the same `id` made, so a retry never mints a second one.
     # Every column `runs/post` writes, from the gate's one assembled row.
@@ -102,6 +124,7 @@ pipeline:
           headless: steps.gate.run.headless
           unattended: steps.gate.run.unattended
           startedBy: steps.gate.run.startedBy
+          startedByEmail: steps.gate.run.startedByEmail
           startedAt: steps.gate.run.startedAt
           leaseOwner: steps.gate.run.leaseOwner
           leaseUntil: steps.gate.run.leaseUntil
@@ -162,4 +185,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:run] }
-description: "Fork a run at a job: one new run row (forkedFrom, forkJob) plus a server-side copy of every row outside the job's downstream closure — owner or admin, terminal parents only, under the definition the client sends. Idempotent on id."
+description: "Fork a run at a job: one new run row (forkedFrom, forkJob) plus a server-side copy of every row outside the job's downstream closure — terminal parents only, under the definition the client sends. Idempotent on id. Behind the shared run gate (spec 11 D26): the owner, or a project owner/admin who asked."

@@ -24,7 +24,7 @@ import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, StepKey } from '../lib/runner/types'
 import { stepKey } from '../lib/runner/types'
 import { createRunStore } from '../lib/runStore'
-import { db, stepRowKey } from '../mocks/db'
+import { MOCK_MEMBER, db, nextId, stepRowKey } from '../mocks/db'
 import { server } from '../mocks/server'
 import type { ScriptHost, ScriptHostDeps, ScriptRunArgs } from '../scripts/ScriptHost'
 import { getScriptLog } from '../scripts/logStore'
@@ -668,8 +668,19 @@ describe('script steps — resume (Decision 13)', () => {
   it('relaunches a running script exactly once and lets it finish', async () => {
     const { store, advance, host } = scriptStore()
     const def = scriptDef()
-    const runId = 'run_resumed_script'
+    // No `_` past the `run_` head: the script's Blob output goes through the
+    // real files trio (this file's own banner), whose `files/prepare`
+    // confine.fn.js only recognises a `runs/<runId>/…` scope when the id fits
+    // `RUN_ID_PATTERN` (spec 11 D29) — a real `newRunId()` always does, so an
+    // id with an embedded `_` (the style this file's OTHER fixture ids use)
+    // would read as neither a run scope nor `inputs/` and 400 the upload.
+    const runId = 'run_resumedscript'
     const { run, steps } = runningRows(runId)
+    // A resume always presupposes the row exists server-side (that's what is
+    // being resumed); `runReplaced` itself never reads `db.runs`, but the
+    // relaunch's own `run-step` writes do, behind the shared run gate (spec
+    // 11 D26) — so this seeds it, owned by the mock's default identity.
+    db.runs.set(runId, { ...run, startedBy: MOCK_MEMBER.id, _id: nextId() })
 
     store.dispatch(runOpened({ meta: { def, yaml: SCRIPT_YAML, workflowName: 'Scripted' } }))
     store.dispatch(runReplaced({ state: replayRun(run, steps, def), mode: 'live' }))

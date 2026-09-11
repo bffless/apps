@@ -260,6 +260,52 @@ read path hydrates it back before the page sees it, so nothing downstream — re
 expressions — knows the difference. The bytes therefore live under the run prefix and go with
 the run when it is deleted.
 
+## Run ownership (spec 11)
+
+Runs are user-driven (D26): every run has one owner (`startedBy`), and every surface — the run
+list, `run/get`, the eleven run-scoped MCP tools, the file routes — defaults to the caller's own
+runs. Widening is always asked for, never assumed (D27): `?scope=all` on `runs/get`, `scope:
+"all"` on `workflow.runs`, or the **`x-workflow-scope: all`** header on every single-run route
+(get/update/lease/fork/drive/files) and its MCP twin — refused 403 unless the caller's
+`projectRole` is `owner` or `admin`. The dispatched driver acts on a run it does not own through
+a nonce rather than a role: `run/drive` writes a `workflow_run_claims` row and hands the nonce to
+`workflow-headless`, which carries it back as the **`x-workflow-drive-key`** header on the
+`runs/post` that creates the row — injected by the driver via a Playwright route on
+`/api/workflow/**` + `/api/uploads/**`, not `api.ts` (spec 11 §Attribution). **The nonce stays on
+the row after the run finishes** and the drive door admits it at any status (apps#665): the
+driver's last acts are reads of a *finished* run — the sealed record, then each file output — so a
+key cleared at the seal would refuse the driver its own results. The next dispatch re-mints it.
+
+**Two new optional `workflow_runs` fields need `--adopt-fields`.** `driveKey` and
+`startedByEmail` are additive per `adoptFields`'s rules, but `deploy-workflow.yml`'s
+`bffless/deploy-proxy-rules@v1` step has no input for it, so a merge that adds them does not sync
+the live schema by itself. After the deploy, run by hand from `apps/workflow`:
+
+```bash
+bffless rules push --adopt-fields
+```
+
+**New schema `workflow_run_claims`** — `{ runId, impl, workflow, startedBy, startedByEmail?,
+driveKey, createdAt }`, one row per dispatch from the MCP endpoint, consumed (deleted) by
+`runs/post`. It is a brand-new schema, so it syncs on an ordinary rules-as-code push with no
+`--adopt-fields` needed.
+
+**Step names are load-bearing.** `rules.fence.test.ts` classifies every rule of the set as
+GATED / FILTERED / NEITHER and then checks the *shape* of each: a GATED rule must have a
+`data_query` step whose id is **`run`** on `$schema:workflow_runs`, followed by a
+`function_handler` step whose id is **`runGate`** on `mcp-fn/runGate.fn.js`. The gate itself
+reads the same names — `handler()` raises `runless` off `steps.route`/`steps.confine`/
+`steps.normalize`, so the **`confine`** (files/sign, files/prepare, the serve route) and
+**`normalize`** (files/register) locator steps must keep those ids too, or a path that names no
+run stops being recognised as member-wide and every `inputs/` upload starts 404ing. Renaming any
+of the four is a rule-set-wide change, not a local tidy-up.
+
+**Live verification needs a second member.** The `ownership` walk (`pnpm workflow-live:walk
+ownership`, `packages/workflow-live`) proves the four doors — owner, drive nonce, asked-for
+all-scope, and files following the run — against a real second identity, which the walk cannot
+create for itself: set `WORKFLOW_EMAIL_2`/`WORKFLOW_PASSWORD_2` (or `WORKFLOW_APP_TOKEN_2`) to a
+second project member's credentials, or every ownership check blocks (not fails).
+
 ## First-success checkpoint
 
 Open `workflow.<domain>`, sign in as a project member: the Implementations screen lists

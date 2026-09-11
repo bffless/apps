@@ -229,6 +229,15 @@ export const SERVE_PREFIX = '/api/uploads/'
 /**
  * The serve route a storage path is reachable at: `path` is the
  * uploads-relative key, so the url is simply `SERVE_PREFIX` + path.
+ *
+ * **Pure — no query, and nothing read off the viewer** (apps#665 review). It
+ * was briefly the place the all-scope ask was appended (spec 11 D27, fix round
+ * 2), but this is also the fallback `toFileRef`, `components/values/
+ * fileRefIndex` and `lib/imageMap` build a ref's `url` from, and a File ref
+ * can be written back onto a run or step row — so one viewer's momentary ask
+ * could be persisted into a record it has nothing to do with. The ask belongs
+ * at the sink instead: `lib/scope.ts`'s `viewUrl` decorates a serve url on its
+ * way into an `<img src>`, a player, or a download `href`.
  */
 export function fileUrl(path: string): string {
   return `${SERVE_PREFIX}${path.replace(/^\/+/, '')}`
@@ -303,6 +312,14 @@ export interface Whoami {
   id: string
   email?: string
   role?: string
+  /**
+   * The role on **this project** (spec 11 §Why `projectRole`) — what the "All
+   * runs" toggle is rendered from, and nothing else: the widening itself is
+   * decided server-side, every time, by the same gate. Absent for a caller CE
+   * has no permission row for, and on a CE older than the release that added
+   * the field; both mean "no toggle", which is what an absent value reads as.
+   */
+  projectRole?: 'owner' | 'admin' | 'contributor' | 'viewer' | 'guest'
 }
 
 export function toWhoami(raw: unknown): Whoami {
@@ -313,6 +330,7 @@ export function toWhoami(raw: unknown): Whoami {
     id: optionalStr(f.id) ?? '',
     ...(optionalStr(f.email) ? { email: str(f.email) } : {}),
     ...(optionalStr(f.role) ? { role: str(f.role) } : {}),
+    ...(optionalStr(f.projectRole) ? { projectRole: str(f.projectRole) as Whoami['projectRole'] } : {}),
   }
 }
 
@@ -334,6 +352,9 @@ export function toRunRow(raw: unknown): ServerRunRow {
     headless: bool(f.headless),
     unattended: bool(f.unattended),
     ...(optionalStr(f.startedBy) ? { startedBy: str(f.startedBy) } : {}),
+    ...(optionalStr(f.startedByEmail) ? { startedByEmail: str(f.startedByEmail) } : {}),
+    // driveKey (spec 11 D28) is the driver's nonce — never coerced onto the client
+    // row; the SPA must not carry it.
     startedAt: num(f.startedAt),
     finishedAt: optionalNum(f.finishedAt),
     leaseOwner: optionalStr(f.leaseOwner) ?? null,

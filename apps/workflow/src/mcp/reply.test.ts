@@ -7,8 +7,9 @@ import { RUN_ID_PATTERN, mintRunId, runIdTime } from './ids'
 import { handler as mergeOf } from './merge'
 import { handler as planOf } from './plan'
 import { REFUSALS } from './refusals'
-import { handler as reply, type StepOutputs } from './reply'
+import { driveErrorKey, handler as reply, type StepOutputs } from './reply'
 import { RESOURCES_PATH, TOOLS_PATH, handler as routeOf, type FnRequest } from './route'
+import { handler as runGateOf, type FnUser } from './runGate'
 
 const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
 const HEADERS = { host: 'h.example' }
@@ -19,22 +20,36 @@ const resourcesReq: FnRequest = { body: undefined, headers: HEADERS, method: 'GE
 const http = (body: unknown, status = 200) => ({ ok: status < 400, status, body })
 
 /**
- * Run the function steps the way a tool rule does — route, merge, plan, reply —
- * over the fetched/queried outputs given. `plan` runs after `merge`/`update`
- * because `workflow.submitStep`'s rule orders it there (its dispatch is
- * decided by whether the write landed, ADR-0006); every other tool's plan
- * reads nothing a write produced, so one order serves them all here.
+ * The caller every case runs as, unless it says otherwise: the member who
+ * started the fixture run (`runRow().startedBy`), so the shared gate's owner
+ * door admits them (spec 11, D26).
  */
-function run(req: FnRequest, fetched: Omit<StepOutputs, 'route' | 'plan'> = {}) {
-  const route = routeOf({ request: req, deployment: DEPLOYMENT })
+const MEMBER: FnUser = { id: 'member@example.com', email: 'member@example.test', role: 'user', projectRole: 'contributor' }
+/** Another member of the same project: every run of the fixture is invisible to them. */
+const OTHER: FnUser = { id: 'user_other', email: 'else@example.test', role: 'user', projectRole: 'contributor' }
+
+/**
+ * Run the function steps the way a tool rule does — route, runGate, merge,
+ * plan, reply — over the fetched/queried outputs given. The gate sits where
+ * the rendered rule puts it, right after the `run` query it judges (spec 11,
+ * D26): everything later reads the run it ADMITTED, so a case that hands in
+ * rows the caller cannot reach reads exactly like one that hands in none.
+ * `plan` runs after `merge`/`update` because `workflow.submitStep`'s rule
+ * orders it there (its dispatch is decided by whether the write landed,
+ * ADR-0006); every other tool's plan reads nothing a write produced, so one
+ * order serves them all here.
+ */
+function run(req: FnRequest, fetched: Omit<StepOutputs, 'route' | 'plan'> = {}, user: FnUser | undefined = MEMBER) {
+  const route = routeOf({ request: req, deployment: DEPLOYMENT, user })
   const steps: StepOutputs = { ...fetched, route }
-  if (!fetched.merge) steps.merge = mergeOf({ steps: { route, run: steps.run, steps: steps.steps } })
-  steps.plan = planOf({ steps: { route, aliases: steps.aliases, index: steps.index, run: steps.run, steps: steps.steps, update: steps.update }, deployment: DEPLOYMENT })
+  if (!fetched.runGate) steps.runGate = runGateOf({ steps: { route, run: steps.run }, request: req, user })
+  if (!fetched.merge) steps.merge = mergeOf({ steps: { route, runGate: steps.runGate, run: steps.run, steps: steps.steps } })
+  steps.plan = planOf({ steps: { route, runGate: steps.runGate, aliases: steps.aliases, index: steps.index, run: steps.run, steps: steps.steps, update: steps.update }, deployment: DEPLOYMENT })
   const out = reply({ request: req, steps, deployment: DEPLOYMENT })
   return { out, body: JSON.parse(out.json) as unknown, steps }
 }
-const result = (req: FnRequest, fetched?: Omit<StepOutputs, 'route' | 'plan'>) =>
-  run(req, fetched).body as { content: { text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean }
+const result = (req: FnRequest, fetched?: Omit<StepOutputs, 'route' | 'plan'>, user?: FnUser) =>
+  run(req, fetched, user).body as { content: { text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean }
 const text = (r: { content: { text: string }[] }) => r.content[0].text
 
 describe('the rule shape', () => {
@@ -186,16 +201,94 @@ describe('workflow.sign', () => {
 })
 
 describe('tools this build does not serve', () => {
+  const rows = { run: [runRow()], steps: stepRows() }
+
   it('answers an honest error result, never a protocol error', () => {
     for (const name of ['workflow.cancel', 'workflow.await']) {
-      const r = result(callOf(name, { runId: 'r' }))
+      const r = result(callOf(name, { runId: RUN_ID }), rows)
       expect(r.isError, name).toBe(true)
       expect(r.structuredContent!.errors).toHaveProperty('tool')
     }
-    expect(text(result(callOf('workflow.cancel', { runId: 'r' })))).toContain('runs are driven on the harness page')
-    expect(text(result(callOf('workflow.await', { runId: 'r', until: 'terminal' })))).toContain('poll workflow.status')
+    expect(text(result(callOf('workflow.cancel', { runId: RUN_ID }), rows))).toContain('runs are driven on the harness page')
+    expect(text(result(callOf('workflow.await', { runId: RUN_ID, until: 'terminal' }), rows))).toContain('poll workflow.status')
     expect(text(result(callOf('workflow.submit', { runId: 'r', step: 's', outputs: {} }), { run: [], steps: [] }))).toBe('No such run: r')
     expect(result(callOf('echo')).structuredContent!.errors).toEqual({ tool: 'No such tool' })
+  })
+
+  /**
+   * Even a tool that does nothing but explain itself must not confirm that a
+   * run exists: for a run the gate refused, `await` and `cancel` answer what an
+   * unknown id answers (spec 11, D26 — 404, never 403).
+   */
+  it('refuses a run this caller cannot reach before it explains itself', () => {
+    for (const name of ['workflow.cancel', 'workflow.await']) {
+      const r = result(callOf(name, { runId: RUN_ID, until: 'terminal' }), rows, OTHER)
+      expect(text(r), name).toBe(`No such run: ${RUN_ID}`)
+      expect(r.structuredContent!.errors, name).toEqual({ runId: 'No such run' })
+    }
+    // With no run named at all there is nothing to hide — the tool says what it is.
+    expect(text(result(callOf('workflow.cancel')))).toContain('runs are driven on the harness page')
+  })
+})
+
+/**
+ * The ownership boundary as the MCP tools answer it (spec 11, D26/D27).
+ */
+describe('run ownership over the endpoint', () => {
+  const rows = { run: [runRow()], steps: stepRows() }
+
+  it('reads a run the caller started, and reads another member’s as no run at all', () => {
+    expect(text(result(callOf('workflow.status', { runId: RUN_ID }), rows))).toContain(`Run ${RUN_ID} is running`)
+    const hidden = result(callOf('workflow.status', { runId: RUN_ID }), rows, OTHER)
+    expect(text(hidden)).toBe(`No such run: ${RUN_ID}`)
+    expect(hidden.structuredContent!.errors).toEqual({ runId: 'No such run' })
+    // Every run-scoped read is the same answer, off the row the gate admitted.
+    expect(text(result(callOf('workflow.outputs', { runId: RUN_ID }), rows, OTHER))).toBe(`No such run: ${RUN_ID}`)
+    expect(text(result(callOf('workflow.stepView', { runId: RUN_ID, step: 'pick/0/choose' }), rows, OTHER))).toBe(`No such run: ${RUN_ID}`)
+    expect(text(result(callOf('workflow.submit', { runId: RUN_ID, step: 'pick/0/choose', outputs: { line: 'Hello, world!', index: 0 } }), rows, OTHER))).toBe(`No such run: ${RUN_ID}`)
+    expect(text(result(callOf('workflow.resume', { runId: RUN_ID }), rows, OTHER))).toBe(`No such run: ${RUN_ID}`)
+  })
+
+  /**
+   * A minted id whose row has not been written yet still reads `pending`
+   * (ADR-0006) — and a run that exists but is invisible reads exactly the
+   * same way, which is the point: the two are one answer.
+   */
+  it('keeps the pending window for status, for an absent row and an invisible one alike', () => {
+    const id = mintRunId(Date.now())
+    expect(text(result(callOf('workflow.status', { runId: id }), { run: [], steps: [] }))).toContain('pending')
+    expect(text(result(callOf('workflow.status', { runId: id }), { run: [runRow({ runId: id })], steps: [] }, OTHER))).toContain('pending')
+  })
+
+  it('signs a member-wide path with no run, and refuses a run path the gate refused', () => {
+    const signed = { url: 'https://storage.googleapis.com/b/k?sig=1' }
+    const inputs = result(callOf('workflow.sign', { path: 'workflows/hello/interactive/inputs/a.png' }), { signed }, OTHER)
+    expect(inputs.isError).toBeUndefined()
+    expect(text(inputs)).toBe(`Signed workflows/hello/interactive/inputs/a.png for 3600 s: ${signed.url}`)
+    const path = `workflows/hello/interactive/runs/${RUN_ID}/pick/0/choose/poster.svg`
+    expect(text(result(callOf('workflow.sign', { path }), { ...rows, signed }, MEMBER))).toBe(`Signed ${path} for 3600 s: ${signed.url}`)
+    // The gate refused, so the `signed` step never ran — and the refusal is the run's, not the URL's.
+    const refused = result(callOf('workflow.sign', { path }), rows, OTHER)
+    expect(text(refused)).toBe(`No such run: ${RUN_ID}`)
+    expect(refused.structuredContent!.errors).toEqual({ runId: 'No such run' })
+  })
+
+  it('lists the caller’s own runs by default and everyone’s when an owner asked (D27)', () => {
+    const mine = [runRow({ id: 'a', runId: 'run_a', startedAt: 1_000 })]
+    const everyone = [...mine, runRow({ id: 'b', runId: 'run_b', startedAt: 2_000, startedBy: 'someone@else' })]
+    const listed = (r: ReturnType<typeof result>) => (r.structuredContent!.runs as Array<Record<string, unknown>>).map((row) => row.runId)
+    // `runs` ran (mine): the rule's second query was skipped and is absent.
+    expect(listed(result(callOf('workflow.runs', { impl: 'hello', workflow: 'interactive' }), { runs: mine, waiting: [] }))).toEqual(['run_a'])
+    // `runsAll` ran: `steps.runs` is absent, and the reply reads whichever query the rule ran.
+    const all = result(callOf('workflow.runs', { impl: 'hello', workflow: 'interactive', scope: 'all' }), { runsAll: everyone, waiting: [] }, { id: 'u', projectRole: 'owner' })
+    expect(listed(all)).toEqual(['run_b', 'run_a'])
+  })
+
+  it('refuses an asked-for scope=all the caller has no role for, keyed by what failed', () => {
+    const r = result(callOf('workflow.runs', { impl: 'hello', workflow: 'interactive', scope: 'all' }), { runsAll: [runRow()], waiting: [] }, OTHER)
+    expect(r.isError).toBe(true)
+    expect(text(r)).toBe('scope=all needs the project owner or admin role on this project')
+    expect(r.structuredContent!.errors).toEqual({ scope: 'forbidden' })
   })
 })
 
@@ -338,6 +431,23 @@ describe('workflow.start over the endpoint', () => {
     }
     expect(failed.structuredContent.errors.drive).toBe('DISPATCH_FAILED')
     expect(text(failed)).toContain('500')
+  })
+
+  /**
+   * `NO_RANDOM` (D28) is the drive rule saying this CE exposes no
+   * `utils.randomToken`, so the driver's nonce cannot be minted — a property
+   * of the server, like `DISPATCH_FAILED`, and nothing the caller passed.
+   * It belongs in the drive vocabulary (`errors.drive`), never in `inputs`.
+   */
+  it('calls a nonce the server could not mint a drive refusal, not a bad input (D28)', () => {
+    const refused = start({ impl: 'hello', workflow: 'driven', inputs: {} }, { index, drive: refusedDrive('NO_RANDOM', 'this CE exposes no utils.randomToken — the driver nonce cannot be minted') }).body as {
+      isError?: boolean
+      structuredContent: { errors: Record<string, string> }
+    }
+    expect(refused.structuredContent.errors).toEqual({ drive: 'NO_RANDOM' })
+    expect(driveErrorKey('NO_RANDOM: this CE exposes no utils.randomToken — the driver nonce cannot be minted')).toBe('drive')
+    expect(driveErrorKey('NO_DRIVER: this implementation publishes no driver')).toBe('tool')
+    expect(driveErrorKey('`inputs` must be an object')).toBe('inputs')
   })
 })
 

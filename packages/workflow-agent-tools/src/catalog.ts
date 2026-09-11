@@ -68,7 +68,8 @@ const DESCRIPTIONS: Readonly<Record<ToolName, string>> = {
     'The run snapshot: status, the steps in flight, every reached step’s status, the outputs so far, and `waitingOn` — for each waiting step what would satisfy it (its kind, its evaluated inputs, an island’s declared outputs and src). Outputs are File refs, never bytes — pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.',
   'workflow.await':
     'Wait until the run needs input (`until: "waiting"`) or ends (`until: "terminal"`), then return its snapshot. The polite alternative to polling `workflow.status`.',
-  'workflow.runs': 'Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on.',
+  'workflow.runs':
+    'Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on. Lists your own runs unless scope is all.',
   'workflow.submitStep':
     'Complete a waiting interactive step, or open it for the person. A `form` step takes a value per field; an `island` step takes its declared outputs. Validated by the same checks a person’s submit runs; a refusal names each bad value. In an agent host that renders this tool’s UI, call it with `values: {}` for an island or form step: the step’s own UI is shown and the person completes it there — do not invent values for them.',
   'workflow.outputs':

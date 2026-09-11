@@ -22,6 +22,7 @@ import { resolveSrc, resolveToolName } from '../lib/runner/adapters/island'
 import { mintRunId, workflowId } from './ids'
 import { REFUSALS } from './refusals'
 import { fieldsOf, rows, stepUpdated } from './rows'
+import { admittedRun } from './runGate'
 import { LIST_FANOUT, type FnDeployment, type FnRequest, type Route } from './route'
 
 export interface Plan {
@@ -74,6 +75,8 @@ export interface PlanSteps {
   aliases?: { ok?: boolean; status?: number; body?: unknown }
   index?: { ok?: boolean; status?: number; body?: unknown }
   run?: unknown
+  /** The shared ownership gate over `run` (spec 11, D26): what it ADMITTED is the only run this plans against. */
+  runGate?: unknown
   steps?: unknown
   /** `workflow.submitStep` only: what the `data_update` step answered. Its rule runs `plan` AFTER the write, because only a landed write re-dispatches the driver (ADR-0006). */
   update?: unknown
@@ -161,8 +164,9 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
   }
 
   if (route.tool === 'workflow.stepView' || route.tool === 'workflow.pipeline') {
-    const runRow = rows(data.steps.run)[0]
-    const run = runRow ? fieldsOf(runRow) : null
+    // The row the GATE admitted, never one re-derived from the query (spec 11,
+    // D26): a run this caller cannot reach plans exactly as an unknown id does.
+    const run = admittedRun(data.steps as unknown as Record<string, unknown>) ?? null
     const impl = run && typeof run.impl === 'string' ? run.impl : ''
     if (!run || impl === '') {
       const missing = `No such run: ${route.runId}`
@@ -232,8 +236,7 @@ export function handler(data: { steps: PlanSteps; request?: FnRequest; deploymen
       plan.driveBody = { id: plan.runId, mode: 'run', impl: route.impl, workflow: route.workflow, inputs: route.args.inputs }
     }
   } else if (route.isResume) {
-    const runRow = rows(data.steps.run)[0]
-    const run = runRow ? fieldsOf(runRow) : null
+    const run = admittedRun(data.steps as unknown as Record<string, unknown>) ?? null
     const status = run === null ? '' : String(run.status)
     if (run === null) plan.driveError = `No such run: ${route.runId}`
     else if (status !== 'running') plan.driveError = `Run ${route.runId} is ${status}; only a running run can be resumed`

@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 21
 pipeline:
   name: Register workflow file
-  description: "Verify the uploaded object and return the File ref { path, name, contentType, size, url } (spec 02). storageKey may be the full key `prepare` minted or the uploads-relative path a pipeline step returned (spec 02) — `normalize` prefixes the latter before register_upload sees it, since CE only accepts a full <owner>/<repo>/uploads/ key. The record row lands in workflow_files."
+  description: "Verify the uploaded object and return the File ref { path, name, contentType, size, url } (spec 02). storageKey may be the full key `prepare` minted or the uploads-relative path a pipeline step returned (spec 02) — `normalize` prefixes the latter before register_upload sees it, since CE only accepts a full <owner>/<repo>/uploads/ key. The record row lands in workflow_files. Gated by the shared run gate (spec 11 D29): registering an object under a run's runs/<runId>/ prefix requires reaching that run; inputs/ stays member-wide."
   steps:
     - id: normalize
       name: normalize
@@ -20,11 +20,38 @@ pipeline:
           }
         status: 400
         contentType: application/json
+    - id: run
+      name: run
+      handler: data_query
+      config:
+        condition: steps.normalize.hasRun
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: steps.normalize.runId }
+    # See `files/sign/post/rule.yaml`'s comment on the same step: the condition is
+    # `steps.normalize.ok`, not `hasRun`, so a bad path's 400 (`refuse`, above) is never
+    # followed by the gate's own 404.
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/runGate.fn.js
+      config:
+        condition: steps.normalize.ok
+    - id: refuse-404
+      name: refuse-404
+      handler: response_handler
+      config:
+        condition: steps.runGate.notFound
+        body: "{{{steps.runGate.result}}}"
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
     - id: register
       name: register
       handler: register_upload
       config:
-        condition: steps.normalize.ok
+        condition: steps.runGate.ok
         subDir: workflows/{{request.body.impl}}/{{request.body.workflow}}/{{request.body.scope}}
         schemaId: $schema:workflow_files
         storageKey: steps.normalize.storageKey
@@ -35,16 +62,16 @@ pipeline:
       handler: function_handler
       code: ./shape.fn.js
       config:
-        condition: steps.normalize.ok
+        condition: steps.runGate.ok
     - id: respond
       name: respond
       handler: response_handler
       config:
-        condition: steps.normalize.ok
+        condition: steps.runGate.ok
         body: "{{{steps.shape}}}"
         status: 200
         contentType: application/json
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:files] }
-description: "Files trio 2/3: finalize a direct-to-bucket upload into a File ref."
+description: "Files trio 2/3: finalize a direct-to-bucket upload into a File ref. Gated by the shared run gate (spec 11 D29)."

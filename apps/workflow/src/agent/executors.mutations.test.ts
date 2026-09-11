@@ -4,8 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { START_REFUSALS } from '../lib/autoStart'
-import { seedFinishedRun, seedWaitingRun } from '../mocks/db'
-import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
+import { db, nextId, seedFinishedRun, seedWaitingRun } from '../mocks/db'
+import { FINISHED_RUN, FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { WAITING_RUN_ID, WAITING_STEP_KEY } from '../mocks/fixtures/waitingRun'
 import { makeStore } from '../store'
 import type { AppStore } from '../store'
@@ -237,6 +237,9 @@ describe('workflow.submitStep', () => {
 
 describe('workflow.sign', () => {
   it('exchanges an uploads-relative path for a presigned url through the files/sign rule', async () => {
+    // Gated (spec 11 D29): the path names a run, so it must exist and be
+    // reachable — seeded here, owned by the mock's default member.
+    db.runs.set('run_1', { ...FINISHED_RUN.run, runId: 'run_1', _id: nextId() })
     const { exec } = executorsFor(makeStore())
     const result = await exec['workflow.sign']({ path: 'workflows/hello/hello/runs/run_1/poster.svg' })
     expect(result.isError).toBeUndefined()

@@ -371,7 +371,10 @@ describe('JobPage — the step body', () => {
   // author declared and what every renderer is written against.
   describe('an offloaded {"$file"} output', () => {
     const REPORT = '## Offloaded report\n\n- from the bucket\n'
-    const PATH = 'workflows/hello/hello/runs/run_offload/slow/0/start/report.json'
+    // Gated (spec 11 D29): a `runs/<runId>/` path must name a reachable run, so
+    // this uses the fixture run under test (seeded by `offloadReport`, below)
+    // rather than an arbitrary id nothing seeds.
+    const PATH = `workflows/hello/hello/runs/${FIXTURE_RUN_ID}/slow/0/start/report.json`
 
     /** Rewrite `slow/0/start`'s `report` output as a pointer, with its JSON in the mock bucket. */
     function offloadReport(): void {

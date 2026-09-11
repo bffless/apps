@@ -13,7 +13,24 @@ pipeline:
       name: runs
       handler: data_query
       config:
-        condition: steps.route.isRuns
+        condition: steps.route.isMine
+        schemaId: $schema:workflow_runs
+        limit: 50
+        filters:
+          impl:
+            op: eq
+            value: steps.route.impl
+          workflow:
+            op: eq
+            value: steps.route.workflow
+          startedBy:
+            op: eq
+            value: user.id
+    - id: runsAll
+      name: runsAll
+      handler: data_query
+      config:
+        condition: steps.route.isAll
         schemaId: $schema:workflow_runs
         limit: 50
         filters:
@@ -27,7 +44,7 @@ pipeline:
       name: waiting
       handler: data_query
       config:
-        condition: steps.route.isRuns
+        condition: steps.route.listRuns
         schemaId: $schema:workflow_run_steps
         limit: 1000
         filters:

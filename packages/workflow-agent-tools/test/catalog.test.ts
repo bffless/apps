@@ -74,4 +74,24 @@ describe('the catalog', () => {
     expect(Object.isFrozen(CATALOG)).toBe(true)
     expect(Object.isFrozen(CATALOG[0])).toBe(true)
   })
+
+  /**
+   * `scope` on `workflow.runs` (spec 11 §Listing: two queries, D26/D27). A
+   * published contract gains an argument: a host that cached the old tool list
+   * simply never passes it and lands on the default, "mine" — which is the
+   * right failure. `required` stays empty and the schema stays closed.
+   */
+  it('takes an asked-for scope on workflow.runs, mine by default (spec 11, D27)', () => {
+    const runs = toolByName('workflow.runs')!
+    const scope = runs.inputSchema.properties.scope as { type?: string; enum?: string[]; description?: string } | undefined
+    expect(scope).toBeDefined()
+    expect(scope!.type).toBe('string')
+    expect(scope!.enum).toEqual(['mine', 'all'])
+    expect(scope!.description).toBe(
+      'mine (default): runs you started. all: every run of the workflow — project owner/admin only, and only when asked (D27); refused with errors.scope otherwise.',
+    )
+    expect(runs.inputSchema.required).toEqual([])
+    expect(runs.inputSchema.additionalProperties).toBe(false)
+    expect(runs.description).toContain('Lists your own runs unless scope is all.')
+  })
 })

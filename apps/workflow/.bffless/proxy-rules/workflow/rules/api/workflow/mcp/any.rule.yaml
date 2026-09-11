@@ -115,7 +115,7 @@ pipeline:
               path: /api/workflow/mcp-tools/await
               method: POST
           - name: workflow.runs
-            description: "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on."
+            description: "Past runs of one workflow, newest first: id, status, when it started and ended, and which steps it is waiting on. Lists your own runs unless scope is all."
             inputSchema:
               type: object
               properties:
@@ -138,6 +138,12 @@ pipeline:
                   minimum: 1
                   maximum: 50
                   description: At most this many runs, newest first (default 20).
+                scope:
+                  type: string
+                  enum:
+                    - mine
+                    - all
+                  description: "mine (default): runs you started. all: every run of the workflow — project owner/admin only, and only when asked (D27); refused with errors.scope otherwise."
               required: []
               additionalProperties: false
             annotations:
@@ -166,7 +172,7 @@ pipeline:
               readOnlyHint: false
             _meta:
               ui:
-                resourceUri: ui://bffless/workflow/step-view.5afbec58.html
+                resourceUri: ui://bffless/workflow/step-view.d29fae56.html
             rule:
               path: /api/workflow/mcp-tools/submitStep
               method: POST
@@ -316,7 +322,7 @@ pipeline:
               method: POST
         resources:
           static:
-            - uri: ui://bffless/workflow/step-view.5afbec58.html
+            - uri: ui://bffless/workflow/step-view.d29fae56.html
               name: Workflow step view
               description: Mounts a waiting island or form step of a run (spec 10).
               rule:

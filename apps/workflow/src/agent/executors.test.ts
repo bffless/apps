@@ -186,4 +186,16 @@ describe('workflow.runs', () => {
     expect(result.isError).toBe(true)
     expect(result.structuredContent!.errors).toEqual({ workflow: 'Pass impl and workflow — this page has no current workflow' })
   })
+
+  // `scope: 'all'` without the project owner/admin role is the list rule's one
+  // deliberate 403 (spec 11 D27): the ask is refused rather than quietly
+  // narrowed, so the surface has to say *that* and not "the runs could not be
+  // listed", which reads as a transport failure worth retrying.
+  it('names the refusal when all-scope is asked for without the role (403, D27)', async () => {
+    const { exec } = executorsFor(makeStore())
+    const result = await exec['workflow.runs']({ impl: 'hello', workflow: 'hello', scope: 'all' })
+    expect(result.isError).toBe(true)
+    expect(result.structuredContent!.errors).toEqual({ scope: 'forbidden' })
+    expect(result.content[0]!.text).toMatch(/owner or admin/i)
+  })
 })
