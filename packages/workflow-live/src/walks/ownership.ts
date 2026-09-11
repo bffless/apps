@@ -56,14 +56,64 @@ const STEP = 'ask/0/answer'
 const NOTE = 'from the ownership walk'
 const ALL_SCOPE_ROLES = new Set(['owner', 'admin'])
 const POLL_TIMEOUT_MS = 8 * 60_000
+/** Bounds for `submitStepPastLease` — the same 90s/5s the `mcp` walk's `spec10.leaseLapses` uses. */
+const LEASE_RETRY_TIMEOUT_MS = 90_000
+const LEASE_RETRY_INTERVAL_MS = 5_000
 
 interface Who { id?: string; email?: string; role?: string; projectRole?: string }
 interface ToolAnswer { isError?: boolean; content?: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }
+type Call = (name: string, toolArgs?: Record<string, unknown>) => Promise<ToolAnswer>
 
 const text = (r: ToolAnswer) => (r.content ?? []).map((block) => (block.type === 'text' ? (block.text ?? '') : '')).join('\n')
 const structured = (r: ToolAnswer) => r.structuredContent ?? {}
 const errorsOf = (r: ToolAnswer) => (structured(r).errors ?? {}) as Record<string, string>
 const brief = (r: ToolAnswer) => ({ isError: r.isError ?? false, text: text(r).slice(0, 300) })
+const isLeaseRefusal = (r: ToolAnswer) => 'lease' in errorsOf(r)
+
+/**
+ * Retry `workflow.submitStep` until the refusal stops being the live lease —
+ * `mcp.ts`'s `spec10.leaseLapses`, restated for `submitStep`. A's own page
+ * drove this run to `waiting`, so closing that page stops its heartbeat but
+ * does not clear the lease immediately: the lease has its own TTL, and the
+ * first submit(s) can still answer `errors.lease` for up to ~60s. Stops the
+ * moment the refusal is anything else, so a real validation failure surfaces
+ * immediately rather than being masked by the retry; pure apart from `call`
+ * and the clock, so it is testable with a fake `call`.
+ */
+export async function submitStepPastLease(
+  call: Call,
+  runId: string,
+  step: string,
+  values: Record<string, unknown>,
+  timeoutMs = LEASE_RETRY_TIMEOUT_MS,
+  everyMs = LEASE_RETRY_INTERVAL_MS,
+): Promise<ToolAnswer> {
+  const deadline = Date.now() + timeoutMs
+  let answer: ToolAnswer
+  for (;;) {
+    answer = await call('workflow.submitStep', { runId, step, values })
+    if (!isLeaseRefusal(answer)) return answer
+    if (Date.now() >= deadline) return answer
+    await new Promise((resolve) => setTimeout(resolve, everyMs))
+  }
+}
+
+const MINT_STATUS_RE = /answered (\d+)\b/
+
+/**
+ * True when `mintFor` failed because B is signed in but holds no membership
+ * on the harness project — `POST admin.<domain>/api/app-tokens` answers 403
+ * "You are not a member of this project" (`token.ts`'s `mintAppToken` folds
+ * status + body into the thrown message). That is a missing precondition —
+ * B needs adding to the project, not a bug under test — so the caller turns
+ * it into a `report.note` and skips the check rather than a FAIL. Any other
+ * mint failure (network, 401, a malformed answer) returns `false` and stays
+ * a FAIL via the normal `report.guard` path.
+ */
+export function isNotAProjectMember(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : String(e)
+  return MINT_STATUS_RE.exec(message)?.[1] === '403' && /not a member of this project/i.test(message)
+}
 
 /** A record's columns: flattened onto the row, or nested under `fields` — every rule in this set tolerates both. */
 const fieldsOf = (row: Record<string, unknown>): Record<string, unknown> => {
@@ -146,15 +196,26 @@ export const ownership: Walk = async ({ args, env, report }) => {
     await report.guard(['ownership.aRunFinished'], async () => {
       await waitStepState(a!.page, STEP, 'waiting', POLL_TIMEOUT_MS)
       const aToken = appToken(env) ?? (await mintFor(a!, args.harness, 'A', minted))
+      // A's own tab has been driving this run since kickoff and still holds
+      // its lease — close it (as `mcp.ts`'s park does) before submitting over
+      // MCP, or the submit is refused with "A harness tab still drives this
+      // run…". `submitStepPastLease` below absorbs the ~60s the lease can
+      // still take to lapse after the close.
+      await a!.close()
       const mcpA = await openMcp(args.harness, { token: aToken })
       try {
-        const call = async (name: string, toolArgs: Record<string, unknown> = {}) => (await mcpA.client.callTool({ name, arguments: toolArgs })) as ToolAnswer
-        const answered = await call('workflow.submitStep', { runId: runIdA, step: STEP, values: { note: NOTE } })
+        const call: Call = async (name, toolArgs = {}) => (await mcpA.client.callTool({ name, arguments: toolArgs })) as ToolAnswer
+        const answered = await submitStepPastLease(call, runIdA, STEP, { note: NOTE })
         const done = await pollStatus(call, runIdA, (s) => s.status !== 'running' && s.status !== 'pending', POLL_TIMEOUT_MS)
         report.expect('ownership.aRunFinished', !answered.isError && done?.status === 'succeeded', { submitStep: brief(answered), snapshot: done })
       } finally {
         await mcpA.close()
       }
+      // A's browser is gone (closed above) — D29.inputsStaySigned and (when A
+      // holds the all-scope role) D27.scopeAllAsked still read as A later in
+      // this walk, so reopen a fresh session for the same member rather than
+      // reordering those reads around this guard.
+      a = await openSession({ base: args.harness, out: args.out, ...aLogin })
     })
 
     // =====================================================================
@@ -252,7 +313,20 @@ export const ownership: Walk = async ({ args, env, report }) => {
     // refusal. `outputs` shares the same `resolveRun` but returns its refusal
     // directly with no pending path, so it is the tool that proves D26 over MCP.
     await report.guard(['D26.mcpOutputsIsNotFound'], async () => {
-      const bToken = secondAppToken(env) ?? (await mintFor(b!, args.harness, 'B', minted))
+      let bToken: string
+      try {
+        bToken = secondAppToken(env) ?? (await mintFor(b!, args.harness, 'B', minted))
+      } catch (e) {
+        if (!isNotAProjectMember(e)) throw e
+        // A missing precondition, not a gate failure: the six ownership
+        // assertions already ran (or are still to run) with no need for B to
+        // mint a token. Note it and skip — never report.block, which would
+        // read as the whole walk being unable to proceed.
+        report.note(
+          'member B could not mint an app token (403 "You are not a member of this project") — B can log in but is not a member of the harness project. Fix: add member B to the project (any role — viewer is enough) in admin → project → members, or set WORKFLOW_APP_TOKEN_2. Skipping D26.mcpOutputsIsNotFound.',
+        )
+        return
+      }
       const mcpB = await openMcp(args.harness, { token: bToken })
       try {
         const outputs = (await mcpB.client.callTool({ name: 'workflow.outputs', arguments: { runId: runIdA } })) as ToolAnswer
