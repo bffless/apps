@@ -139,3 +139,23 @@ test('every publishable package component is wired into the release run', () => 
     )
   }
 })
+
+test('every repo file pr-review.yml runs is guarded against being absent', () => {
+  // The review job checks out base.sha on purpose (a PR must not supply its own reviewer's
+  // instructions), while the workflow YAML comes from the PR's head. So a PR that adds a
+  // script and the step that runs it has the step but not the script, and an unguarded
+  // invocation fails under `set -e` — killing the post step, so the PR silences its own
+  // review with the report left unread in the run log (apps#663).
+  const src = read('pr-review.yml')
+  // Flags and quoting are matched too: `node --experimental-x "scripts/f.mjs"` is the
+  // same hazard, and an invariant that only recognises the plainest spelling of the
+  // thing it guards is an invariant you can walk straight past.
+  const invocations = [...src.matchAll(/^\s*node\s+(?:-[^\s]+\s+)*['"]?(scripts\/[\w./-]+)['"]?/gm)].map((m) => m[1])
+  for (const script of invocations) {
+    assert.match(
+      src,
+      new RegExp(`\\[ -f ${script.replace(/[.]/g, '\\.')} \\]`),
+      `${script} is run from a base-pinned checkout without a [ -f ] guard`,
+    )
+  }
+})
