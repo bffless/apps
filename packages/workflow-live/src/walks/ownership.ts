@@ -45,7 +45,7 @@ import { appToken, credentials, secondAppToken, secondCredentials } from '../env
 import { openMcp } from '../mcp-client.js'
 import { openSession, sessionLogin, type Session } from '../session.js'
 import { pollStatus } from './driven.js'
-import { mintAppToken, WALK_SCOPES, type MintedToken } from '../token.js'
+import { adminOriginOf, mintAppToken, WALK_SCOPES, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
 
 const IMPL = 'hello'
@@ -155,15 +155,53 @@ async function whoAmI(s: Session): Promise<Who> {
   return (res.body as Who | null) ?? {}
 }
 
-/** Mint an app token through a signed-in browser context — `token.ts`'s mechanics, as `driven`/`mcp` use them. */
-async function mintFor(s: Session, harness: string, label: string, minted: MintedToken[]): Promise<string> {
+/**
+ * Mint an app token through a signed-in browser context — `token.ts`'s
+ * mechanics, as `driven`/`mcp` use them. Hands back the `MintedToken` rather
+ * than auto-registering it for revocation: B's token is fine revoked through
+ * the session it was minted with (`b` stays open to the end), but A's own
+ * `aRunFinished` guard closes `a`'s session right after minting, which would
+ * leave `MintedToken.revoke`'s captured request client dead — the caller
+ * decides how (and through which live session) that one gets revoked.
+ */
+async function mintFor(s: Session, harness: string, label: string): Promise<MintedToken> {
   const project = await s.api.json('/api/workflow/project')
   const repository = String((project.body as { repository?: string } | null)?.repository ?? '')
   if (repository === '') throw new Error(`GET /api/workflow/project answered no repository — cannot bind a token (${label})`)
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const t = await mintAppToken(s.request, harness, repository, [...WALK_SCOPES], `workflow-live ownership ${label} ${stamp}`)
-  minted.push(t)
-  return t.token
+  return mintAppToken(s.request, harness, repository, [...WALK_SCOPES], `workflow-live ownership ${label} ${stamp}`)
+}
+
+/**
+ * Revoke a token by id through `s`'s own request client — not through
+ * `MintedToken.revoke()`'s own closure, which replays the client the token
+ * was minted through. `aRunFinished` mints A's token through the session it
+ * is about to close, so it revokes by id here instead, through whichever
+ * session is live at the walk's own final cleanup (the reopened one, on the
+ * happy path) — a no-op, not a throw, when `s` is undefined or its session
+ * has gone away (mirrors `MintedToken.revoke`'s own `.catch(() => undefined)`).
+ */
+async function revokeToken(s: Session | undefined, harness: string, id: string): Promise<void> {
+  if (!s) return
+  await s.request.delete(`${adminOriginOf(harness)}/api/app-tokens/${id}`).catch(() => undefined)
+}
+
+/**
+ * Run `body`, then always run `reopen` afterward — success or throw — before
+ * `body`'s own outcome (return or rethrow) is handed back. Generalizes the
+ * `a = await openSession(...)` reopen `ownership.aRunFinished` needs after
+ * closing A's driving tab: whatever the close-and-submit-over-MCP sequence
+ * does, A gets a fresh session back for the D29/D27 reads that read as A
+ * later in the walk. Pure apart from `body`/`reopen` themselves, so the
+ * "reopen always happens, even on a throw" contract is unit-testable without
+ * a browser.
+ */
+export async function withReopenedSession<T>(body: () => Promise<T>, reopen: () => Promise<void>): Promise<T> {
+  try {
+    return await body()
+  } finally {
+    await reopen()
+  }
 }
 
 /**
@@ -197,6 +235,7 @@ export const ownership: Walk = async ({ args, env, report }) => {
 
   let a: Session | undefined
   let b: Session | undefined
+  let aMintedId: string | undefined
   const minted: MintedToken[] = []
 
   try {
@@ -234,26 +273,39 @@ export const ownership: Walk = async ({ args, env, report }) => {
         report.expect('ownership.aRunFinished', false, { reason: 'never reached waiting', lastStatus: parked.lastStatus, snapshot: parked.snapshot })
         return
       }
-      const aToken = appToken(env) ?? (await mintFor(a!, args.harness, 'A', minted))
+      let aToken = appToken(env)
+      if (!aToken) {
+        const t = await mintFor(a!, args.harness, 'A')
+        aMintedId = t.id
+        aToken = t.token
+      }
       // A's own tab still holds this run's lease — close it (as `mcp.ts`'s
       // park does) before submitting over MCP, or the submit is refused with
-      // "A harness tab still drives this run…". `submitStepPastLease` below
-      // absorbs the ~60s the lease can still take to lapse after the close.
+      // "A harness tab still drives this run…". Whatever happens next, A
+      // gets a fresh session back (`withReopenedSession`'s `finally`) — D29
+      // .inputsStaySigned and (when A holds the all-scope role)
+      // D27.scopeAllAsked still read as A later in this walk, and the token
+      // above (if minted) is revoked in the walk's own final cleanup via
+      // `revokeToken`, through whichever session is live then, not through
+      // `MintedToken.revoke`'s own now-dead request client.
       await a!.close()
-      const mcpA = await openMcp(args.harness, { token: aToken })
-      try {
-        const call: Call = async (name, toolArgs = {}) => (await mcpA.client.callTool({ name, arguments: toolArgs })) as ToolAnswer
-        const answered = await submitStepPastLease(call, runIdA, STEP, { note: NOTE })
-        const done = await pollStatus(call, runIdA, (s) => s.status !== 'running' && s.status !== 'pending', POLL_TIMEOUT_MS)
-        report.expect('ownership.aRunFinished', !answered.isError && done?.status === 'succeeded', { submitStep: brief(answered), snapshot: done })
-      } finally {
-        await mcpA.close()
-      }
-      // A's browser is gone (closed above) — D29.inputsStaySigned and (when A
-      // holds the all-scope role) D27.scopeAllAsked still read as A later in
-      // this walk, so reopen a fresh session for the same member rather than
-      // reordering those reads around this guard.
-      a = await openSession({ base: args.harness, out: args.out, ...aLogin })
+      await withReopenedSession(
+        async () => {
+          const mcpA = await openMcp(args.harness, { token: aToken })
+          try {
+            const call: Call = async (name, toolArgs = {}) => (await mcpA.client.callTool({ name, arguments: toolArgs })) as ToolAnswer
+            // `submitStepPastLease` absorbs the ~60s the lease can still take to lapse after the close.
+            const answered = await submitStepPastLease(call, runIdA, STEP, { note: NOTE })
+            const done = await pollStatus(call, runIdA, (s) => s.status !== 'running' && s.status !== 'pending', POLL_TIMEOUT_MS)
+            report.expect('ownership.aRunFinished', !answered.isError && done?.status === 'succeeded', { submitStep: brief(answered), snapshot: done })
+          } finally {
+            await mcpA.close()
+          }
+        },
+        async () => {
+          a = await openSession({ base: args.harness, out: args.out, ...aLogin })
+        },
+      )
     })
 
     // =====================================================================
@@ -353,7 +405,14 @@ export const ownership: Walk = async ({ args, env, report }) => {
     await report.guard(['D26.mcpOutputsIsNotFound'], async () => {
       let bToken: string
       try {
-        bToken = secondAppToken(env) ?? (await mintFor(b!, args.harness, 'B', minted))
+        const existing = secondAppToken(env)
+        if (existing) {
+          bToken = existing
+        } else {
+          const t = await mintFor(b!, args.harness, 'B')
+          minted.push(t) // b stays open to the walk's own final cleanup, so t.revoke()'s request client is still live there
+          bToken = t.token
+        }
       } catch (e) {
         if (!isNotAProjectMember(e)) throw e
         // A missing precondition, not a gate failure: the six ownership
@@ -374,6 +433,7 @@ export const ownership: Walk = async ({ args, env, report }) => {
       }
     })
   } finally {
+    if (aMintedId) await revokeToken(a, args.harness, aMintedId)
     for (const t of minted) await t.revoke()
     await a?.close()
     await b?.close()

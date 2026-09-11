@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { USAGE, parseWalkArgs } from '../src/args.js'
 import { Report, exitCodeOf } from '../src/report.js'
 import { ALL_ORDER, WALKS } from '../src/walks/index.js'
-import { isNotAProjectMember, submitStepPastLease, waitForRowWaiting } from '../src/walks/ownership.js'
+import { isNotAProjectMember, submitStepPastLease, waitForRowWaiting, withReopenedSession } from '../src/walks/ownership.js'
 
 interface ToolAnswer { isError?: boolean; content?: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }
 const leaseRefusal: ToolAnswer = { isError: true, content: [{ type: 'text', text: 'A harness tab still drives this run' }], structuredContent: { errors: { lease: 'A harness tab still drives this run (lease until …) — close it or wait for the lease to lapse' } } }
@@ -108,6 +108,48 @@ describe('waitForRowWaiting', () => {
   it('reports no status when the run record carries no matching row (e.g. B cannot reach it, or the record is null)', async () => {
     const result = await waitForRowWaiting(async () => null, 'ask/0/answer', 10, 5)
     expect(result).toEqual({ waiting: false, lastStatus: '', snapshot: null })
+  })
+})
+
+describe('withReopenedSession', () => {
+  it('reopens after body succeeds, and returns body\'s own result', async () => {
+    let reopened = 0
+    const result = await withReopenedSession(
+      async () => 'answer',
+      async () => {
+        reopened += 1
+      },
+    )
+    expect(result).toBe('answer')
+    expect(reopened).toBe(1)
+  })
+
+  it('reopens even when body throws, then rethrows body\'s error (the reopen must not be skipped by the throw, and must not swallow it)', async () => {
+    let reopened = 0
+    await expect(
+      withReopenedSession(
+        async () => {
+          throw new Error('submit boom')
+        },
+        async () => {
+          reopened += 1
+        },
+      ),
+    ).rejects.toThrow('submit boom')
+    expect(reopened).toBe(1)
+  })
+
+  it("a throw from reopen itself wins over body's own error (JS finally semantics) — surfaced, not silently lost", async () => {
+    await expect(
+      withReopenedSession(
+        async () => {
+          throw new Error('submit boom')
+        },
+        async () => {
+          throw new Error('reopen boom')
+        },
+      ),
+    ).rejects.toThrow('reopen boom')
   })
 })
 
