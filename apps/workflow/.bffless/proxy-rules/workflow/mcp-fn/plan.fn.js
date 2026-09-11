@@ -259,18 +259,29 @@ var __mcp = (() => {
     required: ["impl", "workflow", "inputs"],
     additionalProperties: false
   };
+  var RUN_SCOPE = {
+    type: "string",
+    enum: ["mine", "all"],
+    description: "mine (default): only a run you started. all: any run of the project \u2014 project owner/admin only, and only when asked (D27). A run you may not read answers No such run, never a scope error."
+  };
   var STATUS_SCHEMA = {
+    type: "object",
+    properties: { runId: RUN_ID, scope: RUN_SCOPE },
+    required: [],
+    additionalProperties: false
+  };
+  var OUTPUTS_SCHEMA = STATUS_SCHEMA;
+  var CANCEL_SCHEMA = {
     type: "object",
     properties: { runId: RUN_ID },
     required: [],
     additionalProperties: false
   };
-  var OUTPUTS_SCHEMA = STATUS_SCHEMA;
-  var CANCEL_SCHEMA = STATUS_SCHEMA;
   var AWAIT_SCHEMA = {
     type: "object",
     properties: {
       runId: RUN_ID,
+      scope: RUN_SCOPE,
       until: {
         type: "string",
         enum: ["waiting", "terminal"],
@@ -320,6 +331,7 @@ var __mcp = (() => {
     type: "object",
     properties: {
       runId: RUN_ID,
+      scope: RUN_SCOPE,
       path: {
         type: "string",
         description: "A File ref\u2019s `path` \u2014 an uploads-relative key under `workflows/`. Nothing else is signable."

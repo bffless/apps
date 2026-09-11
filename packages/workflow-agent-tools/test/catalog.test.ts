@@ -94,4 +94,38 @@ describe('the catalog', () => {
     expect(runs.inputSchema.additionalProperties).toBe(false)
     expect(runs.description).toContain('Lists your own runs unless scope is all.')
   })
+
+  /**
+   * `scope` on the tools that name **one** run (spec 11, D27; apps#673, which
+   * reverses the read half of the ownership plan's Decision 6). The gate always
+   * read `scope` out of the tool arguments — the schemas were closed, so the
+   * host rejected the argument before the gate saw it. Widening is additive:
+   * a host with a cached tool list never passes it and lands on `mine`.
+   *
+   * The writes keep the schema they had. Acting on someone else's run is what
+   * sharing/grants is for, not `scope`.
+   */
+  it('takes an asked-for scope on the run-scoped reads, and on no write (spec 11, D27)', () => {
+    const description =
+      'mine (default): only a run you started. all: any run of the project — project owner/admin only, and only when asked (D27). A run you may not read answers No such run, never a scope error.'
+    for (const name of ['workflow.status', 'workflow.outputs', 'workflow.await', 'workflow.sign']) {
+      const scope = toolByName(name)!.inputSchema.properties.scope as { type?: string; enum?: string[]; description?: string } | undefined
+      expect(scope, name).toBeDefined()
+      expect(scope!.type, name).toBe('string')
+      expect(scope!.enum, name).toEqual(['mine', 'all'])
+      expect(scope!.description, name).toBe(description)
+    }
+    for (const name of ['workflow.submitStep', 'workflow.cancel', 'workflow.resume']) {
+      expect(toolByName(name)!.inputSchema.properties.scope, name).toBeUndefined()
+    }
+  })
+
+  /**
+   * `workflow.cancel` shared `workflow.status`' schema object outright, so
+   * widening the reads in place would have widened a write with them (apps#673).
+   */
+  it('gives cancel a schema object of its own, unwidened', () => {
+    expect(toolByName('workflow.cancel')!.inputSchema).not.toBe(toolByName('workflow.status')!.inputSchema)
+    expect(Object.keys(toolByName('workflow.cancel')!.inputSchema.properties)).toEqual(['runId'])
+  })
 })

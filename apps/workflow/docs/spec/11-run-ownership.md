@@ -114,6 +114,13 @@ that take a `runId` (`status`, `await`, `outputs`, `sign`, `cancel`, `resume`, `
 the four host tools (`submit`, `annotate`, `pipeline`, `stepView`). `run/delete` moves off its
 private gate onto the shared one.
 
+The five of those eleven that only **read** — `status`, `await`, `outputs`, `sign` and
+`stepView` — take the same optional `scope` argument `runs` takes, so an MCP caller with the
+project role can ask to read a run that is not theirs (apps#673). The six that act on a run take
+none: sharing/grants, not `scope`, is how you act on someone else's run. A single-run gate that
+refuses answers `No such run`, never a scope error — an invisible run and a missing one read the
+same (D29).
+
 **Filtered, not gated** — the two list endpoints, which take the scope treatment below:
 `runs/get` and its MCP twin `mcp-tools/runs`. Both default to the caller's own runs and both
 answer 403 to a `scope=all` the caller has no role for; the MCP tool reads its scope from the

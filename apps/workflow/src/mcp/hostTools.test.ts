@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import { RUN_SCOPE } from '@bffless/workflow-agent-tools'
 import { HOST_TOOLS, HOST_TOOL_SCOPES, RESOURCE_MIME, SERVER_VERSION, STEP_VIEW_URI_PATTERN, isHostTool, stepViewUri } from './hostTools'
 
 describe('the app-only tools', () => {
@@ -15,6 +16,20 @@ describe('the app-only tools', () => {
       expect(isHostTool(tool.name)).toBe(true)
     }
     expect(isHostTool('workflow.sign')).toBe(false)
+  })
+
+  /**
+   * The step view only reads, so it takes the catalog's run `scope` (spec 11,
+   * D27; apps#673) — the three tools that act on a step do not.
+   */
+  it('takes an asked-for scope on the step view alone', () => {
+    const stepView = HOST_TOOLS.find((tool) => tool.name === 'workflow.stepView')!
+    expect(stepView.inputSchema.properties.scope).toBe(RUN_SCOPE)
+    expect(stepView.inputSchema.required).toEqual(['runId', 'step'])
+    expect(stepView.inputSchema.additionalProperties).toBe(false)
+    for (const tool of HOST_TOOLS.filter((tool) => tool.name !== 'workflow.stepView')) {
+      expect(tool.inputSchema.properties.scope, tool.name).toBeUndefined()
+    }
   })
 
   it("announces the island host's protocol version", async () => {
