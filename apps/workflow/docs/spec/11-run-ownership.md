@@ -55,7 +55,9 @@ anyone else, until they ask: `?scope=all` on the list, `scope: "all"` on `workfl
 A single run's ask is spelled differently from a list's, because a single-run route has no query
 string of its own to widen: `run/get`, `run/update`, `run/lease`, `run/fork`, `run/drive` and the
 file routes read the **`x-workflow-scope: all`** header, while `runs/get` (and its MCP twin) read
-`scope=all` — the list's own argument.
+`scope=all` — the list's own argument. There is a third spelling, for the run-scoped MCP tools
+that only read: they take `scope` as a tool argument (§Gated below, apps#673), because an MCP
+caller has no header and no query string to widen either.
 
 This is not caution for its own sake. On a project you own, an implicit exemption means nothing
 changes — you open the harness and still see everyone's runs — and the feature is invisible on
@@ -120,6 +122,15 @@ project role can ask to read a run that is not theirs (apps#673). The six that a
 none: sharing/grants, not `scope`, is how you act on someone else's run. A single-run gate that
 refuses answers `No such run`, never a scope error — an invisible run and a missing one read the
 same (D29).
+
+Two of the catalog's three surfaces do not ask it yet, and the argument is declared for one
+contract rather than three. The **MCP endpoint** honours it — the gate reads `request.body.scope`.
+The **harness page** registers the same schemas through WebMCP but its executors drop `scope`;
+the page's ask is the "All runs" toggle, which travels as the header on every request. The
+**step view** never sends it: the widget is mounted from `workflow.submitStep`'s tool input and
+calls `workflow.stepView { runId, step }`, so `stepView`'s `scope` is symmetry with the other
+reads, not a capability a shipped caller exercises. Threading the asked-for scope through those
+two surfaces is follow-up work, not part of apps#673.
 
 **Filtered, not gated** — the two list endpoints, which take the scope treatment below:
 `runs/get` and its MCP twin `mcp-tools/runs`. Both default to the caller's own runs and both

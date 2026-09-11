@@ -2956,6 +2956,9 @@ ${indent}${end}`;
       inputSchema: {
         // The one host tool that only reads takes the catalog's run `scope`
         // (spec 11, D27; apps#673) — the three that act on a step do not.
+        // Declared for symmetry with the catalog's reads: the step-view widget
+        // is mounted from `workflow.submitStep`'s tool input and calls this with
+        // `{ runId, step }` only, so nothing shipped asks for it yet.
         type: "object",
         properties: { runId: RUN_ID2, step: STEP, scope: RUN_SCOPE },
         required: ["runId", "step"],
