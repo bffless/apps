@@ -90,7 +90,12 @@ function handler({ steps }) {
       workflow: typeof f.workflow === 'string' ? f.workflow : '',
       status: 'queued',
       // When the dispatch was asked for — the only time a queued entry has.
-      startedAt: typeof f.createdAt === 'number' ? f.createdAt : 0,
+      // Passed through as stored, NOT normalised to a number here: the run
+      // rows travel untouched and are coerced client-side (`coerce.ts`'s
+      // `num`, which reads a numeric string too), and a queued entry that
+      // collapsed a string to `0` here would render 1970 and sort to the
+      // bottom — the opposite of the point.
+      startedAt: f.createdAt,
       // Nothing waits on a run that has not started; `[]` keeps the column
       // present on every row in the page, as the run rows have it.
       waitingOn: [],

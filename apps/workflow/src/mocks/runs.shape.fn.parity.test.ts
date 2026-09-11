@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { db, MOCK_MEMBER, seedFinishedRun, seedWaitingRun, stepsOf, toRecord, toRunRecord } from './db'
 import { WAITING_RUN_ID, WAITING_STEP_KEY } from './fixtures/waitingRun'
+import { toRunsPageRow } from '../lib/coerce'
 
 /** A run that was dispatched and has not been picked up — a claim, no run row (apps#671). */
 const QUEUED_RUN_ID = 'run_queued'
@@ -181,6 +182,19 @@ describe('runs shape.fn.js', () => {
 
       expect(out.map((row) => row.runId)).toEqual(['run_a', 'run_q'])
       expect(out.map((row) => row.status)).toEqual(['running', 'queued'])
+    })
+
+    // The rule normalises nothing it does not have to: a run row's `startedAt`
+    // travels as stored and is coerced client-side, and a claim's `createdAt`
+    // is treated the same way — collapsing a numeric string to `0` here would
+    // render 1970 and sort the newest entry to the bottom.
+    it('passes `createdAt` through as stored, for the client to coerce', () => {
+      const out = handler({
+        steps: { mine: [], waiting: [], queuedMine: [claim('run_q', { createdAt: '1700000000000' })] },
+      })
+
+      expect(out[0].startedAt).toBe('1700000000000')
+      expect(toRunsPageRow(out[0]).startedAt).toBe(1_700_000_000_000)
     })
 
     it('skips a claim row with no runId rather than putting a nameless entry in the page', () => {

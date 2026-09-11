@@ -280,5 +280,5 @@ per request is fine.
 ## Not in this document
 
 Sharing/grants (the gate is shaped for it; the table is not built) · a cross-workflow "my runs"
-page · queued claims in the list · guest/public runs (already backlog in 06) · per-user
-partitioning of the `inputs/` area.
+page · ageing out a claim nobody consumed (apps#672 — listing one is apps#671, above) ·
+guest/public runs (already backlog in 06) · per-user partitioning of the `inputs/` area.

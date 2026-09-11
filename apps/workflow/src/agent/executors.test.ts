@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FILE_REF_HINT, TOOL_NAMES } from '@bffless/workflow-agent-tools'
 import { START_REFUSALS } from '../lib/autoStart'
-import { db, seedFinishedRun, seedWaitingRun } from '../mocks/db'
+import { db, mockUser, seedFinishedRun, seedWaitingRun } from '../mocks/db'
 import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { WAITING_RUN_ID, WAITING_STEP_KEY } from '../mocks/fixtures/waitingRun'
 import { makeStore } from '../store'
@@ -185,6 +185,37 @@ describe('workflow.runs', () => {
     const result = await exec['workflow.runs']({})
     expect(result.isError).toBe(true)
     expect(result.structuredContent!.errors).toEqual({ workflow: 'Pass impl and workflow — this page has no current workflow' })
+  })
+
+  /**
+   * The list endpoint also carries the dispatched runs nobody has picked up
+   * yet (apps#671). This surface reports run rows — `headless`, duration,
+   * `waitingOn` — none of which a claim has, and the MCP server's own listing
+   * (`src/mcp`, its own queries) does not see them either, so the two agent
+   * surfaces have to keep telling the same story.
+   */
+  it('omits a queued entry: every row it reports has a run behind it (apps#671)', async () => {
+    const QUEUED_RUN_ID = 'run_dispatched'
+    db.claims.set(QUEUED_RUN_ID, {
+      runId: QUEUED_RUN_ID,
+      impl: 'hello',
+      workflow: 'hello',
+      startedBy: mockUser().id,
+      startedByEmail: mockUser().email,
+      driveKey: 'nonce-abc',
+      createdAt: Date.now(),
+    })
+    const { exec } = executorsFor(makeStore())
+    const result = await exec['workflow.runs']({ impl: 'hello', workflow: 'hello' })
+    expect(result.isError).toBeUndefined()
+    const runs = result.structuredContent!.runs as Array<{ runId: string; status: string }>
+    expect(runs.map((run) => run.runId)).not.toContain(QUEUED_RUN_ID)
+    expect(runs.map((run) => run.status)).not.toContain('queued')
+    expect(result.content[0]!.text).not.toContain(QUEUED_RUN_ID)
+    // The cap counts run rows: a claim must not eat one of the `limit` slots,
+    // which is why the filter runs before the slice.
+    const capped = await exec['workflow.runs']({ impl: 'hello', workflow: 'hello', limit: 2 })
+    expect((capped.structuredContent!.runs as unknown[]).length).toBe(2)
   })
 
   // `scope: 'all'` without the project owner/admin role is the list rule's one
