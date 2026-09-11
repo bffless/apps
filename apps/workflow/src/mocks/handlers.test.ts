@@ -139,8 +139,11 @@ describe('the run record surface', () => {
     const forced = await (await json('/api/workflow/run/lease', { id: RUN_ID, owner: 'tab-b', takeover: true })).json()
     expect(forced.ok).toBe(true)
 
-    const unknown = await (await json('/api/workflow/run/lease', { id: 'run_nope', owner: 'tab-a' })).json()
-    expect(unknown).toMatchObject({ ok: false, error: 'run not found' })
+    // Gated (spec 11 D26): an unknown run refuses 404, not lease's old 200
+    // `{ ok:false, error:'run not found' }`.
+    const unknownRes = await json('/api/workflow/run/lease', { id: 'run_nope', owner: 'tab-a' })
+    expect(unknownRes.status).toBe(404)
+    expect(await unknownRes.json()).toEqual({ ok: false, error: 'run not found' })
   })
 
   it('grants an expired lease to the next tab', async () => {
@@ -183,14 +186,17 @@ describe('run deletion (rows + file-prefix GC)', () => {
     expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
   })
 
-  it('refuses a run another member started (403) and deletes nothing', async () => {
+  it('refuses a run another member started (404, spec 11 D26) and deletes nothing', async () => {
     // The fixture is owned by the mock's default member (Decision 12) — a
     // *different* identity is what makes this "another member", not the default.
+    // Gated by the shared run gate ahead of the delete rule's own `gate.fn.js`
+    // (spec 11 D26): unreachable answers the same 404 an unknown id does,
+    // never a 403 — `deleteGate.fn.parity.test.ts` covers this branch in full.
     setMockUser(MOCK_OTHER)
     const res = await json('/api/workflow/run/delete', { id: RUN_ID })
 
-    expect(res.status).toBe(403)
-    expect((await res.json()).error).toBe('only the run owner or an admin can delete a run')
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe('run not found')
     expect(db.runs.has(RUN_ID)).toBe(true)
     expect(filesUnder(RUN_PREFIX)).toHaveLength(2)
   })
@@ -279,9 +285,10 @@ describe('run deletion (rows + file-prefix GC)', () => {
   // Final review, finding 4: `undefined !== undefined` is `false` — an
   // id-less caller (`function_handler` could not resolve one to a person)
   // must never fall through the ownership comparison just because a row
-  // written before `startedBy` existed is *also* id-less. Mirrors
-  // `run/delete/post/gate.fn.js`'s `!caller.id ||` guard.
-  it('refuses an id-less caller even when the row also has no startedBy (403, not a false-positive match)', async () => {
+  // written before `startedBy` existed is *also* id-less. Mirrors the shared
+  // gate's `!caller.id ||` guard (`mockGate`, spec 11 D26) — ownership moved
+  // there, out of `run/delete/post/gate.fn.js`.
+  it('refuses an id-less caller even when the row also has no startedBy (404, not a false-positive match)', async () => {
     const row = { ...db.runs.get(RUN_ID)! }
     delete row.startedBy
     db.runs.set(RUN_ID, row)
@@ -289,15 +296,22 @@ describe('run deletion (rows + file-prefix GC)', () => {
 
     const res = await json('/api/workflow/run/delete', { id: RUN_ID })
 
-    expect(res.status).toBe(403)
-    expect((await res.json()).error).toBe('only the run owner or an admin can delete a run')
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe('run not found')
     expect(db.runs.has(RUN_ID)).toBe(true)
   })
 
-  it('lets an admin delete a run they did not start', async () => {
+  // An admin no longer gets in on the role alone (D27): the shared gate's
+  // all-scope door also needs the ask, here the header the SPA sends while
+  // the person's "All runs" toggle is on.
+  it('lets a project admin who asked (x-workflow-scope: all) delete a run they did not start', async () => {
     setMockUser(MOCK_ADMIN)
 
-    const res = await json('/api/workflow/run/delete', { id: RUN_ID })
+    const res = await fetch('/api/workflow/run/delete', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-workflow-scope': 'all' },
+      body: JSON.stringify({ id: RUN_ID }),
+    })
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true, deleted: { files: 2, records: 2 } })

@@ -389,7 +389,10 @@ describe('forkRun', () => {
     }
   })
 
-  it("rethrows the rule's refusal with its status and its own reason as the message", async () => {
+  // Gated (spec 11 D26): the shared gate ahead of `gate.fn.js` refuses a caller
+  // who cannot reach the parent run the same way it refuses an unknown id —
+  // 404 `run not found`, never the rule's old 403.
+  it("rethrows the shared gate's refusal with its status and its own reason as the message", async () => {
     setMockUser({ id: 'someone_else', email: 'else@example.test', role: 'user' })
     seedFinishedRun()
     const store = makeStore()
@@ -398,8 +401,8 @@ describe('forkRun', () => {
       store.dispatch(forkRun({ runId: FIXTURE_RUN_ID, job: 'slow', def: hello, yaml: HELLO_YAML })),
     ).rejects.toMatchObject({
       name: 'RunStoreError',
-      status: 403,
-      message: 'only the run owner or an admin can fork a run',
+      status: 404,
+      message: 'run not found',
     })
     expect([...db.runs.keys()]).toEqual([FIXTURE_RUN_ID])
   })
@@ -423,6 +426,11 @@ describe('openRun / takeOver — lease contention', () => {
       status: 'running',
       headless: false,
       startedAt: 1_000,
+      // Gated (spec 11 D26): lease acquisition now needs to reach the run at
+      // all first — the default caller must own it, or the shared gate 404s
+      // before lease contention (a DIFFERENT tab holding the lease) ever gets
+      // a look-in.
+      startedBy: MOCK_MEMBER.id,
       finishedAt: null,
       leaseOwner: 'tab_other',
       leaseUntil: Date.now() + 60_000,
@@ -513,6 +521,11 @@ describe('openRun — a lost adoption of a different run', () => {
       status: 'running',
       headless: false,
       startedAt: 1_000,
+      // Gated (spec 11 D26): lease acquisition now needs to reach the run at
+      // all first — the default caller must own it, or the shared gate 404s
+      // before lease contention (a DIFFERENT tab holding the lease) ever gets
+      // a look-in.
+      startedBy: MOCK_MEMBER.id,
       finishedAt: null,
       leaseOwner: 'tab_other',
       leaseUntil: Date.now() + 60_000,
@@ -955,6 +968,8 @@ describe('deleteRun', () => {
     expect(store.getState().run.state).toBeNull()
   })
 
+  // Gated (spec 11 D26): a caller who cannot reach the run gets the same 404
+  // an unknown id does, never the rule's old 403.
   it('rethrows the refusal with its status, so the page can say which it was', async () => {
     setMockUser({ id: 'someone_else', email: 'else@example.test', role: 'user' })
     seedFinishedRun()
@@ -964,7 +979,7 @@ describe('deleteRun', () => {
       RunStoreError,
     )
     await expect(store.dispatch(deleteRun({ runId: FIXTURE_RUN_ID }))).rejects.toMatchObject({
-      status: 403,
+      status: 404,
     })
     expect(db.runs.has(FIXTURE_RUN_ID)).toBe(true)
   })

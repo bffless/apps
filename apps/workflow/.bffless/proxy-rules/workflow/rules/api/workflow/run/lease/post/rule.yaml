@@ -2,20 +2,43 @@ targetUrl: pipeline
 order: 15
 pipeline:
   name: Acquire or renew run lease
-  description: "POST { id, owner, takeover? }. Grants when unheld, expired, already ours, or takeover — sets lease_until = now + 60s (spec 05 Resume)."
+  description: "POST { id, owner, takeover? }. Grants when unheld, expired, already ours, or takeover — sets lease_until = now + 60s (spec 05 Resume). Gated by the shared run gate (spec 11 D26): only the owner, the drive nonce, or an asked all-scope may take the lease."
   steps:
-    - id: find
-      name: find
+    - id: run
+      name: run
       handler: data_query
       config:
         schemaId: $schema:workflow_runs
         limit: 1
         filters:
           runId: { op: eq, value: request.body.id }
+    # The shared gate (spec 11 D26): may this caller act on this run at all?
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/runGate.fn.js
+    # One refusal: response_handler's `status` must be a literal number
+    # (response.handler.ts validateConfig — an expression string is a
+    # ConfigurationError), so the gate's flag gets its own status-carrying
+    # step. A skipped step leaves the response to the last one that ran
+    # (pipeline-execution.service.ts) — which is why `gate` AND `respond` are
+    # BOTH gated on `steps.runGate.ok` below: an unreachable run refuses here,
+    # before the lease's own "held/expired/ours/takeover" business ever runs.
+    - id: refuse-404
+      name: refuse-404
+      handler: response_handler
+      config:
+        condition: steps.runGate.notFound
+        body: "{{{steps.runGate.result}}}"
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
     - id: gate
       name: gate
       handler: function_handler
       code: ./gate.fn.js
+      config:
+        condition: steps.runGate.ok
     - id: grant
       name: grant
       handler: data_update
@@ -30,6 +53,7 @@ pipeline:
       name: respond
       handler: response_handler
       config:
+        condition: steps.runGate.ok
         body: "{{{steps.gate.result}}}"
         status: 200
         headers: { Cache-Control: no-store }
@@ -37,4 +61,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:run] }
-description: "Lease acquire/heartbeat/release-by-expiry. Response { ok, leaseUntil, heldBy }."
+description: "Lease acquire/heartbeat/release-by-expiry. Response { ok, leaseUntil, heldBy }. Behind the shared run gate (spec 11 D26): an unknown run, or one this caller cannot reach, refuses 404."

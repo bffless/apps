@@ -6,17 +6,22 @@
  * tooling to execute the authored `.fn.js` source in isolation; it is never used
  * by the app or the mock at runtime. Same shape as `deleteGate.fn.parity.test.ts`.
  *
- * The gate is the whole of a fork: who may, which rows come along, and whether
- * the definition the client sends can still address them. One case table drives
- * both sides — the raw `handler()` call against `gate.fn.js`, and a real request
- * to the mock — over the finished hello run forked at `slow` (apps#501, #491).
+ * `gate.fn.js` is no longer the whole of a fork (spec 11 D26 moved ownership
+ * to the shared `runGate` ahead of it — proven in `runGate.fn.parity.test.ts`)
+ * — it decides only which rows come along and whether the sent definition can
+ * still address them. Two tables drive the two halves that were once one:
+ * `FN_CASES` exercises `gate.fn.js` directly (badRequest, the job-not-found
+ * case, every conflict, and — since ownership is no longer this function's
+ * business — a caller who never started the run succeeding all the same),
+ * `MOCK_CASES` exercises the composed `/api/workflow/run/fork` endpoint,
+ * where `mockGate` (D26) is back in the picture ahead of `forkGate`.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
-import { MOCK_ADMIN, MOCK_MEMBER, db, seedFinishedRun, setMockUser, stepRowKey, stepsOf } from './db'
+import { MOCK_ADMIN, MOCK_MEMBER, MOCK_OTHER, db, seedFinishedRun, setMockUser, stepRowKey, stepsOf, type MockUser } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -39,7 +44,6 @@ interface GateResult {
   badRequest: boolean
   notFound: boolean
   conflict: boolean
-  forbidden: boolean
   createRun: boolean
   runId: string
   run: Record<string, unknown> | null
@@ -48,7 +52,7 @@ interface GateResult {
 }
 
 type GateHandler = (ctx: {
-  steps: { parent: unknown; rows: unknown; existing: unknown }
+  steps: { run: unknown; rows: unknown; existing: unknown }
   request: { body: Record<string, unknown> }
   user?: { id?: string; email?: string; role?: string }
 }) => GateResult
@@ -61,6 +65,7 @@ function loadFnHandler(): GateHandler {
 
 const RUN_ID = FINISHED_RUN.run.runId
 const OWNER = FINISHED_RUN.run.startedBy!
+const OWNER_EMAIL = FINISHED_RUN.run.startedByEmail!
 const NEW_ID = 'run_01forkfixture00000000000000'
 const TAB = 'tab_fork'
 
@@ -107,11 +112,14 @@ const toRecord = <T extends { _id?: string }>(row: T) => {
 }
 
 /**
- * The refusal matrix, and the status each flag's own `response_handler` answers.
- * Each case transforms the seeded parent/steps/existing the same way for both
- * sides, so a case is one fact about the gate, not two hand-kept fixtures.
+ * What `gate.fn.js` still decides, called directly — badRequest, the
+ * job-not-found case, every conflict, and the defensive `!run` branch (`run`
+ * only runs when `runGate` is `ok`, so this is unreachable in production, the
+ * same shape as `run/delete/post/gate.fn.js`'s `!row`). The caller's identity
+ * is irrelevant to every case here now: ownership is the shared gate's
+ * answer, proven separately in `runGate.fn.parity.test.ts`.
  */
-const CASES: {
+const FN_CASES: {
   desc: string
   parent?: (row: ServerRunRow) => ServerRunRow | null
   steps?: (rows: ServerStepRow[]) => ServerStepRow[]
@@ -128,7 +136,13 @@ const CASES: {
     status: 400,
     error: 'id must be a run id',
   },
-  { desc: 'an unknown run', parent: () => null, user: { id: OWNER, role: 'user' }, status: 404, error: 'run not found' },
+  {
+    desc: 'an unknown run — defensive: `gate` only runs once `runGate` is ok',
+    parent: () => null,
+    user: { id: OWNER, role: 'user' },
+    status: 404,
+    error: 'run not found',
+  },
   {
     desc: 'a job neither definition has',
     body: { job: 'nope' },
@@ -142,23 +156,6 @@ const CASES: {
     user: { id: OWNER, role: 'user' },
     status: 409,
     error: 'cancel the run first',
-  },
-  {
-    desc: 'a member who did not start it',
-    user: { id: 'someone_else', role: 'user' },
-    status: 403,
-    error: 'only the run owner or an admin can fork a run',
-  },
-  {
-    desc: 'an id-less caller against a row with no startedBy',
-    parent: (row) => {
-      const { startedBy: _startedBy, ...rest } = row
-      void _startedBy
-      return rest
-    },
-    user: undefined,
-    status: 403,
-    error: 'only the run owner or an admin can fork a run',
   },
   {
     desc: 'an id some other run already wears',
@@ -188,19 +185,28 @@ const CASES: {
     status: 409,
     error: 'definition changed: greet/0/say',
   },
-  { desc: 'the owner', user: { id: OWNER, role: 'user' }, status: 200 },
-  { desc: 'an admin who did not start it', user: { id: 'user_admin', role: 'admin' }, status: 200 },
+  { desc: 'the owner', user: { id: OWNER, email: OWNER_EMAIL, role: 'user' }, status: 200 },
+  {
+    desc: 'a caller who did not start it — ownership is the shared gate’s job now',
+    user: { id: 'someone_else', role: 'user' },
+    status: 200,
+  },
+  {
+    desc: 'an id-less caller against a row with no startedBy — also passes through now',
+    parent: (row) => {
+      const { startedBy: _startedBy, ...rest } = row
+      void _startedBy
+      return rest
+    },
+    user: undefined,
+    status: 200,
+  },
   {
     desc: 'a retry: the row the first call made already wears the id',
     existing: { ...ROW, _id: 'rec_99', runId: NEW_ID, forkedFrom: RUN_ID, forkJob: 'slow' },
     user: { id: OWNER, role: 'user' },
     status: 200,
   },
-  // Global roles are `admin | user | member` (ce `users.dto.ts`), so `owner` is
-  // never a role CE hands a pipeline — the allow-list entry is inert, and kept
-  // for parity with the delete gate. Asserted against the fn only: the mock has
-  // no way to produce a role CE does not issue.
-  { desc: 'the inert `owner` role in the allow-list', user: { id: 'x', role: 'owner' }, status: 200 },
 ]
 
 describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
@@ -210,12 +216,12 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
     handler = loadFnHandler()
   })
 
-  it.each(CASES)('gate.fn.js: $desc', ({ parent, steps, existing, body, user, status, error }) => {
+  it.each(FN_CASES)('gate.fn.js: $desc', ({ parent, steps, existing, body, user, status, error }) => {
     const row = parent ? parent(ROW) : ROW
     const rows = steps ? steps(ROWS) : ROWS
     const result = handler({
       steps: {
-        parent: row ? [toRecord(row)] : [],
+        run: row ? [toRecord(row)] : [],
         rows: rows.map(toRecord),
         existing: existing ? [toRecord(existing)] : [],
       },
@@ -227,7 +233,6 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
     expect(result.badRequest).toBe(status === 400)
     expect(result.notFound).toBe(status === 404)
     expect(result.conflict).toBe(status === 409)
-    expect(result.forbidden).toBe(status === 403)
     if (status !== 200) {
       expect(result.result).toEqual({ ok: false, error })
       expect(result.createRun).toBe(false)
@@ -255,6 +260,10 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
       expect(copy.status).toBe(source.status)
     }
 
+    // `startedBy`/`startedByEmail` are the CALLER'S — `caller.id || null` /
+    // `caller.email || null` (gate.fn.js) — never the parent's, and never
+    // omitted: an id-less caller (the case above) still gets an explicit
+    // `null`, not an absent key.
     expect(result.run).toMatchObject({
       runId: NEW_ID,
       impl: 'hello',
@@ -265,7 +274,8 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
       status: 'running',
       headless: false,
       unattended: false,
-      startedBy: user!.id,
+      startedBy: user?.id || null,
+      startedByEmail: user?.email || null,
       leaseOwner: TAB,
       forkedFrom: RUN_ID,
       forkJob: 'slow',
@@ -273,14 +283,82 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
     expect(result.run!.leaseUntil).toBe((result.run!.startedAt as number) + 60_000)
   })
 
+  /**
+   * The composed `/api/workflow/run/fork` endpoint: `mockGate` decides
+   * reachability first (spec 11 D26), same as the real rule's `runGate` step
+   * ahead of `gate.fn.js`; only then does `forkGate`'s own business get a
+   * look-in. The former 403 row (a non-owner) is 404 here — indistinguishable
+   * from an unknown id (D26) — and an admin now needs BOTH `projectRole`
+   * `owner`/`admin` AND to have asked (`x-workflow-scope: all`, D27): asking
+   * is never assumed, even from the role that could ask.
+   */
+  const MOCK_CASES: {
+    desc: string
+    parent?: (row: ServerRunRow) => ServerRunRow | null
+    steps?: (rows: ServerStepRow[]) => ServerStepRow[]
+    existing?: ServerRunRow
+    body?: Partial<typeof BODY>
+    user: MockUser
+    headers?: Record<string, string>
+    status: number
+    error?: string
+  }[] = [
+    { desc: 'an unknown run', parent: () => null, user: MOCK_MEMBER, status: 404, error: 'run not found' },
+    { desc: 'a member who did not start it', user: MOCK_OTHER, status: 404, error: 'run not found' },
+    {
+      desc: 'an id-less caller against a row with no startedBy',
+      parent: (row) => {
+        const { startedBy: _startedBy, ...rest } = row
+        void _startedBy
+        return rest
+      },
+      user: { ...MOCK_OTHER, id: '' },
+      status: 404,
+      error: 'run not found',
+    },
+    {
+      desc: 'a project admin who did not ask for all-scope',
+      user: MOCK_ADMIN,
+      status: 404,
+      error: 'run not found',
+    },
+    {
+      desc: 'a project admin who asked (x-workflow-scope: all)',
+      user: MOCK_ADMIN,
+      headers: { 'x-workflow-scope': 'all' },
+      status: 200,
+    },
+    { desc: 'the owner', user: MOCK_MEMBER, status: 200 },
+    {
+      desc: 'the owner: a job neither definition has',
+      body: { job: 'nope' },
+      user: MOCK_MEMBER,
+      status: 404,
+      error: 'job not found: nope',
+    },
+    {
+      desc: 'the owner: a run that is still running',
+      parent: (row) => ({ ...row, status: 'running' }),
+      user: MOCK_MEMBER,
+      status: 409,
+      error: 'cancel the run first',
+    },
+    {
+      desc: 'the owner: a retry, the row the first call made already wears the id',
+      existing: { ...ROW, _id: 'rec_99', runId: NEW_ID, forkedFrom: RUN_ID, forkJob: 'slow' },
+      user: MOCK_MEMBER,
+      status: 200,
+    },
+  ]
+
   describe('against the mock endpoint', () => {
     beforeEach(() => {
       seedFinishedRun()
     })
 
-    it.each(CASES.filter((c) => c.user?.role !== 'owner'))(
+    it.each(MOCK_CASES)(
       'mock /api/workflow/run/fork: $desc',
-      async ({ parent, steps, existing, body, user, status, error }) => {
+      async ({ parent, steps, existing, body, user, headers, status, error }) => {
         if (parent) {
           const row = parent(db.runs.get(RUN_ID)!)
           if (row) db.runs.set(RUN_ID, row)
@@ -292,15 +370,11 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
           for (const row of rows) db.steps.set(stepRowKey(RUN_ID, row.key), row)
         }
         if (existing) db.runs.set(NEW_ID, existing)
-        setMockUser(
-          user?.role === 'admin'
-            ? MOCK_ADMIN
-            : { ...MOCK_MEMBER, id: user?.id ?? '', role: user?.role ?? 'user' },
-        )
+        setMockUser(user)
 
         const res = await fetch('/api/workflow/run/fork', {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', ...headers },
           body: JSON.stringify({ ...BODY, ...body }),
         })
 
@@ -328,7 +402,8 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
             workflowVersion: '0.0.1',
             status: 'running',
             headless: false,
-            startedBy: user!.id,
+            startedBy: user.id,
+            startedByEmail: user.email,
             leaseOwner: TAB,
             forkedFrom: RUN_ID,
             forkJob: 'slow',

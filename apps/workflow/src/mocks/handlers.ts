@@ -204,12 +204,9 @@ const STEP_IDENTITY = ['job', 'index', 'step', 'kind']
 
 const LEASE_MS = 60_000
 
-/** The roles the delete gate treats as "may delete anyone's run" (05 access). */
-const ADMIN_ROLES = new Set(['admin', 'owner'])
-
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-/** One of the delete rule's three literal-status `response_handler` refusals. */
+/** One of a gated rule's literal-status `response_handler` refusals. */
 const refuse = (status: number, error: string) =>
   HttpResponse.json({ ok: false, error }, { status, headers: NO_STORE })
 
@@ -337,25 +334,18 @@ const runRecord = [
     return ok()
   }),
 
-  // Mirrors `run/delete/post/gate.fn.js` and its three refusal responders: 404
-  // unknown, 409 while running (cancel is the way out), 403 for a member who
-  // neither started the run nor is an admin. Only then the deletion itself,
-  // files first — the rule's step order, because a retry of a half-done delete
-  // must never leave a row pointing at bytes that are already gone.
+  // Gated (spec 11 D26): unknown and invisible both refuse the same 404
+  // `{ ok:false, error:'run not found' }` — ownership is `mockGate`'s answer,
+  // not this handler's, mirroring the real rule's `runGate` step ahead of
+  // `gate.fn.js`. Only then the rule's own business: 409 while running
+  // (cancel is the way out), then the deletion itself, files first, because a
+  // retry of a half-done delete must never leave a row pointing at bytes that
+  // are already gone.
   http.post('/api/workflow/run/delete', async ({ request }) => {
     const { id } = await body(request)
     const run = db.runs.get(String(id))
-    const user = mockUser()
-
-    if (!run) return refuse(404, 'run not found')
+    if (!run || !mockGate(run, request, mockUser()).ok) return refuse(404, 'run not found')
     if (run.status === 'running') return refuse(409, 'cancel the run first')
-    const admin = ADMIN_ROLES.has(String(user.role ?? '').toLowerCase())
-    // `undefined !== undefined` is `false` — an id-less user must never fall
-    // through that comparison just because a row with no `startedBy` is
-    // *also* id-less (gate.fn.js's `!caller.id ||` guard, mirrored here).
-    if (!admin && (!user.id || run.startedBy !== user.id)) {
-      return refuse(403, 'only the run owner or an admin can delete a run')
-    }
 
     // Both counts, swept independently: `files` by prefix (what `file_delete` does),
     // `records` by a real anchored `sub_dir LIKE '<prefix>%'` over `db.fileRecords`
@@ -367,18 +357,24 @@ const runRecord = [
     return HttpResponse.json({ ok: true, deleted: { files, records } }, { headers: NO_STORE })
   }),
 
-  // Mirrors `run/fork/post/gate.fn.js` (see `forkGate.ts`) and its four refusal
-  // responders, then the rule's two writes: the run row once (`create`, skipped
-  // when a previous call of the same `id` already made it), and the adopted rows
-  // insert-only (`copy`, a `data_upsert_many` deduped on `rowKey` = `<runId>/<key>`
-  // — which is exactly the identity this table is keyed by, so "already present"
-  // is the same test). A retry therefore leaves one run row and one copy of each
+  // Gated (spec 11 D26): the caller must be able to reach the PARENT run
+  // (`from`) — `mockGate` decides that before `forkGate` (see `forkGate.ts`)
+  // ever runs, mirroring the real rule's `runGate` step ahead of `gate.fn.js`.
+  // Then `forkGate`'s own refusal responders (400/404/409), then the rule's
+  // two writes: the run row once (`create`, skipped when a previous call of
+  // the same `id` already made it), and the adopted rows insert-only (`copy`,
+  // a `data_upsert_many` deduped on `rowKey` = `<runId>/<key>` — which is
+  // exactly the identity this table is keyed by, so "already present" is the
+  // same test). A retry therefore leaves one run row and one copy of each
   // adopted row, and reports `copied: 0` (apps#501).
   http.post('/api/workflow/run/fork', async ({ request }) => {
     const fields = await body(request)
     const from = String(fields.from ?? '')
+    const parent = db.runs.get(from)
+    if (!mockGate(parent, request, mockUser()).ok) return refuse(404, 'run not found')
+
     const gate = forkGate({
-      parent: db.runs.get(from) ?? null,
+      parent: parent ?? null,
       rows: stepsOf(from),
       existing: db.runs.get(String(fields.id ?? '')) ?? null,
       body: fields,
@@ -400,10 +396,13 @@ const runRecord = [
   }),
 
   // Mirrors `gate.fn.js`: granted when unheld, expired, already ours, or forced.
+  // Gated (spec 11 D26) first: an unknown run, or one this caller cannot
+  // reach, refuses 404 — the same shape as delete/fork — rather than lease's
+  // old 200 `{ ok:false, error:'run not found' }`.
   http.post('/api/workflow/run/lease', async ({ request }) => {
     const { id, owner, takeover } = await body(request)
     const run = db.runs.get(String(id))
-    if (!run) return HttpResponse.json({ ok: false, error: 'run not found' })
+    if (!run || !mockGate(run, request, mockUser()).ok) return refuse(404, 'run not found')
 
     const now = Date.now()
     const held = Boolean(run.leaseOwner) && typeof run.leaseUntil === 'number' && run.leaseUntil > now

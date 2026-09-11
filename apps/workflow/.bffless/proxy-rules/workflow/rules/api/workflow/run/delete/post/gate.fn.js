@@ -1,42 +1,26 @@
-function handler({ steps, request, user }) {
+function handler({ steps }) {
   // data_query answers a bare array (or one record with returnSingle) — CE's
   // data-query.handler.ts `output = returnSingle ? results[0] : results`; the envelope
   // forms are kept for older CE versions.
   const rows = (r) => (Array.isArray(r) ? r : (r && (r.records || r.data || r.rows)) || [])
   const row = rows(steps.run)[0] || null
 
-  // CE hands a function_handler `user` as { id, email, role, groups }, or `undefined`
-  // for a caller it could not resolve to a person (function.handler.ts). This must NEVER
-  // throw: a throw is a generic FUNCTION_ERROR, not a status we get to choose — so every
-  // refusal is a returned flag that one literal-status response_handler is gated on.
-  const caller = user || {}
-  const role = String(caller.role || '').toLowerCase()
-
   const refuse = (kind, error) => ({
     ok: false,
     notFound: kind === 'notFound',
     running: kind === 'running',
-    forbidden: kind === 'forbidden',
     recordId: null,
     prefix: '',
     prefixLike: '',
     result: { ok: false, error },
   })
 
+  // Defensive: this step only runs when `steps.runGate.ok` — the shared gate
+  // (spec 11 D26) has already found and admitted this row, ownership included
+  // — so `!row` below is a no-op in practice, not a path a caller can reach.
   if (!row) return refuse('notFound', 'run not found')
   // A live run still holds a lease and is still writing rows; cancelling is the way out.
   if (row.status === 'running') return refuse('running', 'cancel the run first')
-  // Owner or admin only (spec 05, Retention & deletion). `role` is CE's *global* role
-  // (users.dto.ts: admin | user | member); 'owner' is accepted for the project-role
-  // vocabulary. A row written before startedBy existed is admin-only, by construction.
-  const admin = role === 'admin' || role === 'owner'
-  // `undefined !== undefined` is `false` — an id-less caller (one
-  // `function_handler` could not resolve to a person) must never fall through
-  // that comparison just because a row written before `startedBy` existed is
-  // *also* missing one. `!caller.id` closes that: no id, no ownership match.
-  if (!admin && (!caller.id || row.startedBy !== caller.id)) {
-    return refuse('forbidden', 'only the run owner or an admin can delete a run')
-  }
 
   // The run's storage prefix (06/D18). Kickoff uploads live one level up, under
   // `inputs/`, so they are outside it — deletion must never reach them.
@@ -45,7 +29,6 @@ function handler({ steps, request, user }) {
     ok: true,
     notFound: false,
     running: false,
-    forbidden: false,
     recordId: row.id,
     prefix,
     // LIKE pattern for the workflow_files sweep, ANCHORED on purpose: the filter runs
@@ -58,7 +41,7 @@ function handler({ steps, request, user }) {
     // (uploads are scoped `runs/<id>/<stepKey>` or `runs/<id>/outputs` —
     // runnerMiddleware.ts), so `prefix + '%'` misses nothing at the run root.
     prefixLike: prefix + '%',
-    // No `result` on this path: only the three refusal responders render
+    // No `result` on this path: only the two refusal responders render
     // `{{{steps.gate.result}}}`, and each is gated on its own refusal flag, so a
     // success-path `result` was dead weight that read as if something served it.
   }

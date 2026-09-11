@@ -20,12 +20,10 @@
  */
 import { useState } from 'react'
 import { RunStoreError } from '../lib/runStore'
+import { isAllScopeRole } from '../mcp/runGate'
 import { deleteRun } from './lifecycleActions'
 import { useAppDispatch } from './hooks'
 import { useWhoamiQuery } from './workflowApi'
-
-/** The roles the delete rule lets past its owner check (05 access) — mirrored, never trusted. */
-const ADMIN_ROLES = ['admin', 'owner']
 
 /**
  * A refusal from the delete rule, in the words of the person who asked. The
@@ -72,7 +70,11 @@ export function useRunDelete({ runId, status, startedBy, onDeleted }: RunDeleteF
     status !== undefined &&
     status !== 'running' &&
     me !== undefined &&
-    (startedBy === me.id || ADMIN_ROLES.includes((me.role ?? '').toLowerCase()))
+    (startedBy === me.id ||
+      // `projectRole` lands on `Whoami` in B9 (spec 11 §Why `projectRole`); the
+      // cast reads ahead of the type, structurally, the way `mocks/runGate.ts`'s
+      // `GateUser` widens `MockUser` today.
+      isAllScopeRole((me as { projectRole?: string }).projectRole)) // B9: and the toggle
 
   async function remove(id: string) {
     setDeleting(true)
