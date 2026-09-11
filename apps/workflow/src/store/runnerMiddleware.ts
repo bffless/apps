@@ -1504,8 +1504,17 @@ export function createRunnerMiddleware(deps: RunnerDeps): ListenerMiddleware<Has
         // imperatively through `RunStore`, never through RTK Query itself, so
         // without this the Past-runs list (`workflowApi`'s own `Runs`-tagged
         // cache) never learns a new run exists until its `keepUnusedDataFor`
-        // window happens to lapse.
-        listenerApi.dispatch(workflowApi.util.invalidateTags(['Runs']))
+        // window happens to lapse. The specific `Run` goes with it (apps#669)
+        // for the same reason `run.finished` invalidates both: a driver hands
+        // the page a pre-minted id, `KickoffPage` reads `getRun(runId)` to
+        // reject a duplicate, and that miss is cached as `{ run: null }` under
+        // this very id — seconds before this line writes the row. Left alone
+        // it outlives the run (no `keepUnusedDataFor`, so RTK's 60 s default
+        // holds) and `RunShell` renders "No such run" the moment the run parks
+        // and it re-subscribes.
+        listenerApi.dispatch(
+          workflowApi.util.invalidateTags(['Runs', { type: 'Run', id: runState.runId }]),
+        )
       }
 
       // Bookkeeping cleanup — harmless even on a natural (non-abort) terminal.
