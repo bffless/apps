@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { USAGE, parseWalkArgs } from '../src/args.js'
 import { Report, exitCodeOf } from '../src/report.js'
 import { ALL_ORDER, WALKS } from '../src/walks/index.js'
-import { isNotAProjectMember, submitStepPastLease } from '../src/walks/ownership.js'
+import { isNotAProjectMember, submitStepPastLease, waitForRowWaiting } from '../src/walks/ownership.js'
 
 interface ToolAnswer { isError?: boolean; content?: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }
 const leaseRefusal: ToolAnswer = { isError: true, content: [{ type: 'text', text: 'A harness tab still drives this run' }], structuredContent: { errors: { lease: 'A harness tab still drives this run (lease until …) — close it or wait for the lease to lapse' } } }
@@ -82,6 +82,32 @@ describe('submitStepPastLease', () => {
     const answer = await submitStepPastLease(call, 'run_1', 'ask/0/answer', {}, 30, 10)
     expect(answer).toBe(leaseRefusal)
     expect(attempt).toBeGreaterThan(1)
+  })
+})
+
+describe('waitForRowWaiting', () => {
+  it('polls past queued rows (and rows nested under `fields`) to the server-confirmed waiting one', async () => {
+    let attempt = 0
+    const getRun = async () => {
+      attempt += 1
+      if (attempt < 3) return { steps: [{ key: 'ask/0/answer', status: 'queued' }] }
+      return { steps: [{ fields: { key: 'ask/0/answer', status: 'waiting' } }] }
+    }
+    const result = await waitForRowWaiting(getRun, 'ask/0/answer', 1_000, 1)
+    expect(result).toEqual({ waiting: true, lastStatus: 'waiting', snapshot: { key: 'ask/0/answer', status: 'waiting' } })
+    expect(attempt).toBe(3)
+  })
+
+  it('gives up at the timeout and reports the last status seen, never a throw', async () => {
+    const getRun = async () => ({ steps: [{ key: 'ask/0/answer', status: 'queued' }] })
+    const result = await waitForRowWaiting(getRun, 'ask/0/answer', 30, 10)
+    expect(result.waiting).toBe(false)
+    expect(result.lastStatus).toBe('queued')
+  })
+
+  it('reports no status when the run record carries no matching row (e.g. B cannot reach it, or the record is null)', async () => {
+    const result = await waitForRowWaiting(async () => null, 'ask/0/answer', 10, 5)
+    expect(result).toEqual({ waiting: false, lastStatus: '', snapshot: null })
   })
 })
 

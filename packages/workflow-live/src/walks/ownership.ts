@@ -44,7 +44,6 @@
 import { appToken, credentials, secondAppToken, secondCredentials } from '../env.js'
 import { openMcp } from '../mcp-client.js'
 import { openSession, sessionLogin, type Session } from '../session.js'
-import { waitStepState } from '../steps.js'
 import { pollStatus } from './driven.js'
 import { mintAppToken, WALK_SCOPES, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
@@ -59,6 +58,8 @@ const POLL_TIMEOUT_MS = 8 * 60_000
 /** Bounds for `submitStepPastLease` — the same 90s/5s the `mcp` walk's `spec10.leaseLapses` uses. */
 const LEASE_RETRY_TIMEOUT_MS = 90_000
 const LEASE_RETRY_INTERVAL_MS = 5_000
+/** Bound for `waitForRowWaiting` — the page auto-progresses several jobs (spec 07) before parking on the undeclared form. */
+const PARK_TIMEOUT_MS = 120_000
 
 interface Who { id?: string; email?: string; role?: string; projectRole?: string }
 interface ToolAnswer { isError?: boolean; content?: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }
@@ -123,6 +124,31 @@ const fieldsOf = (row: Record<string, unknown>): Record<string, unknown> => {
 /** `runs/get` answers a bare array (`shape.fn.js`); a JSON parse failure or an error body is `[]`, not a throw. */
 const rowsOf = (body: unknown): Record<string, unknown>[] => (Array.isArray(body) ? (body as Record<string, unknown>[]) : [])
 const runIdsOf = (body: unknown): unknown[] => rowsOf(body).map((r) => fieldsOf(r).runId)
+
+export interface RowWait { waiting: boolean; lastStatus: string; snapshot: Record<string, unknown> | null }
+
+/**
+ * Poll a run's server-side row for `step`, not the page's own client-side
+ * mirror (`window.__workflow.steps`) — that mirror can flip to "waiting"
+ * optimistically before the write that backs it has actually landed, and the
+ * caller closes the driving tab right after this resolves, which can abort
+ * that write in flight and leave the row stuck `queued` forever (the bug
+ * this replaced). Bounded, generalizing `park.ts`'s own row-poll to `driven`
+ * runs, whose page auto-progresses several jobs (spec 07) before parking on
+ * the undeclared form. Pure apart from `getRun` and the clock, so it is
+ * testable with a fake `getRun`.
+ */
+export async function waitForRowWaiting(getRun: () => Promise<{ steps?: Array<Record<string, unknown>> } | null>, step: string, timeoutMs: number, everyMs = 1_000): Promise<RowWait> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const record = await getRun()
+    const row = (record?.steps ?? []).map(fieldsOf).find((r) => r.key === step) ?? null
+    const lastStatus = String(row?.status ?? '')
+    if (lastStatus === 'waiting') return { waiting: true, lastStatus, snapshot: row }
+    if (Date.now() >= deadline) return { waiting: false, lastStatus, snapshot: row }
+    await new Promise((resolve) => setTimeout(resolve, everyMs))
+  }
+}
 
 async function whoAmI(s: Session): Promise<Who> {
   const res = await s.api.json('/api/workflow/whoami')
@@ -194,13 +220,25 @@ export const ownership: Walk = async ({ args, env, report }) => {
     // required by any check below — a run record and its file paths exist, and
     // are ownership-gated, the moment the run row is created.
     await report.guard(['ownership.aRunFinished'], async () => {
-      await waitStepState(a!.page, STEP, 'waiting', POLL_TIMEOUT_MS)
+      // A's page IS this run's driver (spec 07 §Driven runs): it auto-drives
+      // the earlier jobs and parks at `ask/0/answer`, the undeclared form.
+      // Wait for the *server* row to say `waiting`, not the page's own
+      // client-side mirror — closing the tab a moment after the mirror flips
+      // can abort the write that persists it, leaving the row `queued`
+      // forever with nothing left to drive it there.
+      const parked = await waitForRowWaiting(async () => {
+        const res = await a!.api.json(`/api/workflow/run?id=${encodeURIComponent(runIdA)}`)
+        return res.body as { steps?: Array<Record<string, unknown>> } | null
+      }, STEP, PARK_TIMEOUT_MS)
+      if (!parked.waiting) {
+        report.expect('ownership.aRunFinished', false, { reason: 'never reached waiting', lastStatus: parked.lastStatus, snapshot: parked.snapshot })
+        return
+      }
       const aToken = appToken(env) ?? (await mintFor(a!, args.harness, 'A', minted))
-      // A's own tab has been driving this run since kickoff and still holds
-      // its lease — close it (as `mcp.ts`'s park does) before submitting over
-      // MCP, or the submit is refused with "A harness tab still drives this
-      // run…". `submitStepPastLease` below absorbs the ~60s the lease can
-      // still take to lapse after the close.
+      // A's own tab still holds this run's lease — close it (as `mcp.ts`'s
+      // park does) before submitting over MCP, or the submit is refused with
+      // "A harness tab still drives this run…". `submitStepPastLease` below
+      // absorbs the ~60s the lease can still take to lapse after the close.
       await a!.close()
       const mcpA = await openMcp(args.harness, { token: aToken })
       try {
