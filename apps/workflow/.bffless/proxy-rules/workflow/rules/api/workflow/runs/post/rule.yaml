@@ -87,12 +87,22 @@ pipeline:
         status: 409
         body: '{"code":"RUN_EXISTS","error":"a run with this id already exists"}'
         contentType: application/json
+    # `driveKey` (spec 11 D28) rides `steps.create` — `admit` writes it onto
+    # the row so a redeemed drive claim's identity is recorded — but must
+    # never leave the harness in a response body (it travels only in
+    # `client_payload.drive_key` and the `x-workflow-drive-key` header).
+    - id: shape
+      name: shape
+      handler: function_handler
+      code: ./shape.fn.js
+      config:
+        condition: steps.admit.fresh
     - id: respond
       name: respond
       handler: response_handler
       config:
         condition: steps.admit.fresh
-        body: "{{{steps.create}}}"
+        body: "{{{steps.shape}}}"
         status: 200
         contentType: application/json
   validators:

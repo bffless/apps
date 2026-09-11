@@ -140,6 +140,16 @@ describe('workflow.status / outputs', () => {
     expect(text(result(callOf('workflow.status', { runId: 'nope' }), { run: [], steps: [] }))).toBe('No such run: nope')
   })
 
+  // The driver's nonce (spec 11 D28) must never leave the harness in a
+  // response body — it travels only in `client_payload.drive_key` and the
+  // `x-workflow-drive-key` request header. `admittedRun` still hands the real
+  // value to `driveGate` (unaffected by this test); `reply` must not.
+  it('never puts driveKey on the wire, even when the admitted row carries one', () => {
+    const r = result(callOf('workflow.status', { runId: RUN_ID }), { run: [runRow({ driveKey: 'nonce-abc' })], steps: stepRows() })
+    expect(JSON.stringify(r.structuredContent)).not.toContain('driveKey')
+    expect(JSON.stringify(r.structuredContent)).not.toContain('nonce-abc')
+  })
+
   it('answers outputs with the page’s sentence', () => {
     expect(text(result(callOf('workflow.outputs', { runId: RUN_ID }), { run: [runRow()], steps: stepRows() }))).toBe(`Run ${RUN_ID} is running and has no outputs yet`)
     const poster = { path: 'workflows/hello/runs/r/poster.png', name: 'poster.png', contentType: 'image/png', size: 1, url: '/api/uploads/workflows/hello/runs/r/poster.png' }

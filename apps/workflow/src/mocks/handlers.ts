@@ -24,6 +24,7 @@ import {
   stepRowKey,
   stepsOf,
   toRecord,
+  toRunRecord,
   waitingKeysOf,
 } from './db'
 import type { MockRunRow } from './db'
@@ -273,7 +274,9 @@ const runRecord = [
     db.runs.set(stored.runId, stored)
     // One dispatch, one run: the claim is spent once the row exists.
     if (claim) db.claims.delete(row.runId)
-    return HttpResponse.json(toRecord(stored))
+    // `toRunRecord`, not `toRecord`: a driven run's `stored` row carries the
+    // claim's `driveKey` (spec 11 D28), and the create response must not.
+    return HttpResponse.json(toRunRecord(stored))
   }),
 
   // `run/drive` (ADR-0006, spec 11 D28) — the mock stands in for the rule, not
@@ -373,7 +376,7 @@ const runRecord = [
     const records = [...db.runs.values()]
       .filter((row) => (impl === null || row.impl === impl) && (workflow === null || row.workflow === workflow))
       .filter((row) => asked || row.startedBy === mockUser().id)
-      .map((row) => ({ ...toRecord(row), waitingOn: waitingKeysOf(row.runId) }))
+      .map((row) => ({ ...toRunRecord(row), waitingOn: waitingKeysOf(row.runId) }))
     return HttpResponse.json({ records }, { headers: { 'Cache-Control': 'no-store' } })
   }),
 
@@ -388,7 +391,7 @@ const runRecord = [
       return HttpResponse.json({ run: null, steps: [] }, { headers: { 'Cache-Control': 'no-store' } })
     }
     return HttpResponse.json(
-      { run: run ? toRecord(run) : null, steps: stepsOf(id).map(toRecord) },
+      { run: run ? toRunRecord(run) : null, steps: stepsOf(id).map(toRecord) },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   }),

@@ -186,6 +186,19 @@ export function toRecord<T extends { _id?: string }>(row: T): Record<string, unk
   return { id: _id, ...fields }
 }
 
+/**
+ * A `workflow_runs` row as a Data Table record with `driveKey` stripped
+ * (spec 11 D28): the driver's nonce is legitimate on the stored row —
+ * `mockGate`'s `drive` door reads it, `run/drive` re-mints it — but must
+ * never leave the harness in a response body. Every mock endpoint that
+ * answers a run row uses this instead of the generic `toRecord`.
+ */
+export function toRunRecord(row: MockRunRow): Record<string, unknown> {
+  const { driveKey: _driveKey, ...record } = toRecord(row)
+  void _driveKey
+  return record
+}
+
 export function stepsOf(runId: string): ServerStepRow[] {
   return [...db.steps.values()].filter((row) => row.runId === runId)
 }

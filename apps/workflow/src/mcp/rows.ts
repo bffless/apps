@@ -26,6 +26,22 @@ export function fieldsOf(row: Row): Row {
 }
 
 /**
+ * `driveKey` (spec 11 D28) is the dispatched driver's nonce — a column
+ * `runGate`/`driveGate` read off the admitted run to authenticate the drive
+ * door and to reuse across a resume, but never something a response body may
+ * carry (it travels only in `client_payload.drive_key` and the
+ * `x-workflow-drive-key` request header). Applied wherever a run row's
+ * columns feed a `CallToolResult` — never at `runGate`/`admittedRun` itself,
+ * which `driveGate` still needs the real value from.
+ */
+export function withoutDriveKey(row: Row): Row {
+  if (!('driveKey' in row)) return row
+  const { driveKey: _driveKey, ...rest } = row
+  void _driveKey
+  return rest
+}
+
+/**
  * `data_update` answered a record (any envelope) — the write landed. Read by
  * `reply` (a verdict is only honest if its write did) and by `plan` (only a
  * landed write re-dispatches the run's driver, ADR-0006), so it lives with the
@@ -57,7 +73,7 @@ export function runsWithWaiting(runRows: unknown, waitingRows: unknown): Array<R
     waiting.set(f.runId, keys)
   }
   return rows(runRows).map((row) => {
-    const f = fieldsOf(row)
+    const f = withoutDriveKey(fieldsOf(row))
     const keys = [...(waiting.get(typeof f.runId === 'string' ? f.runId : '') ?? [])].sort()
     return { ...f, waitingOn: keys }
   })

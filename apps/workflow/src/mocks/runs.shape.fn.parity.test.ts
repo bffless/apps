@@ -14,7 +14,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { db, seedFinishedRun, seedWaitingRun, stepsOf, toRecord } from './db'
+import { db, seedFinishedRun, seedWaitingRun, stepsOf, toRecord, toRunRecord } from './db'
 import { WAITING_RUN_ID, WAITING_STEP_KEY } from './fixtures/waitingRun'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -115,7 +115,7 @@ describe('runs shape.fn.js', () => {
     seedFinishedRun()
     seedWaitingRun()
 
-    const mine = [...db.runs.values()].map(toRecord)
+    const mine = [...db.runs.values()].map(toRunRecord)
     const waiting = [...db.runs.keys()]
       .flatMap(stepsOf)
       .filter((row) => row.status === 'waiting')
@@ -127,5 +127,34 @@ describe('runs shape.fn.js', () => {
     // so `mine` already includes everything this endpoint seeds.
     const res = await fetch('/api/workflow/runs?impl=hello&workflow=hello')
     expect(((await res.json()) as { records: unknown[] }).records).toEqual(expected)
+  })
+
+  // The driver's nonce (spec 11 D28) must never leave the harness in a
+  // response body: it travels only in `client_payload.drive_key` and the
+  // `x-workflow-drive-key` request header. The fn side strips it whichever
+  // shape carries it; the mock endpoint must answer the same.
+  it('never puts driveKey on the wire, fn side or mock endpoint', () => {
+    expect(handler({ steps: { mine: [run('run_a', { driveKey: 'nonce-abc' })], waiting: [] } })).toEqual([
+      { id: 'rec_run_a', runId: 'run_a', status: 'running', waitingOn: [] },
+    ])
+    const nested = handler({
+      steps: {
+        mine: [{ id: 'rec_1', fields: { runId: 'run_a', status: 'running', driveKey: 'nonce-abc' } }],
+        waiting: [],
+      },
+    })
+    expect(nested).toEqual([{ id: 'rec_1', fields: { runId: 'run_a', status: 'running', waitingOn: [] } }])
+  })
+
+  it('never puts driveKey on the wire from the mock list endpoint', async () => {
+    seedWaitingRun()
+    db.runs.set(WAITING_RUN_ID, { ...db.runs.get(WAITING_RUN_ID)!, driveKey: 'nonce-abc' })
+
+    const res = await fetch('/api/workflow/runs?impl=hello&workflow=hello')
+    const text = await res.clone().text()
+    expect(text).not.toContain('driveKey')
+    expect(text).not.toContain('nonce-abc')
+    const record = ((await res.json()) as { records: Array<Record<string, unknown>> }).records.find((r) => r.runId === WAITING_RUN_ID)
+    expect(record).not.toHaveProperty('driveKey')
   })
 })

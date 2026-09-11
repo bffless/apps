@@ -26,7 +26,7 @@ import { RESOURCE_MIME, isHostTool } from './hostTools'
 import { runIdTime, workflowId } from './ids'
 import type { Plan } from './plan'
 import { NEED_IMPL_WORKFLOW, NEED_RUN_ID, NOT_CONFINED, REFUSALS } from './refusals'
-import { fieldsOf, rows, runsWithWaiting, stepUpdated, type Row } from './rows'
+import { fieldsOf, rows, runsWithWaiting, stepUpdated, withoutDriveKey, type Row } from './rows'
 import type { FnDeployment, FnRequest, Route } from './route'
 import { admittedRun, type RunGate } from './runGate'
 import { pipelineError, pipelineResult } from './toolResults'
@@ -233,7 +233,12 @@ function resolveRun(route: Route, steps: StepOutputs): { ok: true; run: Row; ste
   if (route.runId === '') return { ok: false, result: refuse('runId', NEED_RUN_ID) }
   const run = admittedRun(steps as unknown as Record<string, unknown>)
   if (!run) return { ok: false, result: noSuchRun(route.runId) }
-  return { ok: true, run, stepRows: rows(steps.steps).map(fieldsOf) }
+  // Stripped here, not at `admittedRun` itself: `driveGate` still reads the
+  // real `driveKey` off that same admitted row to authenticate the drive door
+  // and to reuse the nonce across a resume (D28). This is the one place the
+  // row starts feeding a `CallToolResult` (status/outputs/stepView/pipeline),
+  // so it is the one place the nonce must stop.
+  return { ok: true, run: withoutDriveKey(run), stepRows: rows(steps.steps).map(fieldsOf) }
 }
 
 export function snapshotOf(run: Row, stepRows: Row[]) {

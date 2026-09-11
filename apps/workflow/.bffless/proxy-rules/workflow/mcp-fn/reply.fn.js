@@ -6893,6 +6893,12 @@ ${end.comment}` : end.comment;
     const fields = row.fields;
     return isPlainObject3(fields) && Object.keys(fields).length > 0 ? fields : row;
   }
+  function withoutDriveKey(row) {
+    if (!("driveKey" in row)) return row;
+    const { driveKey: _driveKey, ...rest } = row;
+    void _driveKey;
+    return rest;
+  }
   function stepUpdated(update) {
     if (update === void 0 || update === null) return false;
     if (isPlainObject3(update) && update.success === false) return false;
@@ -6908,7 +6914,7 @@ ${end.comment}` : end.comment;
       waiting.set(f.runId, keys);
     }
     return rows(runRows).map((row) => {
-      const f = fieldsOf(row);
+      const f = withoutDriveKey(fieldsOf(row));
       const keys = [...waiting.get(typeof f.runId === "string" ? f.runId : "") ?? []].sort();
       return { ...f, waitingOn: keys };
     });
@@ -7056,7 +7062,7 @@ ${end.comment}` : end.comment;
     if (route.runId === "") return { ok: false, result: refuse("runId", NEED_RUN_ID) };
     const run = admittedRun(steps);
     if (!run) return { ok: false, result: noSuchRun(route.runId) };
-    return { ok: true, run, stepRows: rows(steps.steps).map(fieldsOf) };
+    return { ok: true, run: withoutDriveKey(run), stepRows: rows(steps.steps).map(fieldsOf) };
   }
   function snapshotOf(run, stepRows) {
     return snapshotFromRows(run, stepRows);
