@@ -4,6 +4,13 @@
 // "<owner>/<repo>/uploads/" and rejects `..`/`//`. `prepare` always returns a full key
 // (it mints one), so that case just round-trips; a bare pipeline-output path needs the
 // project prefix added here before register_upload ever sees it.
+//
+// Also (spec 11 D29) locates the run the normalised path names, the same grammar
+// `files/sign`'s and the serve rule's `confine.fn.js` apply: a `workflows/<impl>/<workflow>/
+// runs/<runId>/…` key names a run; `inputs/` and any other confined key carry none and stay
+// member-wide (D18).
+var RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
+
 function handler({ request, deployment }) {
   var body = (request && request.body) || {}
   var owner = (deployment && deployment.owner) || ''
@@ -19,10 +26,17 @@ function handler({ request, deployment }) {
 
   var ok = !!rel && rel.indexOf('workflows/') === 0 && rel.indexOf('..') === -1 && rel.indexOf('//') === -1
 
+  var runMatch = ok ? /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/.exec(rel) : null
+  var runId = runMatch && RUN_ID_PATTERN.test(runMatch[1]) ? runMatch[1] : ''
+  var hasRun = runId !== ''
+
   return {
     ok: ok,
     notOk: !ok,
     storageKey: ok ? prefix + rel : '',
     error: ok ? '' : 'storageKey must be an uploads-relative path under workflows/ with no traversal',
+    hasRun: hasRun,
+    runId: runId,
+    runless: ok && !hasRun,
   }
 }

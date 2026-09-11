@@ -15,6 +15,7 @@ import {
   MOCK_UPLOADS_ROOT,
   db,
   filesUnder,
+  nextId,
   seedFinishedRun,
   seedObject,
   setMockUser,
@@ -456,6 +457,9 @@ describe('the files quartet', () => {
   })
 
   it('signs a confined path with an absolute url an opaque-origin frame can load', async () => {
+    // Gated (spec 11 D29): the path names a run, so it must exist and be
+    // reachable — seeded here, owned by the mock's default member.
+    db.runs.set('run_1', { ...FINISHED_RUN.run, runId: 'run_1', _id: nextId() })
     const res = await json('/api/workflow/files/sign', {
       path: 'workflows/hello/interactive/runs/run_1/poster.svg',
     })

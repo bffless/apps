@@ -668,7 +668,13 @@ describe('script steps — resume (Decision 13)', () => {
   it('relaunches a running script exactly once and lets it finish', async () => {
     const { store, advance, host } = scriptStore()
     const def = scriptDef()
-    const runId = 'run_resumed_script'
+    // No `_` past the `run_` head: the script's Blob output goes through the
+    // real files trio (this file's own banner), whose `files/prepare`
+    // confine.fn.js only recognises a `runs/<runId>/…` scope when the id fits
+    // `RUN_ID_PATTERN` (spec 11 D29) — a real `newRunId()` always does, so an
+    // id with an embedded `_` (the style this file's OTHER fixture ids use)
+    // would read as neither a run scope nor `inputs/` and 400 the upload.
+    const runId = 'run_resumedscript'
     const { run, steps } = runningRows(runId)
     // A resume always presupposes the row exists server-side (that's what is
     // being resumed); `runReplaced` itself never reads `db.runs`, but the

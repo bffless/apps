@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 19
 pipeline:
   name: Sign workflow file
-  description: "POST { path } -> { url, expiresIn }: a presigned GET for an object under the harness prefix (workflows/…), so a sandboxed island (opaque origin, no cookie) can play media (plan Decision 6). Bucket storage (GCS/S3) presigns an absolute URL and needs nothing. Local-FS storage presigns too (an HMAC /api/storage/presigned/local URL), but that URL is RELATIVE unless PUBLIC_ORIGIN is set — and a relative src cannot resolve inside an opaque-origin srcdoc frame, so a local-storage install must set PUBLIC_ORIGIN. Range on the presigned URL is the storage backend's."
+  description: "POST { path } -> { url, expiresIn }: a presigned GET for an object under the harness prefix (workflows/…), so a sandboxed island (opaque origin, no cookie) can play media (plan Decision 6). Bucket storage (GCS/S3) presigns an absolute URL and needs nothing. Local-FS storage presigns too (an HMAC /api/storage/presigned/local URL), but that URL is RELATIVE unless PUBLIC_ORIGIN is set — and a relative src cannot resolve inside an opaque-origin srcdoc frame, so a local-storage install must set PUBLIC_ORIGIN. Range on the presigned URL is the storage backend's. Gated by the shared run gate (spec 11 D29): a runs/<runId>/ path is only signable by that run's owner/driver/all-scope; inputs/ and any other confined path carry no runId and stay member-wide (D18)."
   steps:
     - id: confine
       name: confine
@@ -16,18 +16,48 @@ pipeline:
         body: '{"error":"path must be an uploads-relative key under workflows/ with no traversal"}'
         status: 400
         contentType: application/json
+    - id: run
+      name: run
+      handler: data_query
+      config:
+        condition: steps.confine.hasRun
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: steps.confine.runId }
+    # `runGate` is conditioned on `steps.confine.ok`, NOT `steps.confine.hasRun`: a bad
+    # path already answered 400 via `refuse` above. Running the gate anyway would answer
+    # `notFound` off the (skipped) `run` query, and the LATER-running `refuse-404` would
+    # then overwrite that 400 with a 404 — pipeline-execution.service.ts leaves the
+    # response to whichever conditioned responder ran last. Skipping the gate entirely
+    # when `refuse` already fired leaves the 400 as the only response that ran.
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/runGate.fn.js
+      config:
+        condition: steps.confine.ok
+    - id: refuse-404
+      name: refuse-404
+      handler: response_handler
+      config:
+        condition: steps.runGate.notFound
+        body: "{{{steps.runGate.result}}}"
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
     - id: sign
       name: sign
       handler: signed_url
       config:
-        condition: steps.confine.ok
+        condition: steps.runGate.ok
         path: steps.confine.storagePath
         expiresIn: 3600
     - id: respond
       name: respond
       handler: response_handler
       config:
-        condition: steps.confine.ok
+        condition: steps.runGate.ok
         body: '{"url":"{{{steps.sign.url}}}","expiresIn":3600}'
         status: 200
         headers: { Cache-Control: no-store }
@@ -35,4 +65,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:files] }
-description: "Files quartet 4/4: sign a run/inputs object for a sandboxed island's <video>/<audio>/<img>."
+description: "Files quartet 4/4: sign a run/inputs object for a sandboxed island's <video>/<audio>/<img>. Gated by the shared run gate (spec 11 D29)."

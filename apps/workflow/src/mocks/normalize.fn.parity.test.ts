@@ -19,12 +19,21 @@
  * answers the same File ref, and writes the same `workflow_files` row — the
  * key the serve route and the delete sweep look up. One case table drives
  * both sides.
+ *
+ * Also pins the run locator `normalize.fn.js` grew for spec 11 (D29): `hasRun`/
+ * `runId`/`runless` off the normalised uploads-relative path, alongside the
+ * original `ok`/`notOk`/`storageKey`/`error`. Every `ok:true` case here
+ * normalises to `REL`, which names `run_1` — seeded once (`beforeEach`) so the
+ * gate the endpoint now runs finds it, owned by the mock's default member. A
+ * separate `describe` block below drives the endpoint through the gate itself
+ * (owner/other member/no such run/`inputs/`).
  */
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { db, MOCK_UPLOADS_ROOT } from './db'
+import { MOCK_MEMBER, MOCK_OTHER, db, MOCK_UPLOADS_ROOT, nextId, setMockUser } from './db'
+import { FINISHED_RUN } from './fixtures/finishedRun'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const FN_PATH = join(
@@ -41,7 +50,15 @@ const FN_PATH = join(
   'normalize.fn.js',
 )
 
-type NormalizeResult = { ok: boolean; notOk: boolean; storageKey: string; error: string }
+type NormalizeResult = {
+  ok: boolean
+  notOk: boolean
+  storageKey: string
+  error: string
+  hasRun: boolean
+  runId: string
+  runless: boolean
+}
 type NormalizeHandler = (ctx: {
   request: { body: Record<string, unknown> }
   deployment: { owner: string; repo: string }
@@ -62,38 +79,75 @@ function loadFnHandler(): NormalizeHandler {
 const DEPLOYMENT = { owner: 'bffless', repo: 'workflow' }
 const FULL_PREFIX = `${DEPLOYMENT.owner}/${DEPLOYMENT.repo}/uploads/`
 
-const REL = 'workflows/hello/hello/runs/run_1/slow/0/start/audio.wav'
+const RUN_ID = 'run_1'
+const REL = `workflows/hello/hello/runs/${RUN_ID}/slow/0/start/audio.wav`
 const REFUSAL = 'storageKey must be an uploads-relative path under workflows/ with no traversal'
 
 /**
  * `ok: true` cases carry the uploads-relative key `normalize.fn.js` normalises
  * *to* — the fn asserts `storageKey === <full prefix> + normalized`, the mock
  * asserts it is the `db.files` / `db.fileRecords` key the request landed on.
- * `ok: false` cases are the rule's `refuse` branch.
+ * `ok: false` cases are the rule's `refuse` branch. Every `ok:true` row here
+ * normalises to `REL`, so `hasRun`/`runId`/`runless` (spec 11 D29) are the
+ * same for all five; `ok:false` rows are neither — `notOk` short-circuits
+ * before the gate runs, and `runless` is `ok` minus `hasRun`.
  */
-const CASES: { desc: string; storageKey: unknown; ok: boolean; normalized?: string }[] = [
-  { desc: 'a bare uploads-relative path (a pipeline output)', storageKey: REL, ok: true, normalized: REL },
-  { desc: 'an api/uploads/ prefix is stripped', storageKey: `api/uploads/${REL}`, ok: true, normalized: REL },
+const CASES: {
+  desc: string
+  storageKey: unknown
+  ok: boolean
+  normalized?: string
+  hasRun: boolean
+  runId: string
+  runless: boolean
+}[] = [
+  { desc: 'a bare uploads-relative path (a pipeline output)', storageKey: REL, ok: true, normalized: REL, hasRun: true, runId: RUN_ID, runless: false },
+  { desc: 'an api/uploads/ prefix is stripped', storageKey: `api/uploads/${REL}`, ok: true, normalized: REL, hasRun: true, runId: RUN_ID, runless: false },
   {
     desc: 'a leading slash and the /api/uploads/ prefix are both stripped',
     storageKey: `/api/uploads/${REL}`,
     ok: true,
     normalized: REL,
+    hasRun: true,
+    runId: RUN_ID,
+    runless: false,
   },
-  { desc: 'a leading slash is stripped', storageKey: `/${REL}`, ok: true, normalized: REL },
+  { desc: 'a leading slash is stripped', storageKey: `/${REL}`, ok: true, normalized: REL, hasRun: true, runId: RUN_ID, runless: false },
   {
     desc: 'the full key prepare minted round-trips',
     storageKey: `${FULL_PREFIX}${REL}`,
     ok: true,
     normalized: REL,
+    hasRun: true,
+    runId: RUN_ID,
+    runless: false,
   },
-  { desc: 'outside the harness prefix', storageKey: 'uploads/other/x.svg', ok: false },
-  { desc: 'a bare other/ path', storageKey: 'other/x', ok: false },
-  { desc: 'directory traversal', storageKey: 'workflows/../secrets/x', ok: false },
-  { desc: 'a double slash', storageKey: 'workflows//x', ok: false },
-  { desc: 'an empty storageKey', storageKey: '', ok: false },
-  { desc: 'a non-string storageKey', storageKey: undefined, ok: false },
+  {
+    // Same directory as `REL`'s run but no `runs/<id>/` segment: `inputs/` is
+    // runless at the fn level (D18) without needing a different filename, which
+    // keeps the shared `'audio.wav'`/sub_dir assertions below meaningful for
+    // this row too. The endpoint-level "no run needed at all" case (an actual
+    // `inputs/` scope, any member) lives in the ownership `describe` below.
+    desc: 'no runs/ segment is runless (D29) even under the same tree',
+    storageKey: 'workflows/hello/hello/runs/not-a-run-id/slow/0/start/audio.wav',
+    ok: true,
+    normalized: 'workflows/hello/hello/runs/not-a-run-id/slow/0/start/audio.wav',
+    hasRun: false,
+    runId: '',
+    runless: true,
+  },
+  { desc: 'outside the harness prefix', storageKey: 'uploads/other/x.svg', ok: false, hasRun: false, runId: '', runless: false },
+  { desc: 'a bare other/ path', storageKey: 'other/x', ok: false, hasRun: false, runId: '', runless: false },
+  { desc: 'directory traversal', storageKey: 'workflows/../secrets/x', ok: false, hasRun: false, runId: '', runless: false },
+  { desc: 'a double slash', storageKey: 'workflows//x', ok: false, hasRun: false, runId: '', runless: false },
+  { desc: 'an empty storageKey', storageKey: '', ok: false, hasRun: false, runId: '', runless: false },
+  { desc: 'a non-string storageKey', storageKey: undefined, ok: false, hasRun: false, runId: '', runless: false },
 ]
+
+/** `REL`'s run — owned by `MOCK_MEMBER`, the mock's default identity. */
+function seedCaseRun(): void {
+  db.runs.set(RUN_ID, { ...FINISHED_RUN.run, runId: RUN_ID, _id: nextId() })
+}
 
 const json = (path: string, body: unknown) =>
   fetch(path, {
@@ -109,12 +163,19 @@ describe('normalize.fn.js parity with the mock re-implementation', () => {
     handler = loadFnHandler()
   })
 
-  it.each(CASES)('normalize.fn.js: $desc', ({ storageKey, ok, normalized }) => {
+  beforeEach(() => {
+    seedCaseRun()
+  })
+
+  it.each(CASES)('normalize.fn.js: $desc', ({ storageKey, ok, normalized, hasRun, runId, runless }) => {
     const result = handler({ request: { body: { storageKey } }, deployment: DEPLOYMENT })
     expect(result.ok).toBe(ok)
     expect(result.notOk).toBe(!ok)
     expect(result.storageKey).toBe(ok ? `${FULL_PREFIX}${normalized}` : '')
     expect(result.error).toBe(ok ? '' : REFUSAL)
+    expect(result.hasRun).toBe(hasRun)
+    expect(result.runId).toBe(runId)
+    expect(result.runless).toBe(runless)
   })
 
   it.each(CASES)('mock /api/workflow/files/register: $desc', async ({ storageKey, ok, normalized }) => {
@@ -158,7 +219,10 @@ describe('normalize.fn.js parity with the mock re-implementation', () => {
     expect(db.fileRecords.get(key)).toMatchObject({
       filename: 'audio.wav',
       storage_path: `${MOCK_UPLOADS_ROOT}${key}`,
-      sub_dir: 'workflows/hello/hello/runs/run_1/slow/0/start',
+      // The row's `sub_dir` is derived from the KEY (`registerFileRecord`), not
+      // the request's `scope` — every case here shares the `audio.wav` leaf, so
+      // this is just the key with that leaf trimmed off.
+      sub_dir: key.slice(0, key.lastIndexOf('/')),
       size: 3,
       url: `/api/uploads/${key}`,
     })
@@ -187,5 +251,58 @@ describe('normalize.fn.js parity with the mock re-implementation', () => {
     expect(viaBare).toEqual(viaPrepared)
     expect(db.fileRecords.size).toBe(1)
     expect(db.fileRecords.get(REL)).toEqual(rowViaPrepared)
+  })
+})
+
+/**
+ * The shared run gate (spec 11 D29), wired into `files/register` through
+ * `normalize.fn.js`'s `hasRun`/`runId`. Mirrors `runGate.endpoints.test.ts`'s
+ * arrangement (Task B4): a fixture run owned by `MOCK_MEMBER`, `MOCK_OTHER` as
+ * a member who did not start it.
+ */
+describe('files/register: run ownership (spec 11 D29)', () => {
+  const RUN_ID = 'run_owned00000000000000000000'
+  const GHOST_ID = 'run_ghost0000000000000000000'
+
+  beforeEach(() => {
+    db.runs.set(RUN_ID, { ...FINISHED_RUN.run, runId: RUN_ID, _id: nextId() })
+  })
+
+  it('registers an object under the owner’s own run', async () => {
+    setMockUser(MOCK_MEMBER)
+    const key = `workflows/hello/hello/runs/${RUN_ID}/slow/0/start/clip.mp4`
+    await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
+
+    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'clip.mp4' })
+    expect(res.status).toBe(200)
+  })
+
+  it('refuses an object under another member’s run — 404, not 403 (D26)', async () => {
+    setMockUser(MOCK_OTHER)
+    const key = `workflows/hello/hello/runs/${RUN_ID}/slow/0/start/clip.mp4`
+    await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
+
+    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'clip.mp4' })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
+  })
+
+  it('registers an inputs/ object for any member — no runId, stays member-wide (D18)', async () => {
+    setMockUser(MOCK_OTHER)
+    const key = 'workflows/hello/hello/inputs/u1/cat.png'
+    await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
+
+    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'cat.png' })
+    expect(res.status).toBe(200)
+  })
+
+  it('refuses a runs/<id>/ object whose run does not exist — 404', async () => {
+    setMockUser(MOCK_MEMBER)
+    const key = `workflows/hello/hello/runs/${GHOST_ID}/x.png`
+    await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
+
+    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'x.png' })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
   })
 })

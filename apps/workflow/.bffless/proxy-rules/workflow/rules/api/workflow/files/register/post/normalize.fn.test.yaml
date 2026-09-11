@@ -1,5 +1,9 @@
 handler: ./normalize.fn.js
 cases:
+  # Every `ok:true` case below carries `run-1` (a hyphen, not `run_1`), so none
+  # of them names a run under `RUN_ID_PATTERN` (spec 11 D29 — `run_` is a
+  # literal, not a separator) and all three are `runless` — they still exercise
+  # the normalisation this fixture is pinning either way.
   - name: passes through a full key already minted by prepare
     data:
       request:
@@ -12,6 +16,9 @@ cases:
         notOk: false
         storageKey: acme/site/uploads/workflows/workflow-studio/studio/runs/run-1/inputs/a.mp4
         error: ""
+        hasRun: false
+        runId: ""
+        runless: true
   - name: prefixes a bare uploads-relative path a pipeline step returned
     data:
       request:
@@ -24,6 +31,9 @@ cases:
         notOk: false
         storageKey: acme/site/uploads/workflows/workflow-studio/studio/runs/run-1/per-video/0/audio/audio.wav
         error: ""
+        hasRun: false
+        runId: ""
+        runless: true
   - name: normalises a leading /api/uploads/ prefix
     data:
       request:
@@ -36,6 +46,24 @@ cases:
         notOk: false
         storageKey: acme/site/uploads/workflows/workflow-studio/studio/runs/run-1/inputs/a.mp4
         error: ""
+        hasRun: false
+        runId: ""
+        runless: true
+  - name: recognises a runId matching RUN_ID_PATTERN
+    data:
+      request:
+        body:
+          storageKey: workflows/workflow-studio/studio/runs/run_01M17/per-video/0/audio/audio.wav
+      deployment: { owner: acme, repo: site }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        storageKey: acme/site/uploads/workflows/workflow-studio/studio/runs/run_01M17/per-video/0/audio/audio.wav
+        error: ""
+        hasRun: true
+        runId: run_01M17
+        runless: false
   - name: refuses a path outside the harness's workflows/ prefix
     data:
       request:
@@ -48,6 +76,9 @@ cases:
         notOk: true
         storageKey: ""
         error: storageKey must be an uploads-relative path under workflows/ with no traversal
+        hasRun: false
+        runId: ""
+        runless: false
   - name: refuses path traversal
     data:
       request:
@@ -60,6 +91,9 @@ cases:
         notOk: true
         storageKey: ""
         error: storageKey must be an uploads-relative path under workflows/ with no traversal
+        hasRun: false
+        runId: ""
+        runless: false
   - name: refuses an empty storageKey
     data:
       request:
@@ -72,3 +106,6 @@ cases:
         notOk: true
         storageKey: ""
         error: storageKey must be an uploads-relative path under workflows/ with no traversal
+        hasRun: false
+        runId: ""
+        runless: false

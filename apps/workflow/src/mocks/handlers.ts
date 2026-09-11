@@ -429,9 +429,68 @@ function storageKey(fields: Record<string, unknown>): string {
     .join('/')
 }
 
+/**
+ * `run_...` — the shape a runId takes wherever the harness mints one (`nextId`'s `run`
+ * prefix). Mirrors the real rules' `confine.fn.js`/`normalize.fn.js` locators (spec 11 D29).
+ */
+const RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
+
+/**
+ * The runId in a `workflows/<impl>/<workflow>/runs/<runId>/…` path, or `''` for anything else
+ * (`inputs/…` included) — the same grammar the real rules' `confine.fn.js`/`normalize.fn.js`
+ * parse off the equivalent normalised path. `''` is this mock's spelling of "runless": D18's
+ * per-workflow `inputs/` area carries no runId and stays member-wide.
+ */
+function runIdIn(path: string): string {
+  const match = /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/.exec(path)
+  return match && RUN_ID_PATTERN.test(match[1]) ? match[1] : ''
+}
+
+/** The same locator over `prepare`'s `scope` (no `workflows/<impl>/<workflow>/` head to strip). */
+function runIdInScope(scope: string): string {
+  const match = /^runs\/([^/]+)\/.+/.exec(scope)
+  return match && RUN_ID_PATTERN.test(match[1]) ? match[1] : ''
+}
+
+/**
+ * Mirrors `confine.fn.js` (spec 11 D29): the normalisation `files/sign`'s and the serve
+ * rule's `confine.fn.js` both apply, plus the run locator. `ok` is the "under workflows/,
+ * no traversal" check; `runless` is `ok` minus `hasRun` — nothing under `workflows/` is
+ * ever both.
+ */
+function confinePath(raw: string): { ok: boolean; path: string; hasRun: boolean; runId: string; runless: boolean } {
+  const path = raw.replace(/^\/+/, '').replace(/^api\/uploads\//, '').split('?')[0]
+  const ok = path.startsWith('workflows/') && !path.includes('..') && !path.includes('//')
+  const runId = ok ? runIdIn(path) : ''
+  const hasRun = runId !== ''
+  return { ok, path, hasRun, runId, runless: ok && !hasRun }
+}
+
+/** `steps.runGate.ok` for a parsed runId: `''` (runless) always passes; a real id must reach `mockGate`. */
+function fileGateOk(runId: string, request: Request): boolean {
+  if (runId === '') return true
+  return mockGate(db.runs.get(runId), request, mockUser()).ok
+}
+
 const files = [
+  // Gated (spec 11 D29): `scope` must be `inputs`/`inputs/…` (D18, member-wide) or
+  // `runs/<runId>/<step>` — anything else is the rule's `confine.fn.js` 400. A
+  // `runs/<runId>/…` scope then needs THIS caller to reach that run, the same 404
+  // `mockGate` answers everywhere else (never a stray presigned URL into a run this
+  // caller cannot see).
   http.post('/api/workflow/files/prepare', async ({ request }) => {
-    const key = storageKey(await body(request))
+    const fields = await body(request)
+    const scope = typeof fields.scope === 'string' ? fields.scope.replace(/^\/+|\/+$/g, '') : ''
+    const clean = scope !== '' && !scope.includes('..') && !scope.includes('//')
+    const isInputs = clean && (scope === 'inputs' || scope.startsWith('inputs/'))
+    const runId = clean ? runIdInScope(scope) : ''
+
+    if (!isInputs && runId === '') {
+      return HttpResponse.json({ error: 'scope must be inputs or runs/<runId>/<step>' }, { status: 400 })
+    }
+    if (!fileGateOk(runId, request)) return refuse(404, 'run not found')
+
+    const key = storageKey(fields)
     return HttpResponse.json({ uploadUrl: `${MOCK_UPLOAD_PREFIX}${key}`, storageKey: key })
   }),
 
@@ -456,6 +515,11 @@ const files = [
   // serve route and the delete sweep look up — or a bare-path register writes a row
   // nobody can find (apps#472). Anything not under `workflows/`, or carrying `..` or
   // `//`, is the rule's `refuse` step: 400 with the `BAD_PATH` envelope.
+  //
+  // Gated (spec 11 D29) next: a key under a run's `runs/<runId>/` prefix needs THIS
+  // caller to reach that run — the SAME 404 `{ok:false,error:'run not found'}` every
+  // other gated route answers (`steps.runGate.result`), a different envelope than the
+  // 400 above (that one is the rule's own `normalize.fn.js` refusal, not the gate's).
   http.post('/api/workflow/files/register', async ({ request }) => {
     const fields = await body(request)
     const raw = (typeof fields.storageKey === 'string' ? fields.storageKey : '')
@@ -475,6 +539,7 @@ const files = [
         { status: 400 },
       )
     }
+    if (!fileGateOk(runIdIn(key), request)) return refuse(404, 'run not found')
 
     const stored = db.files.get(key)
     const originalName = typeof fields.originalName === 'string' ? fields.originalName : undefined
@@ -498,27 +563,41 @@ const files = [
   // answers a bucket URL — a serve URL with a marker query. **Absolute**, and
   // that matters: the island that reads it lives in an opaque-origin `srcdoc`
   // frame, which has no base URL to resolve a relative one against.
+  //
+  // Gated (spec 11 D29) next: a `runs/<runId>/` path needs THIS caller to reach
+  // that run; `inputs/` and any other confined path carry no runId and stay
+  // member-wide (D18), so `fileGateOk` passes them without a lookup.
   http.post('/api/workflow/files/sign', async ({ request }) => {
-    const path = String((await body(request)).path ?? '')
-      .replace(/^\/+/, '')
-      .replace(/^api\/uploads\//, '')
-      .split('?')[0]
+    const confine = confinePath(String((await body(request)).path ?? ''))
 
-    if (!path.startsWith('workflows/') || path.includes('..') || path.includes('//')) {
+    if (!confine.ok) {
       return HttpResponse.json(
         { error: 'path must be an uploads-relative key under workflows/ with no traversal' },
         { status: 400 },
       )
     }
+    if (!fileGateOk(confine.runId, request)) return refuse(404, 'run not found')
 
-    const url = new URL(`/api/uploads/${path}?signed=mock`, request.url).href
+    const url = new URL(`/api/uploads/${confine.path}?signed=mock`, request.url).href
     return HttpResponse.json({ url, expiresIn: 3600 })
   }),
 
   // The serve rule is CE's file_serve_handler at /api/uploads/<subDir>/…, so the
   // route is the uploads-relative storage path itself (see `fileUrl`).
-  http.get('/api/uploads/*', ({ params }) => {
-    const stored = db.files.get(decodeURIComponent(String(params['0'] ?? '')))
+  //
+  // Gated (spec 11 D29): mirrors the serve rule's own `confine.fn.js` + `runGate` —
+  // there is no 400 here (see that rule's comment), so a path that fails to parse
+  // AND a `runs/<runId>/` path this caller cannot reach answer the SAME 404 JSON
+  // body `{"error":"not found"}` the rule's `refuse-404` responder does; only past
+  // the gate does a missing object fall through to the plain (bodyless) 404 that
+  // stood in for CE's own file_serve_handler not-found before this task.
+  http.get('/api/uploads/*', ({ request, params }) => {
+    const confine = confinePath(decodeURIComponent(String(params['0'] ?? '')))
+    if (!confine.ok || !fileGateOk(confine.runId, request)) {
+      return HttpResponse.json({ error: 'not found' }, { status: 404 })
+    }
+
+    const stored = db.files.get(confine.path)
     if (!stored) return new HttpResponse(null, { status: 404 })
     return new HttpResponse(stored.bytes, { headers: { 'content-type': stored.contentType } })
   }),

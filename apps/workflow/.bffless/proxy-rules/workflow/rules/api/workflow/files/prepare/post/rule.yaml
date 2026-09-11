@@ -2,12 +2,52 @@ targetUrl: pipeline
 order: 20
 pipeline:
   name: Prepare workflow file upload
-  description: "Mint a presigned PUT under workflows/<impl>/<workflow>/<scope>/ (D7/D18). Per-input accept/maxSize are enforced client-side in M1; the static 5 GB cap is the server backstop (the Studio port's recordings input allows up to 5GB, and the bucket PUT is direct so this only bounds the register-side sanity check)."
+  description: "Mint a presigned PUT under workflows/<impl>/<workflow>/<scope>/ (D7/D18). Per-input accept/maxSize are enforced client-side in M1; the static 5 GB cap is the server backstop (the Studio port's recordings input allows up to 5GB, and the bucket PUT is direct so this only bounds the register-side sanity check). Gated by the shared run gate (spec 11 D29): a scope under runs/<runId>/ may only be prepared by that run's owner/driver/all-scope; inputs (D18's per-workflow reused area) stays member-wide."
   steps:
+    - id: confine
+      name: confine
+      handler: function_handler
+      code: ./confine.fn.js
+    - id: refuse
+      name: refuse
+      handler: response_handler
+      config:
+        condition: steps.confine.notOk
+        body: '{"error":"scope must be inputs or runs/<runId>/<step>"}'
+        status: 400
+        contentType: application/json
+    - id: run
+      name: run
+      handler: data_query
+      config:
+        condition: steps.confine.hasRun
+        schemaId: $schema:workflow_runs
+        limit: 1
+        filters:
+          runId: { op: eq, value: steps.confine.runId }
+    # See `files/sign/post/rule.yaml`'s comment on the same step: the condition is
+    # `steps.confine.ok`, not `hasRun`, so a bad scope's 400 (`refuse`, above) is never
+    # followed by the gate's own 404.
+    - id: runGate
+      name: runGate
+      handler: function_handler
+      code: ../../../../../../mcp-fn/runGate.fn.js
+      config:
+        condition: steps.confine.ok
+    - id: refuse-404
+      name: refuse-404
+      handler: response_handler
+      config:
+        condition: steps.runGate.notFound
+        body: "{{{steps.runGate.result}}}"
+        status: 404
+        headers: { Cache-Control: no-store }
+        contentType: application/json
     - id: prepare
       name: prepare
       handler: presigned_upload
       config:
+        condition: steps.runGate.ok
         subDir: workflows/{{request.body.impl}}/{{request.body.workflow}}/{{request.body.scope}}
         filename: request.body.filename
         expiresIn: 3600
@@ -16,10 +56,11 @@ pipeline:
       name: respond
       handler: response_handler
       config:
+        condition: steps.runGate.ok
         body: "{{{steps.prepare}}}"
         status: 200
         contentType: application/json
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:files] }
-description: "Files trio 1/3: presigned PUT for kickoff/form uploads and registered pipeline outputs."
+description: "Files trio 1/3: presigned PUT for kickoff/form uploads and registered pipeline outputs. Gated by the shared run gate (spec 11 D29)."
