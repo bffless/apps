@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.11.0](https://github.com/bffless/apps/compare/workflow-v1.10.0...workflow-v1.11.0) (2026-09-11)
+
+
+### Features
+
+* **workflow:** user-owned runs — ownership enforced on reads, asked-for all-scope, drive claims, files follow the run (D26–D29) ([#665](https://github.com/bffless/apps/issues/665)) ([628ec3a](https://github.com/bffless/apps/commit/628ec3ac2dff1b60f3cafbdb9d0a87d8cc1aadaa))
+
+
+### Bug Fixes
+
+* **workflow:** run records never carry driveKey on the wire — run/get, runs/get, runs/post, fork and the MCP results omit the nonce ([#668](https://github.com/bffless/apps/issues/668)) ([c216f11](https://github.com/bffless/apps/commit/c216f113baeb68dab7a063a7d86679d669cc0007))
+
 ## [1.10.0](https://github.com/bffless/apps/compare/workflow-v1.9.1...workflow-v1.10.0) (2026-09-11)
 
 
