@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { describe, test, expect } from 'vitest'
 import { runCli, type CliIo } from '../src/cli.js'
 import { EXIT } from '../src/errors.js'
-import { fakeBrowser, helloRoutes, type FakeOptions } from './fakes.js'
+import { fakeBrowser, fakeRoute, helloRoutes, type FakeOptions } from './fakes.js'
 
 const inputsFile = (() => {
   const path = join(mkdtempSync(join(tmpdir(), 'wfh-cli-')), 'inputs.json')
@@ -250,5 +250,73 @@ describe('the login the environment selects', () => {
     expect(await runCli(['runs', 'https://harness.test', 'hello/demo'], h.io)).toBe(EXIT.OK)
     expect(h.page.posts).toEqual([])
     expect(h.page.gotos.some((u) => u.includes('/login?redirect='))).toBe(true)
+  })
+})
+
+/**
+ * `--drive-key`/`WORKFLOW_DRIVE_KEY` → a `page.route` installed on the run
+ * page, from `run` and `resume` alike. The fake's `evaluate`-based fetch is
+ * not wired through `page.route` (that is Playwright's own network layer),
+ * so what is pinned here is that the route gets installed and carries the
+ * right key — the matcher/handler behaviour itself is `run.test.ts`'s and
+ * `resume.test.ts`'s job.
+ */
+describe('the drive key the environment selects', () => {
+  test('run: --drive-key installs the route', async () => {
+    const h = withBrowser(ended('succeeded'))
+    expect(await runCli(argv('--drive-key', 'dk_abc123'), h.io)).toBe(EXIT.OK)
+    expect(h.page.routes).toHaveLength(1)
+  })
+
+  test('run: WORKFLOW_DRIVE_KEY is used when --drive-key is absent', async () => {
+    const h = withBrowser(ended('succeeded'))
+    h.io.env = { WORKFLOW_DRIVE_KEY: 'dk_env' } as NodeJS.ProcessEnv
+    expect(await runCli(argv(), h.io)).toBe(EXIT.OK)
+    expect(h.page.routes).toHaveLength(1)
+  })
+
+  test('run: --drive-key wins over WORKFLOW_DRIVE_KEY', async () => {
+    const h = withBrowser(ended('succeeded'))
+    h.io.env = { WORKFLOW_DRIVE_KEY: 'dk_env' } as NodeJS.ProcessEnv
+    expect(await runCli(argv('--drive-key', 'dk_flag'), h.io)).toBe(EXIT.OK)
+    const { route, calls } = fakeRoute()
+    await h.page.routes[0]!.handler(route)
+    expect(calls[0]?.headers).toMatchObject({ 'x-workflow-drive-key': 'dk_flag' })
+  })
+
+  test('run: with neither, no route is installed', async () => {
+    const h = withBrowser(ended('succeeded'))
+    expect(await runCli(argv(), h.io)).toBe(EXIT.OK)
+    expect(h.page.routes).toEqual([])
+  })
+
+  test('resume: WORKFLOW_DRIVE_KEY is used when --drive-key is absent', async () => {
+    const runId = 'run_01M1BREJZK5V77ZRPXKTG7ZG7C'
+    const h = withBrowser({ globals: [{ runId, status: 'succeeded' }], routes: helloRoutes('succeeded', runId) })
+    h.io.env = { WORKFLOW_DRIVE_KEY: 'dk_env' } as NodeJS.ProcessEnv
+    expect(await runCli(['resume', 'https://harness.test', runId, '--mocks'], h.io)).toBe(EXIT.OK)
+    expect(h.page.routes).toHaveLength(1)
+  })
+})
+
+describe('runs --all', () => {
+  test('appends &scope=all to the list read', async () => {
+    const h = withBrowser({
+      globals: [],
+      routes: {
+        '/api/workflow/runs?impl=hello&workflow=demo&scope=all': { status: 200, text: '{"runs":[]}' },
+      },
+    })
+    expect(await runCli(['runs', 'https://harness.test', 'hello/demo', '--all', '--mocks'], h.io)).toBe(EXIT.OK)
+    expect(h.page.fetched).toContain('/api/workflow/runs?impl=hello&workflow=demo&scope=all')
+  })
+
+  test('without --all, no scope is sent', async () => {
+    const h = withBrowser({
+      globals: [],
+      routes: { '/api/workflow/runs?impl=hello&workflow=demo': { status: 200, text: '{"runs":[]}' } },
+    })
+    expect(await runCli(['runs', 'https://harness.test', 'hello/demo', '--mocks'], h.io)).toBe(EXIT.OK)
+    expect(h.page.fetched).toContain('/api/workflow/runs?impl=hello&workflow=demo')
   })
 })

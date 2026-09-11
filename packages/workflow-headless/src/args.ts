@@ -42,12 +42,19 @@ Options (run):
   --grace <5m>      --wait park only: how long to keep watching a parked run
                     for its answer, re-reading the record every 10s (default
                     5m; 0 ends the job at the park)
+  --drive-key <key> the per-run nonce (run/drive, spec 11 D28), sent as
+                    x-workflow-drive-key on every request the driven page
+                    makes. Wins over WORKFLOW_DRIVE_KEY (default: none)
   --mocks           drive the dev harness's MSW mock backend (adds &mocks=on)
                     and skip the login
   --headed          show the browser, for debugging
 
 Options (runs):
   --last <n>        how many past runs to list (default 10)
+  --all             every run of the workflow, not just yours (adds
+                    &scope=all). Needs a harness with run ownership
+                    (spec 11); an older harness ignores the flag and
+                    already lists everyone's runs
   --mocks           list the mock harness's runs, and skip the login
 
 Options (resume):
@@ -57,6 +64,9 @@ Options (resume):
                     ms/s/m/h suffixes, a bare number is seconds)
   --grace <5m>      how long to keep watching if the resumed run parks again
                     at another step that needs a person (default 5m)
+  --drive-key <key> the per-run nonce (run/drive, spec 11 D28), sent as
+                    x-workflow-drive-key on every request the driven page
+                    makes. Wins over WORKFLOW_DRIVE_KEY (default: none)
   --mocks           drive the dev harness's MSW mock backend (adds &mocks=on)
                     and skip the login
   --headed          show the browser, for debugging
@@ -80,6 +90,9 @@ Environment (one of the first two is required unless --mocks):
                                        /api/workflow/* only — never to a write,
                                        because a CE API key is role \`user\`
                                        whoever owns it
+  WORKFLOW_DRIVE_KEY                   optional fallback for --drive-key, set
+                                       by workflow-drive.yml from
+                                       client_payload.drive_key
 
 Exit codes:
   0    the run succeeded, or parked (--wait park: the run waits on a person;
@@ -114,6 +127,8 @@ export interface RunCommand {
   runId?: string
   /** `--wait park` only: how long a parked run is watched for its answer before the job ends. */
   graceMs: number
+  /** `WORKFLOW_DRIVE_KEY`, or `--drive-key` itself: see `driveKeyFromEnv`. */
+  driveKey?: string
   mocks: boolean
   headed: boolean
 }
@@ -124,6 +139,12 @@ export interface RunsCommand {
   impl: string
   workflow: string
   last: number
+  /**
+   * `--all`: every run of the workflow, not just yours (`listRuns`'s `scope=all`).
+   * Needs a harness with run ownership (spec 11); an older harness ignores the
+   * flag and already lists everyone's runs.
+   */
+  all?: boolean
   mocks: boolean
 }
 
@@ -136,6 +157,8 @@ export interface ResumeCommand {
   timeoutMs: number
   /** How long the run is watched for its answer if it parks again on this driver's watch. */
   graceMs: number
+  /** `WORKFLOW_DRIVE_KEY`, or `--drive-key` itself: see `driveKeyFromEnv`. */
+  driveKey?: string
   mocks: boolean
   headed: boolean
 }
@@ -203,6 +226,7 @@ export function parseArgs(argv: string[]): Command {
     let out: string | undefined
     let timeoutMs = 60 * 60_000
     let graceMs = 5 * 60_000
+    let driveKey: string | undefined
     let mocks = false
     let headed = false
 
@@ -217,6 +241,9 @@ export function parseArgs(argv: string[]): Command {
       } else if (flag === '--grace') {
         graceMs = parseDuration(value(argv, i, '--grace'))
         i += 1
+      } else if (flag === '--drive-key') {
+        driveKey = value(argv, i, '--drive-key')
+        i += 1
       } else if (flag === '--mocks') mocks = true
       else if (flag === '--headed') headed = true
       else throw new UsageError(`unknown option: ${flag}`)
@@ -229,6 +256,7 @@ export function parseArgs(argv: string[]): Command {
       ...(out === undefined ? {} : { out }),
       timeoutMs,
       graceMs,
+      ...(driveKey === undefined ? {} : { driveKey }),
       mocks,
       headed,
     }
@@ -239,6 +267,7 @@ export function parseArgs(argv: string[]): Command {
 
   if (verb === 'runs') {
     let last = 10
+    let all = false
     let listMocks = false
     for (let i = 3; i < argv.length; i += 1) {
       const flag = argv[i]!
@@ -247,10 +276,11 @@ export function parseArgs(argv: string[]): Command {
         if (!Number.isInteger(n) || n <= 0) throw new UsageError('--last: expected a positive integer')
         last = n
         i += 1
-      } else if (flag === '--mocks') listMocks = true
+      } else if (flag === '--all') all = true
+      else if (flag === '--mocks') listMocks = true
       else throw new UsageError(`unknown option: ${flag}`)
     }
-    return { command: 'runs', harnessUrl, impl, workflow, last, mocks: listMocks }
+    return { command: 'runs', harnessUrl, impl, workflow, last, all, mocks: listMocks }
   }
 
   let inputsFile: string | undefined
@@ -259,6 +289,7 @@ export function parseArgs(argv: string[]): Command {
   let wait: 'fail' | 'park' = 'fail'
   let runId: string | undefined
   let graceMs = 5 * 60_000
+  let driveKey: string | undefined
   let mocks = false
   let headed = false
 
@@ -283,6 +314,9 @@ export function parseArgs(argv: string[]): Command {
       if (!RUN_ID_PATTERN.test(id)) throw new UsageError(`--run-id: not a run id (run_…): ${id}`)
       runId = id
       i += 1
+    } else if (flag === '--drive-key') {
+      driveKey = value(argv, i, '--drive-key')
+      i += 1
     } else if (flag === '--grace') {
       graceMs = parseDuration(value(argv, i, '--grace'))
       i += 1
@@ -306,6 +340,7 @@ export function parseArgs(argv: string[]): Command {
     wait,
     ...(runId === undefined ? {} : { runId }),
     graceMs,
+    ...(driveKey === undefined ? {} : { driveKey }),
     mocks,
     headed,
   }
@@ -365,4 +400,15 @@ export function credentialsFromEnv(env: NodeJS.ProcessEnv): LoginFromEnv {
     ...(appToken ? { appToken } : {}),
     ...(credentials ? { credentials } : {}),
   }
+}
+
+/**
+ * `WORKFLOW_DRIVE_KEY`: the per-run nonce `run/drive` mints and hands to the
+ * driven job as `client_payload.drive_key` (spec 11, D28). Unlike
+ * `credentialsFromEnv` this is never a usage error — unset means no key, no
+ * route installed, and the driver behaves exactly as it did before this task
+ * (see `driveKey.ts`).
+ */
+export function driveKeyFromEnv(env: NodeJS.ProcessEnv): string | undefined {
+  return env.WORKFLOW_DRIVE_KEY || undefined
 }

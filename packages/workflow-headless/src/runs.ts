@@ -66,8 +66,9 @@ export async function listRuns(
   impl: string,
   workflow: string,
   last: number,
+  all = false,
 ): Promise<RunRow[]> {
-  const query = `impl=${encodeURIComponent(impl)}&workflow=${encodeURIComponent(workflow)}`
+  const query = `impl=${encodeURIComponent(impl)}&workflow=${encodeURIComponent(workflow)}${all ? '&scope=all' : ''}`
   const res = await api.json(`/api/workflow/runs?${query}`)
   if (res.status !== 200) {
     // A driver-side failure, not a failed run — hence the explicit code rather

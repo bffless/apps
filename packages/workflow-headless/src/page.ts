@@ -33,6 +33,16 @@ export interface RequestLike {
   post(url: string, options?: { headers?: Record<string, string> }): Promise<ResponseLike>
 }
 
+/**
+ * The slice of Playwright's intercepted `Route` that `driveKey.ts` needs —
+ * enough to read the request's own headers and continue it with an added
+ * one. Playwright's real `Route` satisfies this structurally.
+ */
+export interface RouteLike {
+  request(): { headers(): Record<string, string> }
+  continue(overrides?: { headers?: Record<string, string> }): Promise<void>
+}
+
 export interface PageLike {
   /** The context's request client; `loginViaAppToken` is its only caller. */
   request: RequestLike
@@ -49,6 +59,14 @@ export interface PageLike {
   screenshot(options: { path: string; fullPage?: boolean }): Promise<unknown>
   on(event: 'console', handler: (message: ConsoleMessageLike) => void): void
   on(event: 'pageerror', handler: (error: Error) => void): void
+  /**
+   * Intercepts every request whose URL the matcher accepts, so the handler
+   * can rewrite its headers before it goes out. `driveKey.ts`'s only caller —
+   * an in-page seam (unlike `RequestLike`, which is the context's client),
+   * because it has to catch the harness SPA's own `fetch`/`XHR` calls, not
+   * just this driver's.
+   */
+  route(matcher: (url: URL) => boolean, handler: (route: RouteLike) => Promise<void>): Promise<unknown>
   close(): Promise<void>
 }
 

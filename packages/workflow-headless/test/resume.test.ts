@@ -11,9 +11,11 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test, expect } from 'vitest'
+import { DRIVE_KEY_HEADER } from '../src/driveKey.js'
 import { EXIT } from '../src/errors.js'
+import type { RouteLike } from '../src/page.js'
 import { resumeRun } from '../src/resume.js'
-import { fakeBrowser, type Route } from './fakes.js'
+import { fakeBrowser, fakeRoute, type Route } from './fakes.js'
 
 const RUN_ID = 'run_1'
 const RECORD = `/api/workflow/run?id=${RUN_ID}`
@@ -174,5 +176,84 @@ describe('resumeRun — which login', () => {
     expect(page.posts).toEqual([])
     // The fake never lands on the relay's form, so the visit to it is the proof the relay path ran.
     expect(page.gotos.some((u) => u.includes('/login?redirect='))).toBe(true)
+  })
+})
+
+describe('resumeRun — driveKey', () => {
+  test('with a driveKey, installs one route whose matcher accepts the harness API paths and rejects everything else', async () => {
+    const { browser, page } = fakeBrowser({
+      routes: { [RECORD]: record('succeeded', { outputs: {} }) },
+      globals: [undefined],
+    })
+    await resumeRun(options({ driveKey: 'dk_abc123' }), { browser, log: () => {}, warn: () => {}, sleep: async () => {} })
+
+    expect(page.routes).toHaveLength(1)
+    const { matcher } = page.routes[0]!
+    expect(matcher(new URL('https://harness.test/api/workflow/runs'))).toBe(true)
+    expect(matcher(new URL('https://harness.test/api/uploads/x'))).toBe(true)
+    expect(matcher(new URL('https://bucket.example/o'))).toBe(false)
+    expect(matcher(new URL('https://harness.test/w/hello/x'))).toBe(false)
+    // The bucket is never matched because no presigned URL's path begins `/api/` —
+    // the harness mints keys under `workflows/<impl>/<workflow>/<scope>/`, so a
+    // virtual-host GCS URL is `/workflows/…`, not because of the origin.
+    expect(matcher(new URL('https://storage.googleapis.com/b/workflows/hello/demo/inputs/x.png'))).toBe(false)
+  })
+
+  test('the handler adds x-workflow-drive-key and preserves the request’s existing headers', async () => {
+    const { browser, page } = fakeBrowser({
+      routes: { [RECORD]: record('succeeded', { outputs: {} }) },
+      globals: [undefined],
+    })
+    await resumeRun(options({ driveKey: 'dk_abc123' }), { browser, log: () => {}, warn: () => {}, sleep: async () => {} })
+
+    const { handler } = page.routes[0]!
+    const { route, calls } = fakeRoute({ 'content-type': 'application/json' })
+    await handler(route)
+    expect(calls).toEqual([
+      { headers: { 'content-type': 'application/json', [DRIVE_KEY_HEADER]: 'dk_abc123' } },
+    ])
+  })
+
+  test('a handler whose route.continue rejects (page/browser gone) does not throw', async () => {
+    const { browser, page } = fakeBrowser({
+      routes: { [RECORD]: record('succeeded', { outputs: {} }) },
+      globals: [undefined],
+    })
+    await resumeRun(options({ driveKey: 'dk_abc123' }), { browser, log: () => {}, warn: () => {}, sleep: async () => {} })
+
+    const { handler } = page.routes[0]!
+    const route: RouteLike = {
+      request: () => ({ headers: () => ({}) }),
+      continue: async () => {
+        throw new Error('Target page, context or browser has been closed')
+      },
+    }
+    await expect(handler(route)).resolves.toBeUndefined()
+  })
+
+  test('without a driveKey, no route is installed', async () => {
+    const { browser, page } = fakeBrowser({
+      routes: { [RECORD]: record('succeeded', { outputs: {} }) },
+      globals: [undefined],
+    })
+    await resumeRun(options(), { browser, log: () => {}, warn: () => {}, sleep: async () => {} })
+    expect(page.routes).toEqual([])
+  })
+
+  test('the route is installed before the first goto', async () => {
+    // Ordering, not just presence: a refactor that moved `installDriveKey`
+    // below the navigation would leave the resumed page's own first calls
+    // unkeyed, and every other test here would pass.
+    const { browser, page } = fakeBrowser({
+      routes: { [RECORD]: record('succeeded', { outputs: {} }) },
+      globals: [undefined],
+    })
+    await resumeRun(options({ driveKey: 'dk_abc123' }), { browser, log: () => {}, warn: () => {}, sleep: async () => {} })
+
+    expect(page.gotos.length).toBeGreaterThan(0)
+    expect(page.calls[0]).toEqual({ kind: 'route' })
+    expect(page.calls.findIndex((c) => c.kind === 'route')).toBeLessThan(
+      page.calls.findIndex((c) => c.kind === 'goto'),
+    )
   })
 })

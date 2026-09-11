@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { pageApi } from './api.js'
 import {
   credentialsFromEnv,
+  driveKeyFromEnv,
   loadInputs,
   parseArgs,
   UsageError,
@@ -103,6 +104,7 @@ const apiTokens = (io: CliIo) => ({
 async function doRun(command: RunCommand, io: CliIo, state: Interrupt): Promise<ExitCode> {
   const inputs = loadInputs(command.inputsFile)
   const login = loginFor(command, io)
+  const driveKey = command.driveKey ?? driveKeyFromEnv(io.env)
   const browser = await (io.launch ?? launchBrowser)({ headed: command.headed })
 
   let sigint = false
@@ -125,6 +127,7 @@ async function doRun(command: RunCommand, io: CliIo, state: Interrupt): Promise<
         wait: command.wait,
         ...(command.runId === undefined ? {} : { runId: command.runId }),
         graceMs: command.graceMs,
+        ...(driveKey === undefined ? {} : { driveKey }),
         mocks: command.mocks,
         ...apiTokens(io),
         ...(login.credentials ? { credentials: login.credentials } : {}),
@@ -166,6 +169,7 @@ async function doRun(command: RunCommand, io: CliIo, state: Interrupt): Promise<
  */
 async function doResume(command: ResumeCommand, io: CliIo, state: Interrupt): Promise<ExitCode> {
   const login = loginFor(command, io)
+  const driveKey = command.driveKey ?? driveKeyFromEnv(io.env)
   const browser = await (io.launch ?? launchBrowser)({ headed: command.headed })
   io.onSigint?.(() => closeAndExit(browser, io, 'SIGINT — closing the browser', state))
 
@@ -177,6 +181,7 @@ async function doResume(command: ResumeCommand, io: CliIo, state: Interrupt): Pr
         ...(command.out === undefined ? {} : { out: command.out }),
         timeoutMs: command.timeoutMs,
         graceMs: command.graceMs,
+        ...(driveKey === undefined ? {} : { driveKey }),
         mocks: command.mocks,
         ...apiTokens(io),
         ...(login.credentials ? { credentials: login.credentials } : {}),
@@ -213,7 +218,7 @@ async function doRuns(command: RunsCommand, io: CliIo, state: Interrupt): Promis
     })
 
     const api = pageApi(page, { base, ...apiTokens(io) })
-    io.out(formatRunsTable(await listRuns(api, command.impl, command.workflow, command.last)))
+    io.out(formatRunsTable(await listRuns(api, command.impl, command.workflow, command.last, command.all)))
     return EXIT.OK
   } finally {
     await browser.close().catch(() => {})

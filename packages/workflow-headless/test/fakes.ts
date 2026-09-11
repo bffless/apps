@@ -10,7 +10,7 @@
  */
 import { writeFileSync } from 'node:fs'
 import type { Snapshot } from '../src/observe.js'
-import type { BrowserLike, ConsoleMessageLike, PageLike } from '../src/page.js'
+import type { BrowserLike, ConsoleMessageLike, PageLike, RouteLike } from '../src/page.js'
 
 /** One canned answer to an in-page `fetch`, keyed by `pathname + search`. */
 export interface Route {
@@ -51,6 +51,14 @@ export interface FakePage extends PageLike {
   /** What went through the context's request client (the app-token exchange). */
   posts: Array<{ url: string; headers: Record<string, string> | undefined }>
   globalReads: number
+  /** Every `page.route(...)` install, in order — `driveKey.ts`'s only caller. */
+  routes: Array<{ matcher: (url: URL) => boolean; handler: (route: RouteLike) => Promise<void> }>
+  /**
+   * `goto` and `route` interleaved, in call order. Pins the ordering the two
+   * lists on their own can't: the drive-key route has to be installed BEFORE
+   * the first navigation, or the SPA's own first calls go out unkeyed.
+   */
+  calls: Array<{ kind: 'goto' | 'route'; url?: string }>
 }
 
 /** Discovery for `hello/demo`, plus the run record `run.json` is written from. */
@@ -78,6 +86,22 @@ export function helloRoutes(status: string, runId = 'run_1'): Record<string, Rou
   }
 }
 
+/**
+ * A synthetic Playwright `route` callback, for calling an installed
+ * `driveKey.ts` handler directly. Shared by `cli.test.ts`, `run.test.ts` and
+ * `resume.test.ts`, which otherwise each carried an identical copy.
+ */
+export function fakeRoute(headers: Record<string, string> = {}) {
+  const calls: Array<{ headers?: Record<string, string> } | undefined> = []
+  const route: RouteLike = {
+    request: () => ({ headers: () => headers }),
+    continue: async (overrides) => {
+      calls.push(overrides)
+    },
+  }
+  return { route, calls }
+}
+
 export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakePage } {
   const consoleHandlers: Array<(message: ConsoleMessageLike) => void> = []
   let emitted = false
@@ -90,6 +114,8 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
     requests: [] as FakePage['requests'],
     posts: [] as FakePage['posts'],
     globalReads: 0,
+    routes: [] as FakePage['routes'],
+    calls: [] as FakePage['calls'],
 
     request: {
       async post(url: string, options?: { headers?: Record<string, string> }) {
@@ -101,6 +127,7 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
 
     async goto(url: string) {
       page.gotos.push(url)
+      page.calls.push({ kind: 'goto', url })
       if (!emitted) {
         emitted = true
         for (const line of o.consoleLines ?? []) {
@@ -161,6 +188,10 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
     },
     on(event: string, handler: (value: never) => void) {
       if (event === 'console') consoleHandlers.push(handler as (m: ConsoleMessageLike) => void)
+    },
+    async route(matcher: (url: URL) => boolean, handler: (route: RouteLike) => Promise<void>) {
+      page.routes.push({ matcher, handler })
+      page.calls.push({ kind: 'route' })
     },
     async close() {},
   } as unknown as FakePage
