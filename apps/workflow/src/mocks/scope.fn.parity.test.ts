@@ -118,6 +118,30 @@ const CASES: {
     isAll: false,
     forbidden: true,
   },
+  // Fix round 1: header NAMES compared case-sensitively missed a mixed-case
+  // ask — CE lowercases what Express hands it, but a rule reached in-process
+  // by a sibling may not have (`src/mcp/runGate.ts`'s `header()`).
+  {
+    desc: 'a mixed-case X-Workflow-Scope header as a project owner',
+    request: { headers: { 'X-Workflow-Scope': 'all' } },
+    fnUser: { ...MOCK_ADMIN, projectRole: 'owner' },
+    mockUser: { ...MOCK_ADMIN, projectRole: 'owner' },
+    isMine: false,
+    isAll: true,
+    forbidden: false,
+  },
+  // Fix round 1: a repeated `?scope=all&scope=x` arrives as `string[]` and
+  // must never silently fall through to `mine` — take the first value, the
+  // same rule the header follows.
+  {
+    desc: 'a repeated ?scope=all&scope=x as a contributor',
+    request: { query: { scope: ['all', 'x'] } },
+    fnUser: { ...MOCK_MEMBER, projectRole: 'contributor' },
+    mockUser: { ...MOCK_MEMBER, projectRole: 'contributor' },
+    isMine: false,
+    isAll: false,
+    forbidden: true,
+  },
 ]
 
 describe('runs/get scope.fn.js parity with the mock re-implementation', () => {
@@ -160,12 +184,21 @@ describe('runs/get scope.fn.js parity with the mock re-implementation', () => {
       async ({ request, mockUser: user, isMine, isAll, forbidden }) => {
         setMockUser(user)
 
+        // Forward `scope` as however many times the case names it — a
+        // repeated param and a single one are both exercised this way — and
+        // every header verbatim (case included): MSW's `Headers.get` is
+        // already case-insensitive, so a mixed-case name only proves
+        // something if it is sent mixed-case.
         const params = new URLSearchParams({ impl: 'hello', workflow: 'hello' })
         const scope = request.query?.scope
-        if (typeof scope === 'string') params.set('scope', scope)
-        const headerScope = request.headers?.['x-workflow-scope']
+        for (const s of Array.isArray(scope) ? scope : scope !== undefined ? [scope] : []) {
+          params.append('scope', String(s))
+        }
         const headers: Record<string, string> = {}
-        if (typeof headerScope === 'string') headers['x-workflow-scope'] = headerScope
+        for (const [key, value] of Object.entries(request.headers ?? {})) {
+          const first = Array.isArray(value) ? value[0] : value
+          if (typeof first === 'string') headers[key] = first
+        }
 
         const res = await fetch(`/api/workflow/runs?${params}`, { headers })
 
