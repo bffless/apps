@@ -1,9 +1,10 @@
 /**
- * The refusal wording (apps#382). `RunShell.test.tsx` drives the hook end to
- * end — offered, refused with a 403, refused with a 409 — through the page it
- * belongs to; what it never reaches is the 404 branch, because a run that is
- * already gone is not one the page can still be showing a Delete button for.
- * The three statuses mean three different things and only one of them is "try
+ * The refusal wording (apps#382). `RunShell.summary.test.tsx` drives the hook
+ * end to end — offered, refused with a 404 (D26), refused with a 409 —
+ * through the page it belongs to. The rule has no 403 responder any more
+ * (spec 11 D26: a caller who cannot reach the run gets the same 404 an
+ * unknown one does, so "gone" is the honest word for both) — the two
+ * remaining statuses mean two different things and only one of them is "try
  * again", so each is pinned here.
  */
 import { describe, expect, it } from 'vitest'
@@ -11,10 +12,6 @@ import { RunStoreError } from '../lib/runStore'
 import { deleteMessage } from './useRunDelete'
 
 describe('deleteMessage', () => {
-  it('names the gate for a 403', () => {
-    expect(deleteMessage(new RunStoreError('nope', 403))).toMatch(/owner or an admin/)
-  })
-
   it('says what to do first for a 409', () => {
     expect(deleteMessage(new RunStoreError('still running', 409))).toMatch(/cancel the run first/i)
   })

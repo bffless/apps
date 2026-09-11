@@ -151,6 +151,18 @@ const MOCK_CASES: {
     status: 409,
     error: 'cancel the run first',
   },
+  {
+    // The shared gate runs BEFORE `running` gets a look-in (`gate`'s own
+    // `condition: steps.runGate.ok`) — a non-owner asking about a running run
+    // must see the same 404 an unreachable run always gets, never the 409 a
+    // reachable one would, or a run's mere existence leaks through the status
+    // code alone (D26).
+    desc: 'a member who did not start it, on a run that is still running',
+    row: { ...ROW, status: 'running' },
+    user: MOCK_OTHER,
+    status: 404,
+    error: 'run not found',
+  },
 ]
 
 describe('run-delete gate.fn.js parity with the mock re-implementation', () => {

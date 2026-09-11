@@ -27,12 +27,15 @@ import { useWhoamiQuery } from './workflowApi'
 
 /**
  * A refusal from the delete rule, in the words of the person who asked. The
- * three statuses mean three different things and only one of them is "try
+ * two statuses mean two different things and only one of them is "try
  * again", so a single "couldn't delete" message would hide the fix.
+ *
+ * No 403 branch: the rule has none any more (spec 11 D26) — a caller who
+ * cannot reach the run gets the same 404 an unknown one does, so "gone" is
+ * the honest word for both.
  */
 export function deleteMessage(error: unknown): string {
   if (error instanceof RunStoreError) {
-    if (error.status === 403) return "Only the run's owner or an admin can delete it."
     if (error.status === 409) return 'Cancel the run first, then delete it.'
     if (error.status === 404) return 'This run is already gone.'
   }

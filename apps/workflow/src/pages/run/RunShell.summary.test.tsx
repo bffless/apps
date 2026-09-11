@@ -641,12 +641,15 @@ describe('RunShell', () => {
       expect(screen.queryByTestId('run-status')).not.toBeInTheDocument()
     })
 
-    it('stays on the run and says why when the server refuses (403)', async () => {
+    // The rule has no 403 responder any more (spec 11 D26) — a caller who
+    // cannot reach the run gets the same 404 an unknown one does, so this is
+    // the one refusal `deleteMessage` still special-cases beside 409.
+    it('stays on the run and says why when the server refuses (404, D26)', async () => {
       asOwner()
       vi.spyOn(window, 'confirm').mockReturnValue(true)
       server.use(
         http.post('/api/workflow/run/delete', () =>
-          HttpResponse.json({ ok: false, error: 'nope' }, { status: 403 }),
+          HttpResponse.json({ ok: false, error: 'run not found' }, { status: 404 }),
         ),
       )
       const page = await openRun()
@@ -654,7 +657,7 @@ describe('RunShell', () => {
       fireEvent.click(await within(page).findByTestId('run-delete'))
 
       const failed = await within(page).findByTestId('run-delete-failed')
-      expect(failed).toHaveTextContent(/only the run's owner or an admin/i)
+      expect(failed).toHaveTextContent(/this run is already gone/i)
       expect(within(page).getByTestId('run-status')).toBeInTheDocument()
       expect(db.runs.has(FIXTURE_RUN_ID)).toBe(true)
     })

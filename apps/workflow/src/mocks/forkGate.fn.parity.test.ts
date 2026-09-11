@@ -291,6 +291,13 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
    * from an unknown id (D26) — and an admin now needs BOTH `projectRole`
    * `owner`/`admin` AND to have asked (`x-workflow-scope: all`, D27): asking
    * is never assumed, even from the role that could ask.
+   *
+   * `forkGate.ts`'s own refusals (badRequest, the retry conflict, an
+   * unfinished adopted row, a definition that no longer addresses one) are
+   * caller-agnostic now — ownership moved out of that function entirely — but
+   * still need a row here: they are the composed endpoint's behavior too, and
+   * `forkGate.ts`'s literal error strings (`:89-93,103,110-111`) have no other
+   * coverage that runs them against the real `gate.fn.js`'s matching strings.
    */
   const MOCK_CASES: {
     desc: string
@@ -305,6 +312,13 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
   }[] = [
     { desc: 'an unknown run', parent: () => null, user: MOCK_MEMBER, status: 404, error: 'run not found' },
     { desc: 'a member who did not start it', user: MOCK_OTHER, status: 404, error: 'run not found' },
+    {
+      desc: 'the owner: an id that is not a run id (it is rendered into the 200 template)',
+      body: { id: 'run_"x' },
+      user: MOCK_MEMBER,
+      status: 400,
+      error: 'id must be a run id',
+    },
     {
       desc: 'an id-less caller against a row with no startedBy',
       parent: (row) => {
@@ -342,6 +356,34 @@ describe('run-fork gate.fn.js parity with the mock re-implementation', () => {
       user: MOCK_MEMBER,
       status: 409,
       error: 'cancel the run first',
+    },
+    {
+      desc: 'the owner: an id some other run already wears',
+      existing: { ...ROW, _id: 'rec_99', runId: NEW_ID, forkedFrom: 'run_other', forkJob: 'slow' },
+      user: MOCK_MEMBER,
+      status: 409,
+      error: 'run id already in use',
+    },
+    {
+      desc: 'the owner: an adopted row that has not finished',
+      steps: (rows) => rows.map((row) => (row.key === 'greet/1/say' ? { ...row, status: 'queued' } : row)),
+      user: MOCK_MEMBER,
+      status: 409,
+      error: 'step greet/1/say has not finished',
+    },
+    {
+      desc: "the owner: the sent definition renaming `greet.say`'s output `line`",
+      body: { definition: withLineRenamed() },
+      user: MOCK_MEMBER,
+      status: 409,
+      error: 'definition changed: greet/0/say',
+    },
+    {
+      desc: 'the owner: the sent definition dropping the `greet` job',
+      body: { definition: withoutGreet() },
+      user: MOCK_MEMBER,
+      status: 409,
+      error: 'definition changed: greet/0/say',
     },
     {
       desc: 'the owner: a retry, the row the first call made already wears the id',
