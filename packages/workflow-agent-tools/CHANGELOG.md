@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.3.1...workflow-agent-tools-v1.4.0) (2026-09-11)
+
+
+### Features
+
+* **workflow:** user-owned runs — ownership enforced on reads, asked-for all-scope, drive claims, files follow the run (D26–D29) ([#665](https://github.com/bffless/apps/issues/665)) ([628ec3a](https://github.com/bffless/apps/commit/628ec3ac2dff1b60f3cafbdb9d0a87d8cc1aadaa))
+
 ## [1.3.1](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.3.0...workflow-agent-tools-v1.3.1) (2026-09-09)
 
 
