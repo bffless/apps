@@ -88,6 +88,18 @@ const CASES: {
     runId: '',
     runless: true,
   },
+  {
+    // Fix round 1: see `confine.fn.parity.test.ts`'s equivalent row — the
+    // `runs` segment matches case-insensitively so the gate is at least as
+    // strict as a case-insensitive filesystem's key equality.
+    desc: 'the runs segment matches case-insensitively (RUNS)',
+    path: `/api/uploads/workflows/hello/interactive/RUNS/${CASE_RUN_ID}/poster.svg`,
+    ok: true,
+    normalized: `workflows/hello/interactive/RUNS/${CASE_RUN_ID}/poster.svg`,
+    hasRun: true,
+    runId: CASE_RUN_ID,
+    runless: false,
+  },
   { desc: 'outside the harness prefix', path: '/api/uploads/other/x.svg', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'directory traversal', path: '/api/uploads/workflows/../secrets/x', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a double slash', path: '/api/uploads/workflows//x', ok: false, hasRun: false, runId: '', runless: false },
@@ -188,6 +200,16 @@ describe('serve: run ownership (spec 11 D29)', () => {
   it('refuses a runs/<id>/ object whose run does not exist — 404', async () => {
     setMockUser(MOCK_MEMBER)
     const key = `workflows/hello/hello/runs/${GHOST_ID}/x.png`
+    db.files.set(key, { bytes: new Uint8Array([9]), contentType: 'image/png' })
+
+    const res = await fetch(`/api/uploads/${key}`)
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'not found' })
+  })
+
+  it('refuses another member’s run even through an uppercase RUNS segment — 404 (fix round 1)', async () => {
+    setMockUser(MOCK_OTHER)
+    const key = `workflows/hello/hello/RUNS/${RUN_ID}/poster.png`
     db.files.set(key, { bytes: new Uint8Array([9]), contentType: 'image/png' })
 
     const res = await fetch(`/api/uploads/${key}`)

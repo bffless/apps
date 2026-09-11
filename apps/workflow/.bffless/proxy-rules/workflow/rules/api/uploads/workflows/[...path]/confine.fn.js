@@ -7,6 +7,11 @@
 // `ok:false`/`hasRun:false`/`runless:false`, and the rule runs `runGate` unconditionally (there
 // is no earlier 400 responder a later-run `refuse-404` could clobber) — the gate reads no run
 // and no `runless`, so it answers `notFound`, and the route's only failure mode is 404.
+//
+// The `runs` segment matches CASE-INSENSITIVELY (fix round 1) — see `files/sign`'s
+// `confine.fn.js` banner for why: CE's file_serve_handler (the very handler THIS rule's `serve`
+// step is) derives the storage key from the same raw path with no case folding, so the gate must
+// be at least as strict as a case-insensitive filesystem's key equality.
 var RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
 
 function handler({ request, deployment }) {
@@ -14,7 +19,7 @@ function handler({ request, deployment }) {
   var path = reqPath.replace(/^\/+/, '').replace(/^api\/uploads\//, '').split('?')[0]
   var ok = path.indexOf('workflows/') === 0 && path.indexOf('..') === -1 && path.indexOf('//') === -1
 
-  var runMatch = ok ? /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/.exec(path) : null
+  var runMatch = ok ? /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/i.exec(path) : null
   var runId = runMatch && RUN_ID_PATTERN.test(runMatch[1]) ? runMatch[1] : ''
   var hasRun = runId !== ''
 

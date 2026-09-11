@@ -440,16 +440,26 @@ const RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
  * (`inputs/…` included) — the same grammar the real rules' `confine.fn.js`/`normalize.fn.js`
  * parse off the equivalent normalised path. `''` is this mock's spelling of "runless": D18's
  * per-workflow `inputs/` area carries no runId and stays member-wide.
+ *
+ * The `runs` segment matches CASE-INSENSITIVELY (fix round 1): CE's file_serve_handler builds
+ * the storage key from the same raw path with no case folding, so on a local-filesystem install
+ * with a case-insensitive volume, `RUNS/run_X/…` and `runs/run_X/…` name the SAME stored
+ * object — the gate must be at least as strict as that key equality.
  */
 function runIdIn(path: string): string {
-  const match = /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/.exec(path)
+  const match = /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/i.exec(path)
   return match && RUN_ID_PATTERN.test(match[1]) ? match[1] : ''
 }
 
-/** The same locator over `prepare`'s `scope` (no `workflows/<impl>/<workflow>/` head to strip). */
+/** The same locator over `prepare`'s `scope` (no `workflows/<impl>/<workflow>/` head to strip); same case-insensitive `runs`. */
 function runIdInScope(scope: string): string {
-  const match = /^runs\/([^/]+)\/.+/.exec(scope)
+  const match = /^runs\/([^/]+)\/.+/i.exec(scope)
   return match && RUN_ID_PATTERN.test(match[1]) ? match[1] : ''
+}
+
+/** A single path segment: non-empty, no `/`, no `\`, no `..` (mirrors `files/prepare`'s `confine.fn.js` `isSegment`, fix round 1). */
+function isSegment(v: unknown): v is string {
+  return typeof v === 'string' && v !== '' && !v.includes('/') && !v.includes('\\') && !v.includes('..')
 }
 
 /**
@@ -466,10 +476,16 @@ function confinePath(raw: string): { ok: boolean; path: string; hasRun: boolean;
   return { ok, path, hasRun, runId, runless: ok && !hasRun }
 }
 
-/** `steps.runGate.ok` for a parsed runId: `''` (runless) always passes; a real id must reach `mockGate`. */
-function fileGateOk(runId: string, request: Request): boolean {
-  if (runId === '') return true
-  return mockGate(db.runs.get(runId), request, mockUser()).ok
+/**
+ * `steps.runGate.ok` for a parsed runId, through the SAME `mockGate` every other gated route
+ * uses (fix round 1: this used to shortcut past `mockGate` for a runless path, and never passed
+ * `bodyScope` at all — so an admin's `scope:'all'` in a `files/sign` body, say, had no effect
+ * here though the real `runGate.fn.js` honours it). `runless` is a parsed `''` runId; `bodyScope`
+ * is the request's own `scope` field where the caller's route has one — `undefined` (a GET) is
+ * simply never `'all'`.
+ */
+function fileGateOk(runId: string, request: Request, bodyScope?: string): boolean {
+  return mockGate(db.runs.get(runId), request, mockUser(), { runless: runId === '', bodyScope }).ok
 }
 
 const files = [
@@ -478,17 +494,22 @@ const files = [
   // `runs/<runId>/…` scope then needs THIS caller to reach that run, the same 404
   // `mockGate` answers everywhere else (never a stray presigned URL into a run this
   // caller cannot see).
+  //
+  // `impl`/`workflow` are ALSO checked (fix round 1): `storageKey`'s subDir templates them
+  // unvalidated, so a caller who controls `workflow` (e.g. `"x/runs/run_VICTIM/step"`) could
+  // otherwise plant bytes under another member's run prefix without `scope` naming it at all.
   http.post('/api/workflow/files/prepare', async ({ request }) => {
     const fields = await body(request)
+    const identifiersOk = isSegment(fields.impl) && isSegment(fields.workflow)
     const scope = typeof fields.scope === 'string' ? fields.scope.replace(/^\/+|\/+$/g, '') : ''
     const clean = scope !== '' && !scope.includes('..') && !scope.includes('//')
     const isInputs = clean && (scope === 'inputs' || scope.startsWith('inputs/'))
     const runId = clean ? runIdInScope(scope) : ''
 
-    if (!isInputs && runId === '') {
+    if (!identifiersOk || (!isInputs && runId === '')) {
       return HttpResponse.json({ error: 'scope must be inputs or runs/<runId>/<step>' }, { status: 400 })
     }
-    if (!fileGateOk(runId, request)) return refuse(404, 'run not found')
+    if (!fileGateOk(runId, request, scope)) return refuse(404, 'run not found')
 
     const key = storageKey(fields)
     return HttpResponse.json({ uploadUrl: `${MOCK_UPLOAD_PREFIX}${key}`, storageKey: key })
@@ -539,7 +560,8 @@ const files = [
         { status: 400 },
       )
     }
-    if (!fileGateOk(runIdIn(key), request)) return refuse(404, 'run not found')
+    const bodyScope = typeof fields.scope === 'string' ? fields.scope : undefined
+    if (!fileGateOk(runIdIn(key), request, bodyScope)) return refuse(404, 'run not found')
 
     const stored = db.files.get(key)
     const originalName = typeof fields.originalName === 'string' ? fields.originalName : undefined
@@ -568,7 +590,8 @@ const files = [
   // that run; `inputs/` and any other confined path carry no runId and stay
   // member-wide (D18), so `fileGateOk` passes them without a lookup.
   http.post('/api/workflow/files/sign', async ({ request }) => {
-    const confine = confinePath(String((await body(request)).path ?? ''))
+    const fields = await body(request)
+    const confine = confinePath(String(fields.path ?? ''))
 
     if (!confine.ok) {
       return HttpResponse.json(
@@ -576,7 +599,8 @@ const files = [
         { status: 400 },
       )
     }
-    if (!fileGateOk(confine.runId, request)) return refuse(404, 'run not found')
+    const bodyScope = typeof fields.scope === 'string' ? fields.scope : undefined
+    if (!fileGateOk(confine.runId, request, bodyScope)) return refuse(404, 'run not found')
 
     const url = new URL(`/api/uploads/${confine.path}?signed=mock`, request.url).href
     return HttpResponse.json({ url, expiresIn: 3600 })

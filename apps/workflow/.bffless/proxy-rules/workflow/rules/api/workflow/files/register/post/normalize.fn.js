@@ -8,7 +8,8 @@
 // Also (spec 11 D29) locates the run the normalised path names, the same grammar
 // `files/sign`'s and the serve rule's `confine.fn.js` apply: a `workflows/<impl>/<workflow>/
 // runs/<runId>/…` key names a run; `inputs/` and any other confined key carry none and stay
-// member-wide (D18).
+// member-wide (D18). The `runs` segment matches CASE-INSENSITIVELY (fix round 1) — see
+// `files/sign`'s `confine.fn.js` banner for why.
 var RUN_ID_PATTERN = /^run_[0-9A-Za-z]+$/
 
 function handler({ request, deployment }) {
@@ -26,7 +27,7 @@ function handler({ request, deployment }) {
 
   var ok = !!rel && rel.indexOf('workflows/') === 0 && rel.indexOf('..') === -1 && rel.indexOf('//') === -1
 
-  var runMatch = ok ? /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/.exec(rel) : null
+  var runMatch = ok ? /^workflows\/[^/]+\/[^/]+\/runs\/([^/]+)/i.exec(rel) : null
   var runId = runMatch && RUN_ID_PATTERN.test(runMatch[1]) ? runMatch[1] : ''
   var hasRun = runId !== ''
 

@@ -25,7 +25,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MOCK_MEMBER, MOCK_OTHER, db, nextId, setMockUser } from './db'
+import { MOCK_ADMIN, MOCK_MEMBER, MOCK_OTHER, db, nextId, setMockUser } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -134,6 +134,19 @@ const CASES: { desc: string; path: unknown; ok: boolean; normalized?: string; ha
     runId: '',
     runless: true,
   },
+  {
+    // Fix round 1: CE's file_serve_handler builds the storage key from the same
+    // raw path with no case folding, so on a case-insensitive filesystem
+    // `RUNS/…` and `runs/…` name the SAME object — the gate must match at
+    // least as loosely.
+    desc: 'the runs segment matches case-insensitively (RUNS)',
+    path: `workflows/hello/interactive/RUNS/${CASE_RUN_ID}/poster.svg`,
+    ok: true,
+    normalized: `workflows/hello/interactive/RUNS/${CASE_RUN_ID}/poster.svg`,
+    hasRun: true,
+    runId: CASE_RUN_ID,
+    runless: false,
+  },
   { desc: 'outside the harness prefix', path: 'uploads/other/x.svg', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a bare other/ path', path: 'other/x', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'directory traversal', path: 'workflows/../secrets/x', ok: false, hasRun: false, runId: '', runless: false },
@@ -194,11 +207,11 @@ describe('files/sign: run ownership (spec 11 D29)', () => {
   const RUN_ID = 'run_owned00000000000000000000'
   const GHOST_ID = 'run_ghost0000000000000000000'
 
-  const sign = (path: string) =>
+  const sign = (path: string, scope?: string) =>
     fetch('/api/workflow/files/sign', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path }),
+      body: JSON.stringify(scope === undefined ? { path } : { path, scope }),
     })
 
   beforeEach(() => {
@@ -229,5 +242,18 @@ describe('files/sign: run ownership (spec 11 D29)', () => {
     const res = await sign(`workflows/hello/hello/runs/${GHOST_ID}/x.png`)
     expect(res.status).toBe(404)
     expect((await res.json()).error).toBe('run not found')
+  })
+
+  it('refuses another member’s run even through an uppercase RUNS segment — 404 (fix round 1)', async () => {
+    setMockUser(MOCK_OTHER)
+    const res = await sign(`workflows/hello/hello/RUNS/${RUN_ID}/poster.svg`)
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toBe('run not found')
+  })
+
+  it('an asked all-scope project admin may sign another member’s run (D27)', async () => {
+    setMockUser({ ...MOCK_ADMIN, id: 'user_admin_sign' })
+    const res = await sign(`workflows/hello/hello/runs/${RUN_ID}/poster.svg`, 'all')
+    expect(res.status).toBe(200)
   })
 })

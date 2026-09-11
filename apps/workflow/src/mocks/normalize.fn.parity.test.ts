@@ -32,7 +32,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MOCK_MEMBER, MOCK_OTHER, db, MOCK_UPLOADS_ROOT, nextId, setMockUser } from './db'
+import { MOCK_ADMIN, MOCK_MEMBER, MOCK_OTHER, db, MOCK_UPLOADS_ROOT, nextId, setMockUser } from './db'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -135,6 +135,18 @@ const CASES: {
     hasRun: false,
     runId: '',
     runless: true,
+  },
+  {
+    // Fix round 1: see `confine.fn.parity.test.ts`'s equivalent row — the
+    // `runs` segment matches case-insensitively so the gate is at least as
+    // strict as a case-insensitive filesystem's key equality.
+    desc: 'the runs segment matches case-insensitively (RUNS)',
+    storageKey: `workflows/hello/hello/RUNS/${RUN_ID}/slow/0/start/audio.wav`,
+    ok: true,
+    normalized: `workflows/hello/hello/RUNS/${RUN_ID}/slow/0/start/audio.wav`,
+    hasRun: true,
+    runId: RUN_ID,
+    runless: false,
   },
   { desc: 'outside the harness prefix', storageKey: 'uploads/other/x.svg', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a bare other/ path', storageKey: 'other/x', ok: false, hasRun: false, runId: '', runless: false },
@@ -293,6 +305,25 @@ describe('files/register: run ownership (spec 11 D29)', () => {
     await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
 
     const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'cat.png' })
+    expect(res.status).toBe(200)
+  })
+
+  it('refuses another member’s run even through an uppercase RUNS segment — 404 (fix round 1)', async () => {
+    setMockUser(MOCK_OTHER)
+    const key = `workflows/hello/hello/RUNS/${RUN_ID}/slow/0/start/clip.mp4`
+    await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
+
+    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'clip.mp4' })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
+  })
+
+  it('an asked all-scope project admin may register into another member’s run (D27)', async () => {
+    setMockUser({ ...MOCK_ADMIN, id: 'user_admin_register' })
+    const key = `workflows/hello/hello/runs/${RUN_ID}/slow/0/start/clip.mp4`
+    await fetch(`/mock-upload/${key}`, { method: 'PUT', body: new Uint8Array([1]) })
+
+    const res = await json('/api/workflow/files/register', { storageKey: key, originalName: 'clip.mp4', scope: 'all' })
     expect(res.status).toBe(200)
   })
 

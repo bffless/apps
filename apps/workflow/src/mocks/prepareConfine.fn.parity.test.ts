@@ -61,6 +61,16 @@ const CASES: { desc: string; scope: unknown; ok: boolean; hasRun: boolean; runId
   { desc: 'an inputs/ subpath', scope: 'inputs/u1/cat.png', ok: true, hasRun: false, runId: '', runless: true },
   { desc: 'a run scope with a step', scope: `runs/${RUN_ID}/greet/0/say`, ok: true, hasRun: true, runId: RUN_ID, runless: false },
   { desc: 'a leading/trailing slash on a run scope is trimmed', scope: `/runs/${RUN_ID}/greet/0/say/`, ok: true, hasRun: true, runId: RUN_ID, runless: false },
+  {
+    // Fix round 1: see `confine.fn.parity.test.ts`'s equivalent row — the `runs`
+    // segment matches case-insensitively, so `RUNS/…` is gated the same as `runs/…`.
+    desc: 'the runs segment matches case-insensitively (RUNS)',
+    scope: `RUNS/${RUN_ID}/greet/0/say`,
+    ok: true,
+    hasRun: true,
+    runId: RUN_ID,
+    runless: false,
+  },
   { desc: 'a bare runs/<id> with no step is refused', scope: `runs/${RUN_ID}`, ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a malformed run id is refused', scope: 'runs/not-a-real-id/say', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'traversal in a run scope', scope: 'runs/../secrets/x', ok: false, hasRun: false, runId: '', runless: false },
@@ -93,7 +103,9 @@ describe("files/prepare's confine.fn.js parity with the mock re-implementation",
   })
 
   it.each(CASES)('confine.fn.js: $desc', ({ scope, ok, hasRun, runId, runless }) => {
-    const result = handler({ request: { body: { scope } } })
+    // `impl`/`workflow` are valid single segments throughout this table — the
+    // `IDENTIFIER_CASES` block below is what pins THEIR validation.
+    const result = handler({ request: { body: { impl: 'hello', workflow: 'hello', scope } } })
     expect(result.ok).toBe(ok)
     expect(result.notOk).toBe(!ok)
     expect(result.hasRun).toBe(hasRun)
@@ -110,6 +122,34 @@ describe("files/prepare's confine.fn.js parity with the mock re-implementation",
     } else {
       expect((await res.json()).error).toBe('scope must be inputs or runs/<runId>/<step>')
     }
+  })
+
+  /**
+   * Fix round 1: `presigned_upload`'s `subDir` templates `workflows/{{impl}}/
+   * {{workflow}}/{{scope}}` unvalidated, so a caller who controls `workflow`
+   * (or `impl`) could otherwise plant bytes under another member's run prefix
+   * — `workflow: "x/runs/run_VICTIM/step"` — without `scope` itself ever
+   * naming that run. `confine.fn.js` now requires both to be a single path
+   * segment; this pins the 400 on both sides for a `workflow` (and, for good
+   * measure, an `impl`) that isn't one.
+   */
+  const IDENTIFIER_CASES: { desc: string; fields: Record<string, unknown> }[] = [
+    { desc: 'a slash in workflow', fields: { workflow: 'x/runs/run_VICTIM/step' } },
+    { desc: 'a slash in impl', fields: { impl: 'x/runs' } },
+    { desc: 'traversal in workflow', fields: { workflow: '../other' } },
+    { desc: 'an empty workflow', fields: { workflow: '' } },
+  ]
+
+  it.each(IDENTIFIER_CASES)('confine.fn.js: $desc → notOk', ({ fields }) => {
+    const result = handler({ request: { body: { impl: 'hello', workflow: 'hello', scope: 'inputs', ...fields } } })
+    expect(result.ok).toBe(false)
+    expect(result.notOk).toBe(true)
+  })
+
+  it.each(IDENTIFIER_CASES)('mock /api/workflow/files/prepare: $desc → 400', async ({ fields }) => {
+    const res = await prepare({ scope: 'inputs', ...fields })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('scope must be inputs or runs/<runId>/<step>')
   })
 })
 
@@ -149,6 +189,13 @@ describe('files/prepare: run ownership (spec 11 D29)', () => {
   it('refuses a runs/<id>/ scope whose run does not exist — 404', async () => {
     setMockUser(MOCK_MEMBER)
     const res = await prepare({ scope: `runs/${GHOST_ID}/slow/0/start` })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
+  })
+
+  it('refuses another member’s run even through an uppercase RUNS segment — 404 (fix round 1)', async () => {
+    setMockUser(MOCK_OTHER)
+    const res = await prepare({ scope: `RUNS/${OWNED_RUN_ID}/slow/0/start` })
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ ok: false, error: 'run not found' })
   })
