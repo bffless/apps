@@ -44,9 +44,8 @@
 import { appToken, credentials, secondAppToken, secondCredentials } from '../env.js'
 import { openMcp } from '../mcp-client.js'
 import { openSession, sessionLogin, type Session } from '../session.js'
-import { waitStepState } from '../steps.js'
 import { pollStatus } from './driven.js'
-import { mintAppToken, WALK_SCOPES, type MintedToken } from '../token.js'
+import { adminOriginOf, mintAppToken, WALK_SCOPES, type MintedToken } from '../token.js'
 import type { Walk } from './index.js'
 
 const IMPL = 'hello'
@@ -56,14 +55,66 @@ const STEP = 'ask/0/answer'
 const NOTE = 'from the ownership walk'
 const ALL_SCOPE_ROLES = new Set(['owner', 'admin'])
 const POLL_TIMEOUT_MS = 8 * 60_000
+/** Bounds for `submitStepPastLease` — the same 90s/5s the `mcp` walk's `spec10.leaseLapses` uses. */
+const LEASE_RETRY_TIMEOUT_MS = 90_000
+const LEASE_RETRY_INTERVAL_MS = 5_000
+/** Bound for `waitForRowWaiting` — the page auto-progresses several jobs (spec 07) before parking on the undeclared form. */
+const PARK_TIMEOUT_MS = 120_000
 
 interface Who { id?: string; email?: string; role?: string; projectRole?: string }
 interface ToolAnswer { isError?: boolean; content?: Array<{ type: string; text?: string }>; structuredContent?: Record<string, unknown> }
+type Call = (name: string, toolArgs?: Record<string, unknown>) => Promise<ToolAnswer>
 
 const text = (r: ToolAnswer) => (r.content ?? []).map((block) => (block.type === 'text' ? (block.text ?? '') : '')).join('\n')
 const structured = (r: ToolAnswer) => r.structuredContent ?? {}
 const errorsOf = (r: ToolAnswer) => (structured(r).errors ?? {}) as Record<string, string>
 const brief = (r: ToolAnswer) => ({ isError: r.isError ?? false, text: text(r).slice(0, 300) })
+const isLeaseRefusal = (r: ToolAnswer) => 'lease' in errorsOf(r)
+
+/**
+ * Retry `workflow.submitStep` until the refusal stops being the live lease —
+ * `mcp.ts`'s `spec10.leaseLapses`, restated for `submitStep`. A's own page
+ * drove this run to `waiting`, so closing that page stops its heartbeat but
+ * does not clear the lease immediately: the lease has its own TTL, and the
+ * first submit(s) can still answer `errors.lease` for up to ~60s. Stops the
+ * moment the refusal is anything else, so a real validation failure surfaces
+ * immediately rather than being masked by the retry; pure apart from `call`
+ * and the clock, so it is testable with a fake `call`.
+ */
+export async function submitStepPastLease(
+  call: Call,
+  runId: string,
+  step: string,
+  values: Record<string, unknown>,
+  timeoutMs = LEASE_RETRY_TIMEOUT_MS,
+  everyMs = LEASE_RETRY_INTERVAL_MS,
+): Promise<ToolAnswer> {
+  const deadline = Date.now() + timeoutMs
+  let answer: ToolAnswer
+  for (;;) {
+    answer = await call('workflow.submitStep', { runId, step, values })
+    if (!isLeaseRefusal(answer)) return answer
+    if (Date.now() >= deadline) return answer
+    await new Promise((resolve) => setTimeout(resolve, everyMs))
+  }
+}
+
+const MINT_STATUS_RE = /answered (\d+)\b/
+
+/**
+ * True when `mintFor` failed because B is signed in but holds no membership
+ * on the harness project — `POST admin.<domain>/api/app-tokens` answers 403
+ * "You are not a member of this project" (`token.ts`'s `mintAppToken` folds
+ * status + body into the thrown message). That is a missing precondition —
+ * B needs adding to the project, not a bug under test — so the caller turns
+ * it into a `report.note` and skips the check rather than a FAIL. Any other
+ * mint failure (network, 401, a malformed answer) returns `false` and stays
+ * a FAIL via the normal `report.guard` path.
+ */
+export function isNotAProjectMember(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : String(e)
+  return MINT_STATUS_RE.exec(message)?.[1] === '403' && /not a member of this project/i.test(message)
+}
 
 /** A record's columns: flattened onto the row, or nested under `fields` — every rule in this set tolerates both. */
 const fieldsOf = (row: Record<string, unknown>): Record<string, unknown> => {
@@ -74,20 +125,83 @@ const fieldsOf = (row: Record<string, unknown>): Record<string, unknown> => {
 const rowsOf = (body: unknown): Record<string, unknown>[] => (Array.isArray(body) ? (body as Record<string, unknown>[]) : [])
 const runIdsOf = (body: unknown): unknown[] => rowsOf(body).map((r) => fieldsOf(r).runId)
 
+export interface RowWait { waiting: boolean; lastStatus: string; snapshot: Record<string, unknown> | null }
+
+/**
+ * Poll a run's server-side row for `step`, not the page's own client-side
+ * mirror (`window.__workflow.steps`) — that mirror can flip to "waiting"
+ * optimistically before the write that backs it has actually landed, and the
+ * caller closes the driving tab right after this resolves, which can abort
+ * that write in flight and leave the row stuck `queued` forever (the bug
+ * this replaced). Bounded, generalizing `park.ts`'s own row-poll to `driven`
+ * runs, whose page auto-progresses several jobs (spec 07) before parking on
+ * the undeclared form. Pure apart from `getRun` and the clock, so it is
+ * testable with a fake `getRun`.
+ */
+export async function waitForRowWaiting(getRun: () => Promise<{ steps?: Array<Record<string, unknown>> } | null>, step: string, timeoutMs: number, everyMs = 1_000): Promise<RowWait> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const record = await getRun()
+    const row = (record?.steps ?? []).map(fieldsOf).find((r) => r.key === step) ?? null
+    const lastStatus = String(row?.status ?? '')
+    if (lastStatus === 'waiting') return { waiting: true, lastStatus, snapshot: row }
+    if (Date.now() >= deadline) return { waiting: false, lastStatus, snapshot: row }
+    await new Promise((resolve) => setTimeout(resolve, everyMs))
+  }
+}
+
 async function whoAmI(s: Session): Promise<Who> {
   const res = await s.api.json('/api/workflow/whoami')
   return (res.body as Who | null) ?? {}
 }
 
-/** Mint an app token through a signed-in browser context — `token.ts`'s mechanics, as `driven`/`mcp` use them. */
-async function mintFor(s: Session, harness: string, label: string, minted: MintedToken[]): Promise<string> {
+/**
+ * Mint an app token through a signed-in browser context — `token.ts`'s
+ * mechanics, as `driven`/`mcp` use them. Hands back the `MintedToken` rather
+ * than auto-registering it for revocation: B's token is fine revoked through
+ * the session it was minted with (`b` stays open to the end), but A's own
+ * `aRunFinished` guard closes `a`'s session right after minting, which would
+ * leave `MintedToken.revoke`'s captured request client dead — the caller
+ * decides how (and through which live session) that one gets revoked.
+ */
+async function mintFor(s: Session, harness: string, label: string): Promise<MintedToken> {
   const project = await s.api.json('/api/workflow/project')
   const repository = String((project.body as { repository?: string } | null)?.repository ?? '')
   if (repository === '') throw new Error(`GET /api/workflow/project answered no repository — cannot bind a token (${label})`)
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const t = await mintAppToken(s.request, harness, repository, [...WALK_SCOPES], `workflow-live ownership ${label} ${stamp}`)
-  minted.push(t)
-  return t.token
+  return mintAppToken(s.request, harness, repository, [...WALK_SCOPES], `workflow-live ownership ${label} ${stamp}`)
+}
+
+/**
+ * Revoke a token by id through `s`'s own request client — not through
+ * `MintedToken.revoke()`'s own closure, which replays the client the token
+ * was minted through. `aRunFinished` mints A's token through the session it
+ * is about to close, so it revokes by id here instead, through whichever
+ * session is live at the walk's own final cleanup (the reopened one, on the
+ * happy path) — a no-op, not a throw, when `s` is undefined or its session
+ * has gone away (mirrors `MintedToken.revoke`'s own `.catch(() => undefined)`).
+ */
+async function revokeToken(s: Session | undefined, harness: string, id: string): Promise<void> {
+  if (!s) return
+  await s.request.delete(`${adminOriginOf(harness)}/api/app-tokens/${id}`).catch(() => undefined)
+}
+
+/**
+ * Run `body`, then always run `reopen` afterward — success or throw — before
+ * `body`'s own outcome (return or rethrow) is handed back. Generalizes the
+ * `a = await openSession(...)` reopen `ownership.aRunFinished` needs after
+ * closing A's driving tab: whatever the close-and-submit-over-MCP sequence
+ * does, A gets a fresh session back for the D29/D27 reads that read as A
+ * later in the walk. Pure apart from `body`/`reopen` themselves, so the
+ * "reopen always happens, even on a throw" contract is unit-testable without
+ * a browser.
+ */
+export async function withReopenedSession<T>(body: () => Promise<T>, reopen: () => Promise<void>): Promise<T> {
+  try {
+    return await body()
+  } finally {
+    await reopen()
+  }
 }
 
 /**
@@ -121,6 +235,7 @@ export const ownership: Walk = async ({ args, env, report }) => {
 
   let a: Session | undefined
   let b: Session | undefined
+  let aMintedId: string | undefined
   const minted: MintedToken[] = []
 
   try {
@@ -144,17 +259,53 @@ export const ownership: Walk = async ({ args, env, report }) => {
     // required by any check below — a run record and its file paths exist, and
     // are ownership-gated, the moment the run row is created.
     await report.guard(['ownership.aRunFinished'], async () => {
-      await waitStepState(a!.page, STEP, 'waiting', POLL_TIMEOUT_MS)
-      const aToken = appToken(env) ?? (await mintFor(a!, args.harness, 'A', minted))
-      const mcpA = await openMcp(args.harness, { token: aToken })
-      try {
-        const call = async (name: string, toolArgs: Record<string, unknown> = {}) => (await mcpA.client.callTool({ name, arguments: toolArgs })) as ToolAnswer
-        const answered = await call('workflow.submitStep', { runId: runIdA, step: STEP, values: { note: NOTE } })
-        const done = await pollStatus(call, runIdA, (s) => s.status !== 'running' && s.status !== 'pending', POLL_TIMEOUT_MS)
-        report.expect('ownership.aRunFinished', !answered.isError && done?.status === 'succeeded', { submitStep: brief(answered), snapshot: done })
-      } finally {
-        await mcpA.close()
+      // A's page IS this run's driver (spec 07 §Driven runs): it auto-drives
+      // the earlier jobs and parks at `ask/0/answer`, the undeclared form.
+      // Wait for the *server* row to say `waiting`, not the page's own
+      // client-side mirror — closing the tab a moment after the mirror flips
+      // can abort the write that persists it, leaving the row `queued`
+      // forever with nothing left to drive it there.
+      const parked = await waitForRowWaiting(async () => {
+        const res = await a!.api.json(`/api/workflow/run?id=${encodeURIComponent(runIdA)}`)
+        return res.body as { steps?: Array<Record<string, unknown>> } | null
+      }, STEP, PARK_TIMEOUT_MS)
+      if (!parked.waiting) {
+        report.expect('ownership.aRunFinished', false, { reason: 'never reached waiting', lastStatus: parked.lastStatus, snapshot: parked.snapshot })
+        return
       }
+      let aToken = appToken(env)
+      if (!aToken) {
+        const t = await mintFor(a!, args.harness, 'A')
+        aMintedId = t.id
+        aToken = t.token
+      }
+      // A's own tab still holds this run's lease — close it (as `mcp.ts`'s
+      // park does) before submitting over MCP, or the submit is refused with
+      // "A harness tab still drives this run…". Whatever happens next, A
+      // gets a fresh session back (`withReopenedSession`'s `finally`) — D29
+      // .inputsStaySigned and (when A holds the all-scope role)
+      // D27.scopeAllAsked still read as A later in this walk, and the token
+      // above (if minted) is revoked in the walk's own final cleanup via
+      // `revokeToken`, through whichever session is live then, not through
+      // `MintedToken.revoke`'s own now-dead request client.
+      await a!.close()
+      await withReopenedSession(
+        async () => {
+          const mcpA = await openMcp(args.harness, { token: aToken })
+          try {
+            const call: Call = async (name, toolArgs = {}) => (await mcpA.client.callTool({ name, arguments: toolArgs })) as ToolAnswer
+            // `submitStepPastLease` absorbs the ~60s the lease can still take to lapse after the close.
+            const answered = await submitStepPastLease(call, runIdA, STEP, { note: NOTE })
+            const done = await pollStatus(call, runIdA, (s) => s.status !== 'running' && s.status !== 'pending', POLL_TIMEOUT_MS)
+            report.expect('ownership.aRunFinished', !answered.isError && done?.status === 'succeeded', { submitStep: brief(answered), snapshot: done })
+          } finally {
+            await mcpA.close()
+          }
+        },
+        async () => {
+          a = await openSession({ base: args.harness, out: args.out, ...aLogin })
+        },
+      )
     })
 
     // =====================================================================
@@ -252,7 +403,27 @@ export const ownership: Walk = async ({ args, env, report }) => {
     // refusal. `outputs` shares the same `resolveRun` but returns its refusal
     // directly with no pending path, so it is the tool that proves D26 over MCP.
     await report.guard(['D26.mcpOutputsIsNotFound'], async () => {
-      const bToken = secondAppToken(env) ?? (await mintFor(b!, args.harness, 'B', minted))
+      let bToken: string
+      try {
+        const existing = secondAppToken(env)
+        if (existing) {
+          bToken = existing
+        } else {
+          const t = await mintFor(b!, args.harness, 'B')
+          minted.push(t) // b stays open to the walk's own final cleanup, so t.revoke()'s request client is still live there
+          bToken = t.token
+        }
+      } catch (e) {
+        if (!isNotAProjectMember(e)) throw e
+        // A missing precondition, not a gate failure: the six ownership
+        // assertions already ran (or are still to run) with no need for B to
+        // mint a token. Note it and skip — never report.block, which would
+        // read as the whole walk being unable to proceed.
+        report.note(
+          'member B could not mint an app token (403 "You are not a member of this project") — B can log in but is not a member of the harness project. Fix: add member B to the project (any role — viewer is enough) in admin → project → members, or set WORKFLOW_APP_TOKEN_2. Skipping D26.mcpOutputsIsNotFound.',
+        )
+        return
+      }
       const mcpB = await openMcp(args.harness, { token: bToken })
       try {
         const outputs = (await mcpB.client.callTool({ name: 'workflow.outputs', arguments: { runId: runIdA } })) as ToolAnswer
@@ -262,6 +433,7 @@ export const ownership: Walk = async ({ args, env, report }) => {
       }
     })
   } finally {
+    if (aMintedId) await revokeToken(a, args.harness, aMintedId)
     for (const t of minted) await t.revoke()
     await a?.close()
     await b?.close()
