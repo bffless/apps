@@ -12,14 +12,28 @@
  * The refusal order is the spec's table, and it is an order on purpose:
  *
  * 1. `BAD_REQUEST` — the body cannot be read at all, so nothing else is known.
- * 2. `RUN_NOT_FOUND` (`resume` with no row) / `RUN_EXISTS` (`run` whose id is
- *    taken) — the mode and the row disagree about what exists.
- * 3. `RUN_TERMINAL` — the run is over; a driver would have nothing to resume.
- * 4. `LEASE_LIVE` — someone has the run open in a tab. The browser owns what it
+ * 2. `NO_RANDOM` — this CE exposes no `utils.randomToken`, so the driver's
+ *    nonce cannot be minted, so the run cannot be attributed (D28). Refusing
+ *    beats dispatching a run nobody will own.
+ * 3. `RUN_NOT_FOUND` (`resume` the shared run gate did not open — an unknown
+ *    id and someone else's run are one answer, D26) / `RUN_EXISTS` (`run`
+ *    whose id is taken) — the mode and the row disagree about what exists.
+ * 4. `RUN_TERMINAL` — the run is over; a driver would have nothing to resume.
+ * 5. `LEASE_LIVE` — someone has the run open in a tab. The browser owns what it
  *    claimed (07 §Driven runs): dispatching now would put a job and a person on
  *    the same run, fighting over the lease.
- * 5. `NO_DRIVER` — the implementation publishes no driver repo (or its index
+ * 6. `NO_DRIVER` — the implementation publishes no driver repo (or its index
  *    could not be fetched), so there is no `workflow-drive.yml` to reach.
+ * 7. `RUN_EXISTS` again, at the very end: this id is already claimed by
+ *    another member (D28).
+ *
+ * Past the refusals it decides one more thing the pipeline executes for it:
+ * **whose run this is** (spec 11 §Attribution, D28). The run will be created
+ * by the DRIVER's identity, inside the browser the job opens, so this request —
+ * the last point in the chain carrying the requester's credential — writes a
+ * `workflow_run_claims` row (`writeClaim`/`claim`) or re-keys the existing run
+ * (`rekey`/`recordId`), and hands the driver the nonce in `client_payload`.
+ * The nonce never appears in a response body.
  *
  * What is deliberately *not* checked: whether `workflow` names a workflow the
  * index lists. The caller that cares (the `workflow.start` tool, spec 10) has
@@ -35,7 +49,8 @@
  */
 import { fieldsOf, rows } from './rows'
 import { IMPL_PATTERN, type DrivePlan } from './drivePlan'
-import type { FnRequest } from './route'
+import { admittedRun, type FnUser } from './runGate'
+import type { FnRequest, FnUtils } from './route'
 
 /** `run_` + 26 Crockford-base32 characters — `lib/autoStart.ts`'s `RUN_ID_PATTERN`, restated because a bundle may not import the page. */
 const RUN_ID_PATTERN = /^run_[0-9A-HJKMNP-TV-Z]{26}$/
@@ -49,7 +64,26 @@ const TERMINAL = ['succeeded', 'failed', 'cancelled']
 /** The `repository_dispatch` event type `workflow-drive.yml` listens for. */
 export const EVENT_TYPE = 'workflow-drive'
 
-export type DriveCode = '' | 'BAD_REQUEST' | 'RUN_NOT_FOUND' | 'RUN_EXISTS' | 'RUN_TERMINAL' | 'LEASE_LIVE' | 'NO_DRIVER'
+export type DriveCode =
+  | ''
+  | 'BAD_REQUEST'
+  | 'RUN_NOT_FOUND'
+  | 'RUN_EXISTS'
+  | 'RUN_TERMINAL'
+  | 'LEASE_LIVE'
+  | 'NO_DRIVER'
+  | 'NO_RANDOM'
+
+/** The `workflow_run_claims` row the rule's `claimWrite` step inserts (spec 11 §Attribution, D28). */
+export interface DriveClaim {
+  runId: string
+  impl: string
+  workflow: string
+  startedBy: string
+  startedByEmail: string
+  driveKey: string
+  createdAt: number
+}
 
 export interface DriveGate {
   /** Gate of the `github_api` step and of the 202. */
@@ -67,10 +101,27 @@ export interface DriveGate {
   payload: Record<string, unknown>
   /** The JSON body a `response_handler` echoes: the refusal, or the receipt. */
   response: string
+
+  // --- attribution (spec 11 §Attribution, D28) ----------------------------
+  /** Gate of the `claimWrite` step: `mode: run` with no claim of this caller's yet. */
+  writeClaim: boolean
+  /** Gate of the `rekey` step: `mode: resume` writes the nonce straight onto the run row. */
+  rekey: boolean
+  /** The run row's record id, for `rekey`'s `data_update`; `''` unless `rekey`. */
+  recordId: string
+  /** The nonce the driver will carry back as `x-workflow-drive-key`; `''` on a refusal. */
+  driveKey: string
+  /** The claim row `claimWrite` inserts — or the one this caller already holds; `null` on `resume` and on a refusal. */
+  claim: DriveClaim | null
 }
 
 export interface DriveGateSteps {
-  find?: unknown
+  /** The `workflow_runs` rows `id` matched (the `run` data_query). */
+  run?: unknown
+  /** The `workflow_run_claims` rows `id` matched (the `claim` data_query). */
+  claim?: unknown
+  /** The shared run gate's answer — present only on a `resume` (the step is gated on `steps.plan.isResume`). */
+  runGate?: unknown
   plan?: Partial<DrivePlan>
   index?: { ok?: boolean; status?: number; body?: unknown }
 }
@@ -99,6 +150,18 @@ function jsonBody(step: DriveGateSteps['index']): Record<string, unknown> | null
   return null
 }
 
+/**
+ * The record id the shared gate already computed for the admitted run — what
+ * `rekey`'s `data_update` interpolates. It is read from the GATE rather than
+ * re-derived from the admitted row's columns because the id lives on the
+ * *record*, outside `fields`, wherever this CE puts it (`rows.ts` `recordIdOf`
+ * reads both, and `admittedRun` hands back the columns alone).
+ */
+function gateRecordId(steps: DriveGateSteps): string {
+  const gate = steps.runGate
+  return isPlainObject(gate) && typeof gate.recordId === 'string' ? gate.recordId : ''
+}
+
 function refuse(code: DriveCode, message: string): DriveGate {
   return {
     dispatch: false,
@@ -111,14 +174,25 @@ function refuse(code: DriveCode, message: string): DriveGate {
     eventType: EVENT_TYPE,
     payload: {},
     response: JSON.stringify({ code, message }),
+    writeClaim: false,
+    rekey: false,
+    recordId: '',
+    driveKey: '',
+    claim: null,
   }
 }
 
-export function handler(data: { request?: FnRequest; steps?: DriveGateSteps }): DriveGate {
+export function handler(data: {
+  request?: FnRequest
+  steps?: DriveGateSteps
+  user?: FnUser
+  utils?: FnUtils
+}): DriveGate {
   const request = data?.request ?? { body: undefined, headers: {}, method: 'POST', path: '' }
   const steps = data?.steps ?? {}
   const plan = steps.plan ?? {}
   const body = isPlainObject(request.body) ? request.body : {}
+  const user: FnUser = isPlainObject(data?.user) ? (data.user as FnUser) : {}
 
   // --- 1. the body -------------------------------------------------------
   const runId = str(body.id)
@@ -139,13 +213,32 @@ export function handler(data: { request?: FnRequest; steps?: DriveGateSteps }): 
   const harnessUrl = str(plan.appOrigin)
   if (harnessUrl === '') return refuse('BAD_REQUEST', 'this request carries no host, so the driver would have no harness URL to call back')
 
+  // The driver's nonce has to be unguessable — it is the only thing that lets a
+  // job act on a run it does not own (D26 door 2), and the only thing that
+  // redeems the claim at `runs/post`. `Math.random` is not that, so a CE
+  // without `utils.randomToken` gets a refusal rather than a weaker key: a
+  // fixed 400, never a throw, which would be CE's generic FUNCTION_ERROR.
+  const mint = typeof data?.utils?.randomToken === 'function' ? data.utils.randomToken : null
+  if (mint === null) {
+    return refuse('NO_RANDOM', 'this CE exposes no utils.randomToken — the driver nonce cannot be minted')
+  }
+
   // --- 2..4. the run row -------------------------------------------------
-  const matched = rows(steps.find)
-  const row = fieldsOf(matched[0] ?? {})
-  if (mode === 'resume' && matched.length === 0) return refuse('RUN_NOT_FOUND', 'no run with this id — start one instead')
+  // `resume` names an existing run, so it goes through the SHARED run gate
+  // (spec 11 D26, the rule's `runGate` step, gated on `steps.plan.isResume`):
+  // a run this caller cannot reach answers exactly what an unknown id answers,
+  // so a run id leaks nothing. `run` skips the gate — there is no row to open —
+  // and its own backstop is the id being free.
+  const matched = rows(steps.run)
+  if (mode === 'resume' && !(isPlainObject(steps.runGate) && steps.runGate.ok === true)) {
+    return refuse('RUN_NOT_FOUND', 'no run with this id — start one instead')
+  }
   if (mode === 'run' && matched.length > 0) return refuse('RUN_EXISTS', 'a run with this id already exists — resume it instead')
+  // The row the gate ADMITTED, never one re-derived from the query (`admittedRun`);
+  // on `run` there is none, and an empty row fails no check below.
+  const row = admittedRun(steps as Record<string, unknown>) ?? {}
   const status = str(row.status)
-  if (matched.length > 0 && TERMINAL.indexOf(status) !== -1) return refuse('RUN_TERMINAL', `this run is already ${status}`)
+  if (TERMINAL.indexOf(status) !== -1) return refuse('RUN_TERMINAL', `this run is already ${status}`)
   // A lease is live only while it is *held and unexpired*: a parked run released
   // its lease, which is what makes it drivable at all (07 §Driven runs).
   const heldBy = str(row.leaseOwner)
@@ -161,13 +254,79 @@ export function handler(data: { request?: FnRequest; steps?: DriveGateSteps }): 
   }
   const [full, owner, repo] = parts
 
+  // --- 6. attribution (spec 11 §Attribution, D28) ------------------------
+  // The run about to be dispatched will be CREATED by the driver's identity,
+  // inside the browser the job opens. This request is the last place the
+  // requester's credential exists, so whose run it is has to be decided here.
+  let writeClaim = false
+  let rekey = false
+  let recordId = ''
+  // No initialiser: every branch below mints or reuses a key before anything
+  // reads it, and a placeholder here would be a key-shaped value that is not one.
+  let driveKey: string
+  let claim: DriveClaim | null = null
+
+  if (mode === 'resume') {
+    // The row already records its owner, so there is nothing to claim — only a
+    // nonce to hand the driver. It is minted FRESH every time rather than
+    // reusing whatever `driveKey` the row carries: a key handed to a previous
+    // driver stops opening the run the moment a new one is dispatched.
+    driveKey = mint(24)
+    rekey = true
+    recordId = gateRecordId(steps) || str(row.id)
+  } else {
+    // An unattributable run is not a run: without a member id there is nothing
+    // to put in `startedBy`, and `runs/post` would fall through to the
+    // driver's own identity — the exact outcome the claim exists to prevent.
+    const callerId = str(user.id)
+    if (callerId === '') return refuse('BAD_REQUEST', 'the endpoint could not tie this caller to a member')
+
+    const held = rows(steps.claim)
+    const existing = held.length > 0 ? fieldsOf(held[0]) : null
+    if (existing !== null && str(existing.startedBy) !== callerId) {
+      // Someone else asked for this id first. Same code as a run that already
+      // exists, and deliberately so: from the caller's side an id that is
+      // spoken for is an id that is spoken for.
+      return refuse('RUN_EXISTS', 'this run id is already claimed by another member')
+    }
+    if (existing !== null) {
+      // Our own claim, from a dispatch that did not land (or a duplicate call).
+      // Reusing it — rather than writing a second row or a second key — is what
+      // makes a retry after a failed `github_api` step safe.
+      driveKey = str(existing.driveKey)
+      claim = {
+        runId,
+        impl,
+        workflow,
+        startedBy: callerId,
+        startedByEmail: str(existing.startedByEmail),
+        driveKey,
+        createdAt: typeof existing.createdAt === 'number' ? existing.createdAt : Date.now(),
+      }
+    } else {
+      driveKey = mint(24)
+      writeClaim = true
+      claim = {
+        runId,
+        impl,
+        workflow,
+        startedBy: callerId,
+        startedByEmail: str(user.email),
+        driveKey,
+        createdAt: Date.now(),
+      }
+    }
+  }
+
   // `client_payload` as `workflow-drive.yml` reads it: `resume` carries the id
   // alone (the run row already knows its workflow and its inputs), so those two
   // keys are absent rather than null — the driver never looks at them.
+  // `drive_key` rides BOTH modes: it is how the job proves, on every request its
+  // browser makes, that it is the driver this endpoint dispatched.
   const payload: Record<string, unknown> =
     mode === 'run'
-      ? { mode, run_id: runId, harness_url: harnessUrl, workflow: `${impl}/${workflow}`, inputs: body.inputs }
-      : { mode, run_id: runId, harness_url: harnessUrl }
+      ? { mode, run_id: runId, harness_url: harnessUrl, workflow: `${impl}/${workflow}`, inputs: body.inputs, drive_key: driveKey }
+      : { mode, run_id: runId, harness_url: harnessUrl, drive_key: driveKey }
 
   return {
     dispatch: true,
@@ -179,6 +338,13 @@ export function handler(data: { request?: FnRequest; steps?: DriveGateSteps }): 
     repo,
     eventType: EVENT_TYPE,
     payload,
+    // The receipt the caller reads. The nonce is NOT in it: it reaches the
+    // driver through `client_payload` and nowhere else.
     response: JSON.stringify({ dispatched: true, runId, repo: full, eventType: EVENT_TYPE }),
+    writeClaim,
+    rekey,
+    recordId,
+    driveKey,
+    claim,
   }
 }

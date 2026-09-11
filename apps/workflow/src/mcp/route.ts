@@ -35,6 +35,18 @@ export interface FnRequest {
   path: string
 }
 
+/**
+ * `utils` as CE's function_handler hands it (`function-runner.service.ts`
+ * `buildUtils`) — declared with the one helper this rule set needs, and every
+ * member optional because a CE older than the one that added it hands a
+ * `utils` without it (or none at all). A bundle that wants it must check
+ * before calling; there is no polyfill for crypto-strong randomness.
+ */
+export interface FnUtils {
+  /** `bytes` (default 18, capped at 64) of crypto-strong randomness, hex-encoded — so `randomToken(24)` is 48 hex characters. */
+  randomToken?: (bytes?: number) => string
+}
+
 /** `deployment` as CE hands it: the **serving project** (`owner/repo`) and alias (apps#363). */
 export interface FnDeployment {
   owner?: string

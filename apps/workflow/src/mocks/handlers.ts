@@ -26,9 +26,10 @@ import {
   toRecord,
   waitingKeysOf,
 } from './db'
+import type { MockRunRow } from './db'
 import { analyzeLines } from './analyze'
 import { forkGate } from './forkGate'
-import { mockGate } from './runGate'
+import { DRIVE_KEY_HEADER, mockGate } from './runGate'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
 
@@ -221,10 +222,34 @@ function pick(fields: Record<string, unknown>, columns: string[]): Record<string
   return out
 }
 
+/**
+ * An implementation alias, as `run/drive`'s `drivePlan.ts` fences it — the mock
+ * re-states it rather than importing, the way every other mock re-implements
+ * the rule it stands in for.
+ */
+const IMPL_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$/
+
+/** A run in one of these is over (`lib/runner/types.ts` `RunStatus`); only a live run can be driven. */
+const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled']
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** One of `run/drive`'s coded 400s — the rule's single `refuse` responder. */
+const drivenRefusal = (code: string, message: string) =>
+  HttpResponse.json({ code, message }, { status: 400, headers: NO_STORE })
+
+const RUN_EXISTS = () =>
+  HttpResponse.json({ code: 'RUN_EXISTS', error: 'a run with this id already exists' }, { status: 409 })
+
 const runRecord = [
-  // The client sends the whole row, but `startedBy` is the *session's*, never
-  // the body's — the real rule stamps it server-side (05 access: "started_by
-  // is recorded"), so a client-supplied value must never be trusted.
+  // The client sends the whole row, but ownership is never the body's — the
+  // real rule's `admit.fn.js` decides it (spec 11 §Attribution, D28), and this
+  // mirrors its four outcomes: the id is taken → 409; a claim redeemed with its
+  // nonce → the run is the CLAIMANT's and the claim is consumed; a claim the
+  // request cannot redeem → 409; no claim → the session's own member, which is
+  // the browser-started path (05 access: "started_by is recorded").
   http.post('/api/workflow/runs', async ({ request }) => {
     // `toRunRow` never coerces `driveKey` onto the row (spec 11 D28) — it is the
     // driver's nonce, not something a kickoff body may set — so `row` already
@@ -234,12 +259,92 @@ const runRecord = [
     // a race between that read and this insert — two dispatches racing the
     // same pre-minted id — must still refuse rather than silently overwrite
     // the first run's row.
-    if (db.runs.has(row.runId)) {
-      return HttpResponse.json({ code: 'RUN_EXISTS', error: 'a run with this id already exists' }, { status: 409 })
-    }
-    const stored = { ...row, startedBy: mockUser().id, startedByEmail: mockUser().email, _id: nextId() }
+    if (db.runs.has(row.runId)) return RUN_EXISTS()
+
+    const claim = db.claims.get(row.runId)
+    const sent = (request.headers.get(DRIVE_KEY_HEADER) ?? '').trim()
+    // A claim nobody can redeem is not an opening: a driver that cannot prove
+    // it was dispatched must not take a claimed id either.
+    if (claim && (sent === '' || sent !== claim.driveKey)) return RUN_EXISTS()
+
+    const stored: MockRunRow = claim
+      ? { ...row, startedBy: claim.startedBy, startedByEmail: claim.startedByEmail, driveKey: claim.driveKey, _id: nextId() }
+      : { ...row, startedBy: mockUser().id, startedByEmail: mockUser().email, _id: nextId() }
     db.runs.set(stored.runId, stored)
+    // One dispatch, one run: the claim is spent once the row exists.
+    if (claim) db.claims.delete(row.runId)
     return HttpResponse.json(toRecord(stored))
+  }),
+
+  // `run/drive` (ADR-0006, spec 11 D28) — the mock stands in for the rule, not
+  // for GitHub: it takes the same decisions (the gate's body checks, then the
+  // claim on `run` or the rekey on `resume`) and answers the same 202 receipt,
+  // but dispatches nothing. `repo` is a stand-in for whatever `driver.repo` the
+  // implementation's index publishes; there is no index fetch here, so there is
+  // no NO_DRIVER branch either.
+  //
+  // The nonce is `crypto.randomUUID()` rather than the real gate's
+  // `utils.randomToken(24)` — the mock has no CE `utils` — and, exactly as in
+  // the rule, it NEVER appears in the response: the driver would have received
+  // it in `client_payload`, and a test reads it from `db` the same way.
+  http.post('/api/workflow/run/drive', async ({ request }) => {
+    const fields = await body(request)
+    const id = String(fields.id ?? '')
+    const mode = String(fields.mode ?? '')
+    const impl = String(fields.impl ?? '')
+    const workflow = String(fields.workflow ?? '')
+    const bad = (message: string) => drivenRefusal('BAD_REQUEST', message)
+
+    // The real gate's body checks, in its order. `RUN_ID_PATTERN` is the mock's
+    // looser one (its own fixtures are not ULIDs) — the shape is what matters.
+    if (!RUN_ID_PATTERN.test(id)) return bad('`id` must be run_ followed by 26 Crockford-base32 characters')
+    if (mode !== 'run' && mode !== 'resume') return bad('`mode` must be run or resume')
+    if (mode === 'run') {
+      if (!IMPL_PATTERN.test(impl)) return bad('`impl` must name the implementation alias to run')
+      if (workflow === '') return bad('`workflow` must name the workflow to run')
+      if (!isObject(fields.inputs)) return bad('`inputs` must be a JSON object of input values')
+    }
+
+    if (mode === 'resume') {
+      const run = db.runs.get(id)
+      // The shared gate (D26): an unknown run and one this caller cannot reach
+      // are one answer, so a run id leaks nothing.
+      if (!run || !mockGate(run, request, mockUser()).ok) {
+        return drivenRefusal('RUN_NOT_FOUND', 'no run with this id — start one instead')
+      }
+      if (TERMINAL_STATUSES.includes(run.status)) return drivenRefusal('RUN_TERMINAL', `this run is already ${run.status}`)
+      if (run.leaseOwner && typeof run.leaseUntil === 'number' && run.leaseUntil > Date.now()) {
+        return drivenRefusal('LEASE_LIVE', `this run is open in ${run.leaseOwner} — resume it there, or wait for the lease to expire`)
+      }
+      // No claim: the row already records its owner. A fresh nonce each time,
+      // so a previous driver's key stops opening the run.
+      db.runs.set(id, { ...run, driveKey: crypto.randomUUID() })
+    } else {
+      if (db.runs.has(id)) return drivenRefusal('RUN_EXISTS', 'a run with this id already exists — resume it instead')
+      const existing = db.claims.get(id)
+      if (existing && existing.startedBy !== mockUser().id) {
+        return drivenRefusal('RUN_EXISTS', 'this run id is already claimed by another member')
+      }
+      // The claim is written BEFORE the (notional) dispatch, and the caller's
+      // own standing claim is reused rather than re-keyed, so a retry after a
+      // dispatch that never landed is safe.
+      if (!existing) {
+        db.claims.set(id, {
+          runId: id,
+          impl,
+          workflow,
+          startedBy: mockUser().id,
+          startedByEmail: mockUser().email,
+          driveKey: crypto.randomUUID(),
+          createdAt: Date.now(),
+        })
+      }
+    }
+
+    return HttpResponse.json(
+      { dispatched: true, runId: id, repo: 'mock/impl', eventType: 'workflow-drive' },
+      { status: 202, headers: NO_STORE },
+    )
   }),
 
   // The rule answers with the `data_query` result, envelope and all, after its
@@ -294,7 +399,9 @@ const runRecord = [
   http.post('/api/workflow/run/update', async ({ request }) => {
     const { id, patch } = await body(request)
     const run = db.runs.get(String(id))
-    if (!mockGate(run, request, mockUser()).ok) {
+    // `!run` first, like every other gated handler here: `mockGate` answers the
+    // same refusal for an absent row, so this only narrows the type.
+    if (!run || !mockGate(run, request, mockUser()).ok) {
       return refuse(404, 'run not found')
     }
     const fields = obj(patch)

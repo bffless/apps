@@ -52,10 +52,19 @@ export interface MockJob {
 }
 
 /**
+ * A stored `workflow_runs` row. `driveKey` (spec 11 D28) is the dispatched
+ * driver's nonce: a column the CLIENT row type deliberately never carries
+ * (`coerce.ts` never coerces it onto a row the page holds), so the mock's
+ * store widens rather than pretending the column is not there — `runs/post`
+ * writes it from a redeemed claim, `run/drive` re-mints it on a resume, and
+ * `mockGate`'s `drive` door reads it.
+ */
+export type MockRunRow = ServerRunRow & { driveKey?: string }
+
+/**
  * A `workflow_run_claims` row (spec 11 §Attribution, D28): who asked for the
- * dispatch, and the nonce the driver must present back to `runs/post`. Not yet
- * written or consumed by any mock handler — this task lands the schema and the
- * storage, not the endpoint behaviour.
+ * dispatch, and the nonce the driver must present back to `runs/post`. Written
+ * by the mock `run/drive` handler and consumed by the mock `runs/post`.
  */
 export interface ClaimRow {
   runId: string
@@ -69,7 +78,7 @@ export interface ClaimRow {
 
 export interface MockDb {
   /** `workflow_runs`, keyed by `runId`. */
-  runs: Map<string, ServerRunRow>
+  runs: Map<string, MockRunRow>
   /** `workflow_run_steps`, keyed `<runId>|<stepKey>`. */
   steps: Map<string, ServerStepRow>
   /** Uploaded objects, keyed by storage key. */

@@ -245,7 +245,7 @@ var __mcp = (() => {
     const appOrigin = host === "" ? "" : `https://${host}`;
     const siblingBase = siblingBaseOf(path, appOrigin, DRIVE_PATH);
     const mode = str(body.mode);
-    const row = fieldsOf(rows(data?.steps?.find)[0] ?? {});
+    const row = fieldsOf(rows(data?.steps?.run)[0] ?? {});
     const named = mode === "run" ? str(body.impl) : mode === "resume" ? str(row.impl) : "";
     const impl = IMPL_PATTERN.test(named) ? named : "";
     const indexPath = impl === "" ? "" : `/w/${impl}/.bffless/workflows/index.json`;
@@ -259,6 +259,7 @@ var __mcp = (() => {
       host,
       appOrigin,
       mode,
+      isResume: mode === "resume",
       runId: str(body.id)
     };
   }
