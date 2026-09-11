@@ -52,6 +52,11 @@ A project owner or admin does not automatically see every run. They see their ow
 anyone else, until they ask: `?scope=all` on the list, `scope: "all"` on `workflow.runs`,
 `--all` on the CLI, an "All runs" toggle in the UI.
 
+A single run's ask is spelled differently from a list's, because a single-run route has no query
+string of its own to widen: `run/get`, `run/update`, `run/lease`, `run/fork`, `run/drive` and the
+file routes read the **`x-workflow-scope: all`** header, while `runs/get` (and its MCP twin) read
+`scope=all` — the list's own argument.
+
 This is not caution for its own sake. On a project you own, an implicit exemption means nothing
 changes — you open the harness and still see everyone's runs — and the feature is invisible on
 the surface you use most. Worse, the MCP connector authenticates with an **app token, which
@@ -194,8 +199,12 @@ Flow:
    - no claim → today's behaviour, `startedBy: user.id` — the browser-started path, unchanged.
 
 The ownership claim is thus written by the requester's **own authenticated request**, and the
-driver can never mint a run owned by someone else. `workflow-headless` carries the nonce as a
-request header; it already injects `WORKFLOW_TOKEN` that way (`api.ts`), so the path exists.
+driver can never mint a run owned by someone else. `workflow-headless` carries the nonce as the
+`x-workflow-drive-key` request header. `api.ts`'s `WORKFLOW_TOKEN` injection is the wrong path
+for it — that header rides the driver's own out-of-page fetches (`/api/workflow/*` GETs only),
+while `runs/post` is issued by the SPA running *inside* the page; the driver instead injects the
+nonce with a Playwright route on `/api/workflow/**` + `/api/uploads/**`, so every in-page request
+the harness itself makes carries it too.
 
 **Deferred:** surfacing an unconsumed claim in the list as a `queued` run — a real improvement
 (the window between dispatch and pickup is blind today) but not part of the boundary.

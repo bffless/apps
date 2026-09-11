@@ -7,7 +7,7 @@
   "category": "automation",
   "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/workflow",
   "requires": {
-    "ceMin": "0.4.52"
+    "ceMin": "0.4.57"
   },
   "install": {
     "alias": "workflow",
