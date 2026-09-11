@@ -8,7 +8,7 @@ import { Provider } from 'react-redux'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import App from '../App'
-import { writeScope } from '../lib/scope'
+import { readScope, writeScope } from '../lib/scope'
 import {
   db,
   MOCK_ADMIN,
@@ -313,19 +313,72 @@ describe('RunsPage', () => {
       expect(within(page).getByLabelText('All runs')).not.toBeChecked()
     })
 
-    it('shows the endpoint’s refusal to a member who asked for all-scope by hand (403, never a quiet narrowing)', async () => {
+    /**
+     * A stale ask (fix round 1). The ask outlives the session that made it —
+     * a shared machine, a role taken away, an admin who signed out — and the
+     * person holding it has no toggle to turn it off with, so the page has to
+     * put itself right: every list request would 403, and Retry would repeat
+     * the same 403 for ever.
+     */
+    it('narrows a stale all-scope ask when the viewer does not hold the role, with no error to clear', async () => {
       seedFinishedRun()
       seedSomeoneElsesRun()
-      // No toggle for this identity — but the ask is remembered per browser,
-      // so it still rides. The list rule answers 403 rather than pretending
-      // the narrower list is what was asked for.
+      // Remembered by this browser from an identity that could ask; this one
+      // cannot, and has no toggle to discover that with.
       writeScope('all')
       renderApp()
 
       const page = screen.getByRole('main')
-      expect(await within(page).findByText("Couldn't load runs")).toBeInTheDocument()
+      // Their own runs, straight away — not a refusal they cannot act on.
+      expect(await within(page).findByRole('row', { name: fixtureRow() })).toBeInTheDocument()
+      expect(within(page).queryByText("Couldn't load runs")).not.toBeInTheDocument()
+      expect(within(page).queryByRole('row', { name: new RegExp(OTHER_RUN_ID) })).not.toBeInTheDocument()
       expect(within(page).queryByLabelText('All runs')).not.toBeInTheDocument()
-      expect(within(page).queryByRole('row', { name: fixtureRow() })).not.toBeInTheDocument()
+      // And the ask is gone from storage, so the header stops riding every
+      // other call this browser makes too.
+      expect(readScope()).toBe('mine')
+    })
+
+    it('leaves an owner’s remembered ask alone — it is theirs to hold', async () => {
+      seedFinishedRun()
+      seedSomeoneElsesRun()
+      setMockUser(MOCK_ADMIN)
+      writeScope('all')
+      renderApp()
+
+      const page = screen.getByRole('main')
+      expect(await within(page).findByRole('row', { name: new RegExp(OTHER_RUN_ID) })).toBeInTheDocument()
+      expect(within(page).getByRole('row', { name: fixtureRow() })).toBeInTheDocument()
+      expect(within(page).getByLabelText('All runs')).toBeChecked()
+      expect(readScope()).toBe('all')
+    })
+
+    // The belt to that brace: a role taken away between one page load and the
+    // next is not in `whoami`'s cached answer yet, so the refusal itself is
+    // what the page narrows on.
+    it('narrows on the endpoint’s own 403, whatever whoami still believes', async () => {
+      seedFinishedRun()
+      setMockUser(MOCK_ADMIN)
+      writeScope('all')
+      server.use(
+        http.get('/api/workflow/runs', ({ request }) => {
+          const url = new URL(request.url)
+          const asked =
+            url.searchParams.get('scope') === 'all' || request.headers.get('x-workflow-scope') === 'all'
+          return asked
+            ? HttpResponse.json({ ok: false, code: 'SCOPE_FORBIDDEN' }, { status: 403 })
+            : HttpResponse.json({ records: [] })
+        }),
+      )
+
+      renderApp()
+
+      const page = screen.getByRole('main')
+      expect(await within(page).findByText('No runs yet')).toBeInTheDocument()
+      expect(within(page).queryByText("Couldn't load runs")).not.toBeInTheDocument()
+      // Still an owner, so the toggle is still theirs — just not on any more.
+      expect(within(page).getByLabelText('All runs')).not.toBeChecked()
+      expect(readScope()).toBe('mine')
     })
   })
 })

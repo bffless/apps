@@ -21,6 +21,7 @@
  * answer to an ask the request carried.
  */
 import { skipToken } from '@reduxjs/toolkit/query/react'
+import { useCallback, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { EmptyState } from '../components/EmptyState'
 import { LoadError } from '../components/LoadError'
@@ -126,10 +127,40 @@ export function RunsPage() {
    * cached as "not found" would survive the widening and make the toggle look
    * broken on the very run it was flipped for.
    */
-  function scopeChanged(next: RunsScope): void {
-    dispatch(runsScopeChanged(next))
-    dispatch(workflowApi.util.invalidateTags(['Runs', 'Run']))
-  }
+  const scopeChanged = useCallback(
+    (next: RunsScope): void => {
+      dispatch(runsScopeChanged(next))
+      dispatch(workflowApi.util.invalidateTags(['Runs', 'Run']))
+    },
+    [dispatch],
+  )
+
+  /**
+   * A stale ask narrows itself (fix round 1). The ask outlives the session
+   * that made it — it is remembered per *browser* (`lib/scope.ts`), so a
+   * shared machine, a signed-out admin or a role taken away all leave a
+   * `'all'` behind that the person now looking at the page cannot hold. They
+   * get no toggle to turn it off with (that is gated on the role), every list
+   * request 403s, and the only affordance left — Retry — repeats the same 403
+   * for ever. So the page puts itself right instead:
+   *
+   * - `whoami` has loaded and does not carry the role: narrow. This is the
+   *   common case and it happens before the person sees an error at all.
+   * - the list answered **403**: narrow anyway. `whoami` is cached for the
+   *   life of the app, so a role taken away mid-session is a thing only the
+   *   refusal itself knows about.
+   *
+   * Narrowing writes storage (`runsScopeChanged`), so the header stops riding
+   * every other call this browser makes too — not just this list.
+   */
+  const staleAsk =
+    scope === 'all' &&
+    ((me !== undefined && !isAllScopeRole(me.projectRole)) ||
+      (error as { status?: number } | undefined)?.status === 403)
+
+  useEffect(() => {
+    if (staleAsk) scopeChanged('mine')
+  }, [staleAsk, scopeChanged])
 
   const base = `/${impl}/${workflow}`
   const shown = (runs ?? []).filter((run) => filter === 'all' || run.status === filter)
