@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.12.0](https://github.com/bffless/apps/compare/workflow-v1.11.0...workflow-v1.12.0) (2026-09-12)
+
+
+### Features
+
+* **workflow-agent-tools:** the run-scoped read tools take a scope ([#677](https://github.com/bffless/apps/issues/677)) ([3b16d90](https://github.com/bffless/apps/commit/3b16d90194faa5687b5f5fc42a161040a48b64fc))
+* **workflow:** an unconsumed drive claim stops blocking its run id once its pending window is up ([#676](https://github.com/bffless/apps/issues/676)) ([4673d08](https://github.com/bffless/apps/commit/4673d08128e82245706f4e9d316dcebf6980f30f))
+* **workflow:** list a dispatched run as queued until its driver picks it up ([#679](https://github.com/bffless/apps/issues/679)) ([4451091](https://github.com/bffless/apps/commit/445109138aad5176fe3bf55e41d9f76d2d33a94c))
+
+
+### Bug Fixes
+
+* **workflow:** a driven run that parks shows the run, not "No such run" ([#678](https://github.com/bffless/apps/issues/678)) ([a547724](https://github.com/bffless/apps/commit/a547724d4c743576ca62ad97bd44bab407cc71e5))
+
 ## [1.11.0](https://github.com/bffless/apps/compare/workflow-v1.10.0...workflow-v1.11.0) (2026-09-11)
 
 

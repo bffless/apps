@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.4.0...workflow-agent-tools-v1.5.0) (2026-09-12)
+
+
+### Features
+
+* **workflow-agent-tools:** the run-scoped read tools take a scope ([#677](https://github.com/bffless/apps/issues/677)) ([3b16d90](https://github.com/bffless/apps/commit/3b16d90194faa5687b5f5fc42a161040a48b64fc))
+
 ## [1.4.0](https://github.com/bffless/apps/compare/workflow-agent-tools-v1.3.1...workflow-agent-tools-v1.4.0) (2026-09-11)
 
 
