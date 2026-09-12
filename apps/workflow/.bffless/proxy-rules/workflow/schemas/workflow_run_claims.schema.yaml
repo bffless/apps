@@ -2,8 +2,9 @@
 # from the endpoint: who asked, and the nonce the driver must present to `runs/post`.
 # Consumed (deleted) by `runs/post`; a claim nobody has consumed yet is what `runs/get` lists as a
 # `queued` run (apps#671) — the window between dispatch and the driver's first write. It holds its
-# runId against other members for `driveGate.ts`'s CLAIM_STALE_MS (8 minutes), then the next caller
-# overwrites it in place (apps#672).
+# runId against other members for `driveGate.ts`'s CLAIM_STALE_MS — which IS `PENDING_WINDOW_MS`,
+# the ten minutes `workflow.status` reports as `pendingUntil` — then the next caller overwrites it
+# in place (apps#672).
 name: workflow_run_claims
 fields:
   - { name: runId, type: string, required: true }
