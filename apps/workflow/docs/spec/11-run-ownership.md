@@ -293,5 +293,8 @@ per request is fine.
 ## Not in this document
 
 Sharing/grants (the gate is shaped for it; the table is not built) · a cross-workflow "my runs"
-page · ageing out a claim nobody consumed (apps#672 — listing one is apps#671, above) ·
-guest/public runs (already backlog in 06) · per-user partitioning of the `inputs/` area.
+page · guest/public runs (already backlog in 06) · per-user partitioning of the `inputs/` area.
+
+Both claim follow-ups have since landed and are specified under §Attribution above, not deferred:
+listing an unconsumed claim as a `queued` run (apps#671) and ageing one out so it stops holding
+its run id (apps#672).
