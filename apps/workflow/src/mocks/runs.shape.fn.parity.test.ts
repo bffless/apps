@@ -237,6 +237,36 @@ describe('runs shape.fn.js', () => {
         expect(stale).toEqual([])
       })
 
+      // The gate keeps a foreign claim at `<=` and this drops at `>`: on the
+      // boundary itself both still say the claim stands.
+      it('still lists a claim exactly `CLAIM_STALE_MS` old', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(NOW)
+
+        const out = handler({
+          steps: { mine: [], waiting: [], queuedMine: [claim('run_q', { createdAt: NOW - CLAIM_STALE_MS })] },
+        })
+
+        expect(out.map((row) => row.runId)).toEqual(['run_q'])
+      })
+
+      // `run/drive` reuses the caller's own standing claim whatever its age,
+      // `createdAt` included (spec 11 §Attribution), so a retry after the
+      // window that DOES land is unlisted until the driver's first write —
+      // the same gap `workflow.status` reports as no run, measured from the
+      // id's mint. Accepted, and pinned here so a change to it is deliberate.
+      it('does not list a claim reused by a retry after the window, until its run row lands', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(NOW)
+        const reused = claim('run_q', { createdAt: NOW - (CLAIM_STALE_MS + 60_000) })
+
+        expect(handler({ steps: { mine: [], waiting: [], queuedMine: [reused] } })).toEqual([])
+        // The moment the run row exists it lists as itself, claim or no claim.
+        expect(
+          handler({ steps: { mine: [run('run_q')], waiting: [], queuedMine: [reused] } }).map((row) => row.status),
+        ).toEqual(['running'])
+      })
+
       // The comparison reads `createdAt` through `Number()`: a numeric string
       // must age out too, or the filter is inert on exactly the rows the
       // pass-through above exists for.

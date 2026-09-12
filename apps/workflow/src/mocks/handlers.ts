@@ -405,11 +405,12 @@ const runRecord = [
     // from the same allow-list, so the claim's `driveKey` (spec 11 D28) never
     // rides the page here either. Deduped against the run rows already in it:
     // the queries are separate snapshots, and a claim outlives a failed
-    // dispatch deliberately. And aged out on the drive gate's own window
-    // (apps#681): past `CLAIM_STALE_MS` the gate hands the id to the next
-    // caller, so a claim that old is a dispatch that never landed and the
-    // list stops promising it is coming — `shape.fn.js` restates the same
-    // number; this side reads the import.
+    // dispatch deliberately. And aged out on the harness's one dispatch
+    // window (apps#681): past `CLAIM_STALE_MS` `workflow.status` stops
+    // answering `pending` and the gate lets another member take the id, so a
+    // claim that old is a dispatch the harness has written off and the list
+    // stops promising it is coming — `shape.fn.js` restates the same number;
+    // this side reads the import.
     const listed = new Set(records.map((record) => record.runId))
     for (const claim of db.claims.values()) {
       if (impl !== null && claim.impl !== impl) continue

@@ -246,15 +246,20 @@ claim with no run row of its own up as a synthetic `status: 'queued'` entry. It 
 only: `RunStatus` is unchanged, nothing that switches on a run's status is ever handed one, and
 the claim's `driveKey` stays off the wire (D28) because the entry is built from an allow-list.
 
-**Since apps#681:** the listing ages out on the same window the gate uses. `runs/get`'s
+**Since apps#681:** the listing ages out on the harness's one dispatch window. `runs/get`'s
 `shape.fn.js` drops a claim older than `CLAIM_STALE_MS` (restated there, pinned to the export by
-its parity test), so a claim stops listing as `queued` at the moment the gate stops honouring it
-— one row, one answer: past the window a dispatch that never landed is *no run*, not a run
-forever about to begin. The filter runs after the two claim queries, not in them (a
-`data_query` filter value is a literal or a request path, never "now minus a constant"), so a
-stale claim still holds one of the query's 50 slots. The row itself is not reaped: it is the
-only record of who asked for a dispatch that never landed, and `run/drive` reusing a caller's
-own standing claim is what makes a retry safe.
+its parity test), so a claim stops listing as `queued` when `workflow.status` stops answering
+`pending` for the run it stands for — past `pendingUntil` a dispatch that never landed is *no
+run* on both surfaces, not a run forever about to begin on one of them. The gate's own window
+is the same number, but it only *hands the id away* to another member; the claimant's own claim
+it reuses whatever its age (above), `createdAt` included, so a retry after the window is
+unlisted until the driver's first write — the same short gap `workflow.status` already reports
+as no run, since it measures from the id's mint. That gap is accepted rather than re-stamping
+the claim, which would extend the foreign-takeover hold instead. The filter runs after the two
+claim queries, not in them (a `data_query` filter value is a literal or a request path, never
+"now minus a constant"), so a stale claim still holds one of the query's 50 slots. The row
+itself is not reaped: it is the only record of who asked for a dispatch that never landed, and
+that reuse is what makes the retry safe.
 
 ## Files follow the run (D29)
 

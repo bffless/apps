@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 11
 pipeline:
   name: List workflow runs
-  description: "Latest 50 workflow_runs rows for one (impl, workflow) — the caller's own by default, `?scope=all` for a project owner/admin (D26/D27), 403 otherwise — each with the keys of its waiting step rows joined on as `waitingOn` (apps#473; the join is capped by the second query's limit), plus the dispatched runs nobody has picked up yet as synthetic `status: 'queued'` entries built from their unconsumed `workflow_run_claims` rows (apps#671). Status filtering and sorting are client-side in M1 (Decision 6)."
+  description: "Latest 50 workflow_runs rows for one (impl, workflow) — the caller's own by default, `?scope=all` for a project owner/admin (D26/D27), 403 otherwise — each with the keys of its waiting step rows joined on as `waitingOn` (apps#473; the join is capped by the second query's limit), plus the dispatched runs nobody has picked up yet as synthetic `status: 'queued'` entries built from their unconsumed `workflow_run_claims` rows (apps#671) — only while the claim is younger than the drive gate's `CLAIM_STALE_MS` window; an older one is a dispatch the harness has written off (apps#681). Status filtering and sorting are client-side in M1 (Decision 6)."
   steps:
     - id: scope
       name: scope
@@ -106,4 +106,4 @@ pipeline:
   validators:
     - type: auth_required
       config: { allowApiKey: true, requiredScopes: [workflow:read] }
-description: "List the caller's own runs by default; `?scope=all` for a project owner/admin (D26/D27), 403 otherwise, each carrying `waitingOn` — the keys of its steps parked in `waiting` — plus one `queued` entry per dispatched run still waiting to be picked up (apps#671). no-store: run lists must never be stale."
+description: "List the caller's own runs by default; `?scope=all` for a project owner/admin (D26/D27), 403 otherwise, each carrying `waitingOn` — the keys of its steps parked in `waiting` — plus one `queued` entry per dispatched run still waiting to be picked up, aged out on the drive gate's window (apps#671, apps#681). no-store: run lists must never be stale."

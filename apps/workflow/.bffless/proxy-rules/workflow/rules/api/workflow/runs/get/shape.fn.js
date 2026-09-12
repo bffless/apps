@@ -20,10 +20,21 @@
 // Kept in sync with `src/mcp/driveGate.ts`'s `CLAIM_STALE_MS` (which is
 // `src/mcp/ids.ts`'s `PENDING_WINDOW_MS`, 10 minutes) — restated because an
 // authored `.fn.js` cannot import, and pinned to that export behaviourally by
-// `src/mocks/runs.shape.fn.parity.test.ts`. Past this window the drive gate
-// hands the run id to the next caller and `workflow.status` stops answering
-// `pending` for it, so a claim older than this is a dispatch that never landed:
-// the list must stop promising the run is coming when the gate already has.
+// `src/mocks/runs.shape.fn.parity.test.ts`. The harness gives ONE answer to
+// how long a dispatch may take: past this window `workflow.status` stops
+// answering `pending` for a run with no row (its `pendingUntil`), and the
+// drive gate lets the next caller take the id over from another member. A
+// claim older than this is a dispatch the harness has written off, so the
+// list stops promising the run is coming when the status already has.
+//
+// Two edges this accepts, on purpose: (1) the gate reuses a caller's OWN
+// standing claim whatever its age, `createdAt` and all, so a retry after the
+// window is unlisted here until the driver's first write lands — the same
+// ~90 s `workflow.status` already answers "no run" for, since it measures
+// from the id's mint. Re-stamping the claim would extend the foreign-takeover
+// hold instead. (2) The gate reads a non-number `createdAt` as claimed NOW;
+// this reads it through `Number()` (below). The schema types the column as a
+// number, so neither reading is ever exercised on a stored row.
 const CLAIM_STALE_MS = 600000
 
 function handler({ steps }) {
@@ -94,12 +105,12 @@ function handler({ steps }) {
     // re-usable after a failed dispatch — either way the page must carry one
     // entry per runId, not two.
     if (typeof f.runId !== 'string' || f.runId === '' || seen[f.runId]) continue
-    // The gate gave this id away (apps#681): the list stops promising it is
-    // coming. Read through `Number()` for the comparison only — a claim's
-    // `createdAt` can arrive as a numeric string (see `startedAt` below) and a
-    // `typeof` test would leave this inert on it. A value that does not read
-    // as a finite time keeps the entry: wrongly hiding a real queued run is
-    // worse than listing a stale one.
+    // The harness has written this dispatch off (apps#681): the list stops
+    // promising it is coming. Read through `Number()` for the comparison only
+    // — a claim's `createdAt` can arrive as a numeric string (see `startedAt`
+    // below) and a `typeof` test would leave this inert on it. A value that
+    // does not read as a finite time keeps the entry: wrongly hiding a real
+    // queued run is worse than listing a stale one.
     const age = Date.now() - Number(f.createdAt)
     if (Number.isFinite(age) && age > CLAIM_STALE_MS) continue
     seen[f.runId] = true
