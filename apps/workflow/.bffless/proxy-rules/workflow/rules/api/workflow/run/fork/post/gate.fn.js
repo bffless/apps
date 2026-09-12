@@ -135,13 +135,13 @@ function handler({ steps, request, user }) {
 
   const now = Date.now()
   // Retention (spec 05, apps#686): `startedAt + keep` when the SENT definition has
-  // a top-level `keep:` (`<n>h` | `<n>d` — `$defs.keep`, not `duration`). A fork
+  // a top-level `keep:` (`<n>h` | `<n>d`, n >= 1 — `$defs.keep`, not `duration`). A fork
   // measures from its own start, not the parent's. The same arithmetic as
   // `runs/post/expiry.fn.js`; the parity test holds them together. Without a
   // keep the key is left OFF the row (not `null`, which CE would store): the
   // `create` step's `steps.gate.run.expiresAt` then evaluates to `undefined` and
   // the JSONB write drops it, as a kickoff run's `forkedFrom` is dropped.
-  const keep = typeof definition.keep === 'string' ? /^([0-9]+)(h|d)$/.exec(definition.keep) : null
+  const keep = typeof definition.keep === 'string' ? /^([1-9][0-9]*)(h|d)$/.exec(definition.keep) : null
   const retention = keep ? { expiresAt: now + Number(keep[1]) * (keep[2] === 'd' ? 86400000 : 3600000) } : {}
   return {
     ok: true,

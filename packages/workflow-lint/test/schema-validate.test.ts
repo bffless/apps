@@ -89,13 +89,14 @@ test('on.manual.warnings: a list of { if, message }; anything else is a schema e
 })
 
 // `keep:` (05 Retention, apps#686) is a top-level key with its own grammar —
-// `^[0-9]+(h|d)$` — deliberately separate from `$defs/duration` (`ms|s|m|h`),
-// so a run's retention reads in hours or days and a `timeout: 30d` stays invalid.
+// `^[1-9][0-9]*(h|d)$` — deliberately separate from `$defs/duration` (`ms|s|m|h`),
+// so a run's retention reads in whole hours or days, never zero (a run must not be
+// born expired), and a `retry.delay: 30d` stays invalid.
 test.each(['30d', '12h', '1h', '365d'])('keep: %s passes at the top level', (keep) => {
   expect(validateDefinition({ name: 'x', keep, on: { manual: {} }, jobs: { a: minimalJob } })).toEqual([])
 })
 
-test.each(['30m', '30', '30ms', '1d12h', 'd', ''])('keep: %j is a schema error at the document root', (keep) => {
+test.each(['0d', '0h', '030d', '30m', '30', '30ms', '1d12h', 'd', ''])('keep: %j is a schema error at the document root', (keep) => {
   const f = validateDefinition({ name: 'x', keep, on: { manual: {} }, jobs: { a: minimalJob } })
   expect(f).toHaveLength(1)
   expect(f[0]!.rule).toBe('schema')

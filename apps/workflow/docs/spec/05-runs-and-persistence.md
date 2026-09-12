@@ -147,7 +147,7 @@ them) unless "also delete its uploaded inputs" is ticked and no other run refere
 Owner or admin only.
 
 **Retention** is opt-in per workflow through the top-level `keep:` key (01): `<n>h` or `<n>d`
-(its own grammar — not a `duration`, so there is no `keep: 30m`). A run's row is stamped with
+with `n ≥ 1` (its own grammar — not a `duration`, so there is no `keep: 30m`; and no `keep: 0d`, a run is never born expired). A run's row is stamped with
 `expires_at = started_at + keep` at create time, on both the kickoff and the fork path; a forked
 run measures from its own start. It is measured from the **start**, and never revised — a run
 that finishes after its `expires_at` (a form answered the next morning under `keep: 12h`) is

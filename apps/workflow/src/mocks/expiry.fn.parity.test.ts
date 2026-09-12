@@ -61,6 +61,9 @@ const CASES: { desc: string; keep?: unknown; offset: number | null }[] = [
   { desc: 'no keep — never swept', offset: null },
   // The schema refuses these before a run exists; the rules stay defensive all the same.
   { desc: 'keep: 30m is not a keep (the duration grammar is not this one)', keep: '30m', offset: null },
+  { desc: 'keep: 0d — a run is never born expired', keep: '0d', offset: null },
+  { desc: 'keep: 0h', keep: '0h', offset: null },
+  { desc: 'keep: 030d (no leading zeros)', keep: '030d', offset: null },
   { desc: 'keep: 30 (no unit)', keep: '30', offset: null },
   { desc: 'keep: 1d12h (one unit only)', keep: '1d12h', offset: null },
   { desc: 'keep that is not a string', keep: 30, offset: null },

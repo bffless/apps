@@ -2,8 +2,9 @@
  * When does this run expire? (spec 05 §Retention, apps#686.)
  *
  * `expiresAt = startedAt + keep`, epoch ms, when the definition being snapshotted
- * carries a top-level `keep:` — `<n>h` or `<n>d`, the schema's own `$defs.keep`
- * grammar and not the `duration` one, so `30m` is not a keep. No `expiresAt` key
+ * carries a top-level `keep:` — `<n>h` or `<n>d` with n >= 1, the schema's own
+ * `$defs.keep` grammar and not the `duration` one, so `30m` is not a keep and
+ * neither is `0d` (a run must never be born expired). No `expiresAt` key
  * at all otherwise — CE's evaluator answers `undefined` for a property the step
  * output lacks (expression-evaluator.ts getNestedValue) and the JSONB write drops
  * it, so the row carries no column, the way a kickoff run carries no `forkedFrom`.
@@ -26,7 +27,7 @@ function handler(data) {
   const body = request.body !== null && typeof request.body === 'object' && !Array.isArray(request.body) ? request.body : {}
   const definition = body.definition !== null && typeof body.definition === 'object' && !Array.isArray(body.definition) ? body.definition : {}
 
-  const match = typeof definition.keep === 'string' ? /^([0-9]+)(h|d)$/.exec(definition.keep) : null
+  const match = typeof definition.keep === 'string' ? /^([1-9][0-9]*)(h|d)$/.exec(definition.keep) : null
   const startedAt = typeof body.startedAt === 'number' && Number.isFinite(body.startedAt) ? body.startedAt : null
   if (!match || startedAt === null) return {}
 
