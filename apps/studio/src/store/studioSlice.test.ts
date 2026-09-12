@@ -107,11 +107,17 @@ describe('selectors', () => {
     const s = { studio: { index: {}, working: {}, activeProjectId: null } } as never
     expect(selectActive(s)).toBe(EMPTY_WORKING)
   })
-  it('selectProjectList sorts by updatedAt desc', () => {
+  it('selectProjectList sorts by createdAt desc (newest project first)', () => {
+    let st = reducer(undefined, createProject({ id: 'p1', now: 1 }))
+    st = reducer(st, createProject({ id: 'p2', now: 2 }))
+    const list = selectProjectList({ studio: st } as never)
+    expect(list.map((m) => m.id)).toEqual(['p2', 'p1'])
+  })
+  it('selectProjectList order does not change when a project is edited', () => {
     let st = reducer(undefined, createProject({ id: 'p1', now: 1 }))
     st = reducer(st, createProject({ id: 'p2', now: 2 }))
     st = reducer(st, renameProject({ id: 'p1', name: 'x', now: 9 }))
     const list = selectProjectList({ studio: st } as never)
-    expect(list.map((m) => m.id)).toEqual(['p1', 'p2'])
+    expect(list.map((m) => m.id)).toEqual(['p2', 'p1'])
   })
 })

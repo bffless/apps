@@ -689,7 +689,11 @@ export const selectActive = (s: RootState): ProjectWorkingState =>
 
 export const selectActiveProjectId = (s: RootState): string | null => s.studio.activeProjectId
 
+/** Dashboard order: newest project first, oldest last — by CREATION time, so the
+ *  list is stable. Editing a project must never reshuffle the dashboard
+ *  (`updatedAt` would float whatever you just touched to the top). `updatedAt`
+ *  only breaks ties between projects created in the same millisecond. */
 export const selectProjectList = (s: RootState): ProjectMeta[] =>
-  Object.values(s.studio.index).sort((a, b) => b.updatedAt - a.updatedAt)
+  Object.values(s.studio.index).sort((a, b) => b.createdAt - a.createdAt || b.updatedAt - a.updatedAt)
 
 export default studioSlice.reducer
