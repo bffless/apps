@@ -11,7 +11,7 @@
  * catalog's `workflow.sign { runId?, path }` and the endpoint serves it for
  * both audiences.
  */
-import type { JsonSchema, Scope } from '@bffless/workflow-agent-tools'
+import { RUN_SCOPE, type JsonSchema, type Scope } from '@bffless/workflow-agent-tools'
 
 /**
  * The endpoint's `serverInfo.version` — the *host protocol* version, the same
@@ -103,8 +103,13 @@ export const HOST_TOOLS: readonly HostToolDef[] = Object.freeze([
     description:
       "What the step view needs to mount a waiting interactive step. An island: its HTML (unchanged, fetched from the implementation's bundle), the step's persisted inputs (its tool-input arguments) and its declared outputs. A form: the fields the harness evaluated when the step started waiting, their initial values, the title and the submit label.",
     inputSchema: {
+      // The one host tool that only reads takes the catalog's run `scope`
+      // (spec 11, D27; apps#673) — the three that act on a step do not.
+      // Declared for symmetry with the catalog's reads: the step-view widget
+      // is mounted from `workflow.submitStep`'s tool input and calls this with
+      // `{ runId, step }` only, so nothing shipped asks for it yet.
       type: 'object',
-      properties: { runId: RUN_ID, step: STEP },
+      properties: { runId: RUN_ID, step: STEP, scope: RUN_SCOPE },
       required: ['runId', 'step'],
       additionalProperties: false,
     },

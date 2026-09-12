@@ -76,12 +76,18 @@ pipeline:
               method: POST
           - name: workflow.status
             description: "The run snapshot: status, the steps in flight, every reached step’s status, the outputs so far, and `waitingOn` — for each waiting step what would satisfy it (its kind, its evaluated inputs, an island’s declared outputs and src). Outputs are File refs, never bytes — pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path."
-            inputSchema: &a4
+            inputSchema: &a5
               type: object
               properties:
                 runId: &a3
                   type: string
                   description: The run to act on. Optional where a current run exists (the harness page); required over the MCP endpoint.
+                scope: &a4
+                  type: string
+                  enum:
+                    - mine
+                    - all
+                  description: "mine (default): only a run you started. all: any run of the project — project owner/admin only, and only when asked (D27). A run you may not read answers No such run, never a scope error."
               required: []
               additionalProperties: false
             annotations:
@@ -95,6 +101,7 @@ pipeline:
               type: object
               properties:
                 runId: *a3
+                scope: *a4
                 until:
                   type: string
                   enum:
@@ -172,13 +179,13 @@ pipeline:
               readOnlyHint: false
             _meta:
               ui:
-                resourceUri: ui://bffless/workflow/step-view.d6dd2b1a.html
+                resourceUri: ui://bffless/workflow/step-view.6ebf9607.html
             rule:
               path: /api/workflow/mcp-tools/submitStep
               method: POST
           - name: workflow.outputs
             description: The run’s outputs — File refs (`{ path, name, contentType, size, url }`), never bytes. Pass a ref’s `path` to workflow.sign for a fetchable URL; the ref’s own `url` is the harness page’s session-only path.
-            inputSchema: *a4
+            inputSchema: *a5
             annotations:
               readOnlyHint: true
             rule:
@@ -190,6 +197,7 @@ pipeline:
               type: object
               properties:
                 runId: *a3
+                scope: *a4
                 path:
                   type: string
                   description: A File ref’s `path` — an uploads-relative key under `workflows/`. Nothing else is signable.
@@ -203,7 +211,12 @@ pipeline:
               method: POST
           - name: workflow.cancel
             description: Cancel the run. Server-side pipeline jobs already enqueued keep running.
-            inputSchema: *a4
+            inputSchema:
+              type: object
+              properties:
+                runId: *a3
+              required: []
+              additionalProperties: false
             annotations:
               readOnlyHint: false
             rule:
@@ -230,10 +243,10 @@ pipeline:
             inputSchema:
               type: object
               properties:
-                runId: &a5
+                runId: &a6
                   type: string
                   description: The run the island belongs to.
-                step: &a6
+                step: &a7
                   type: string
                   description: The step key, `<job>/<index>/<step>`, of the waiting island step.
                 outputs:
@@ -255,8 +268,8 @@ pipeline:
             inputSchema:
               type: object
               properties:
-                runId: *a5
-                step: *a6
+                runId: *a6
+                step: *a7
                 annotations:
                   type: array
                   description: "Entries of `{ level: notice|warning|error, message, title? }`."
@@ -279,8 +292,8 @@ pipeline:
             inputSchema:
               type: object
               properties:
-                runId: *a5
-                step: *a6
+                runId: *a6
+                step: *a7
                 name:
                   type: string
                   description: The pipeline’s tool name, e.g. `echo` or `video.slice`.
@@ -309,8 +322,9 @@ pipeline:
             inputSchema:
               type: object
               properties:
-                runId: *a5
-                step: *a6
+                runId: *a6
+                step: *a7
+                scope: *a4
               required:
                 - runId
                 - step
@@ -322,7 +336,7 @@ pipeline:
               method: POST
         resources:
           static:
-            - uri: ui://bffless/workflow/step-view.d6dd2b1a.html
+            - uri: ui://bffless/workflow/step-view.6ebf9607.html
               name: Workflow step view
               description: Mounts a waiting island or form step of a run (spec 10).
               rule:

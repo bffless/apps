@@ -18,10 +18,12 @@ export {
   type ToolName,
 } from './catalog.js'
 export {
+  RUN_SCOPE,
   type AwaitArgs,
   type DescribeArgs,
   type ListArgs,
   type RunIdArg,
+  type RunReadArg,
   type RunsArgs,
   type SignArgs,
   type StartArgs,

@@ -64,20 +64,56 @@ export const START_SCHEMA: JsonSchema = {
   additionalProperties: false,
 }
 
+/**
+ * `scope` on a tool that names **one** run (spec 11, D27) — the same asked-for
+ * widening `workflow.runs` takes, on the run-scoped **reads** only. The run
+ * gate already reads it from the tool arguments; without it on the schema an
+ * MCP caller had no way to ask, and the host rejected the argument before the
+ * gate ever saw it (apps#673).
+ *
+ * The reads are an enumeration, not a derivation: `workflow.status`,
+ * `workflow.outputs`, `workflow.await`, `workflow.sign` and the host tool
+ * `workflow.stepView`. The writes (`cancel`, `resume`, `submitStep`, and the
+ * host tools `submit`, `annotate`, `pipeline`) deliberately do not take it —
+ * sharing/grants is the answer for *acting on* someone else's run.
+ *
+ * `workflow.runs`' wording cannot be reused: a single-run gate that refuses
+ * does not answer `errors.scope`, it answers `No such run` — an invisible run
+ * and a missing one are the same answer.
+ */
+export const RUN_SCOPE = {
+  type: 'string',
+  enum: ['mine', 'all'],
+  description:
+    'mine (default): only a run you started. all: any run of the project — project owner/admin only, and only when asked (D27). A run you may not read answers No such run, never a scope error.',
+} as const
+
 export interface RunIdArg {
   runId?: string
 }
+/** A run-scoped **read**: the run, plus the scope the caller asked for (D27). */
+export interface RunReadArg extends RunIdArg {
+  scope?: 'mine' | 'all'
+}
 export const STATUS_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: { runId: RUN_ID, scope: RUN_SCOPE },
+  required: [],
+  additionalProperties: false,
+}
+export const OUTPUTS_SCHEMA: JsonSchema = STATUS_SCHEMA
+/**
+ * Cancelling is a write, so it takes no `scope` — which is why it no longer
+ * shares `STATUS_SCHEMA`'s object (apps#673). Its shape is otherwise identical.
+ */
+export const CANCEL_SCHEMA: JsonSchema = {
   type: 'object',
   properties: { runId: RUN_ID },
   required: [],
   additionalProperties: false,
 }
-export const OUTPUTS_SCHEMA: JsonSchema = STATUS_SCHEMA
-export const CANCEL_SCHEMA: JsonSchema = STATUS_SCHEMA
 
-export interface AwaitArgs {
-  runId?: string
+export interface AwaitArgs extends RunReadArg {
   until: 'waiting' | 'terminal'
   timeoutMs?: number
 }
@@ -85,6 +121,7 @@ export const AWAIT_SCHEMA: JsonSchema = {
   type: 'object',
   properties: {
     runId: RUN_ID,
+    scope: RUN_SCOPE,
     until: {
       type: 'string',
       enum: ['waiting', 'terminal'],
@@ -149,14 +186,14 @@ export const SUBMIT_STEP_SCHEMA: JsonSchema = {
   additionalProperties: false,
 }
 
-export interface SignArgs {
-  runId?: string
+export interface SignArgs extends RunReadArg {
   path: string
 }
 export const SIGN_SCHEMA: JsonSchema = {
   type: 'object',
   properties: {
     runId: RUN_ID,
+    scope: RUN_SCOPE,
     path: {
       type: 'string',
       description: 'A File ref’s `path` — an uploads-relative key under `workflows/`. Nothing else is signable.',
@@ -178,11 +215,11 @@ export interface ToolArgs {
   'workflow.list': ListArgs
   'workflow.describe': DescribeArgs
   'workflow.start': StartArgs
-  'workflow.status': RunIdArg
+  'workflow.status': RunReadArg
   'workflow.await': AwaitArgs
   'workflow.runs': RunsArgs
   'workflow.submitStep': SubmitStepArgs
-  'workflow.outputs': RunIdArg
+  'workflow.outputs': RunReadArg
   'workflow.sign': SignArgs
   'workflow.cancel': RunIdArg
   'workflow.resume': { runId: string }
