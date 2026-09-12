@@ -43,3 +43,12 @@ test('unterminated string throws with offset', () => {
 test('unexpected character throws', () => {
   expect(() => tokenize('a # b')).toThrow(ExprSyntaxError)
 })
+
+test('arithmetic punctuation: + * / are tokens, - is not', () => {
+  expect(flat('a / b > 240')).toEqual(['a', '/', 'b', '>', 240, '<eof>'])
+  expect(flat('x * 2 + 1')).toEqual(['x', '*', 2, '+', 1, '<eof>'])
+  // a dash stays part of an identifier, and a leading minus stays part of a number literal
+  expect(flat('inputs.per-video')).toEqual(['inputs', '.', 'per-video', '<eof>'])
+  expect(flat('a -1')).toEqual(['a', -1, '<eof>'])
+  expect(() => tokenize('a - 1')).toThrow(ExprSyntaxError)
+})

@@ -101,3 +101,34 @@ test('renderTemplate: interpolation stringifies', () => {
   expect(renderTemplate('v=${{ x }}', { contexts: { x: [1, 2] } })).toBe('v=[1,2]')
   expect(renderTemplate('plain', { contexts: {} })).toBe('plain')
 })
+
+test('arithmetic: + * / coerce like comparison and never throw', () => {
+  expect(ev('a / b', { a: 1200, b: 5 })).toBe(240)
+  expect(ev("'6' * 7")).toBe(42)
+  expect(ev('a + 1', { a: null })).toBe(1)
+  expect(ev('true + true')).toBe(2)
+  expect(ev('2 + 3 * 4')).toBe(14)
+  expect(ev('a / b > 240', { a: 1500, b: 5 })).toBe(true)
+  // non-numeric operand or non-finite result → null, not NaN / Infinity / a throw
+  expect(ev("'abc' * 2")).toBe(null)
+  expect(ev('a / 0', { a: 1 })).toBe(null)
+  expect(ev('a / b', { a: { x: 1 }, b: 2 })).toBe(null)
+  expect(ev('missing.duration / 5', {})).toBe(0)
+})
+
+test('floor', () => {
+  expect(ev('floor(3.9)')).toBe(3)
+  expect(ev('floor(a / b)', { a: 1201, b: 5 })).toBe(240)
+  expect(ev("floor('2.5')")).toBe(2)
+  expect(ev('floor(null)')).toBe(0)
+  expect(ev("floor('abc')")).toBe(null)
+  expect(ev('floor(a)', { a: [1] })).toBe(null)
+})
+
+test('arithmetic interpolates in templates', () => {
+  expect(
+    renderTemplate('About ${{ floor(inputs.recording.duration / inputs.interval) }} stills', {
+      contexts: { inputs: { recording: { duration: 1234.5 }, interval: 5 } },
+    }),
+  ).toBe('About 246 stills')
+})

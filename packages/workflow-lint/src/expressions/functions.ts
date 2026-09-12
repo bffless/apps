@@ -1,8 +1,8 @@
-import { EvalError, interpolate, looseEq } from './evaluate.js'
+import { EvalError, interpolate, looseEq, toNum } from './evaluate.js'
 
 export const STATUS_FUNCTIONS = ['success', 'failure', 'always', 'cancelled'] as const
 
-/** The closed function set of 01-workflow-yaml.md (plus the two deviations). */
+/** The closed function set of 01-workflow-yaml.md (plus the three deviations). */
 export const KNOWN_FUNCTIONS = [
   'contains',
   'startswith',
@@ -13,6 +13,7 @@ export const KNOWN_FUNCTIONS = [
   'fromjson',
   'length',
   'pluck',
+  'floor',
   ...STATUS_FUNCTIONS,
 ] as const
 
@@ -92,5 +93,10 @@ export const FUNCTIONS: Record<string, (...args: unknown[]) => unknown> = {
   },
   pluck(list, key) {
     return pluckValue(list, str(key))
+  },
+  floor(v) {
+    // Deviation (01): rounds a number down; a non-numeric or non-finite argument is null.
+    const n = toNum(v)
+    return Number.isFinite(n) ? Math.floor(n) : null
   },
 }

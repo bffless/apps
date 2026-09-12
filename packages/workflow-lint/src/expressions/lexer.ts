@@ -7,7 +7,10 @@ export type Token =
   | { kind: 'eof'; span: Span }
 
 // Longest first so '==' wins over '=' (which isn't a token at all) and '<=' over '<'.
-const PUNCT = ['==', '!=', '<=', '>=', '&&', '||', '(', ')', '[', ']', '.', ',', '!', '<', '>']
+// Arithmetic is `+ * /` only: `-` is not an operator because identifiers may contain it
+// (`needs.per-video`) and a number literal eats a leading sign (`-1`), so binary `-` would
+// be ambiguous. Spec 01 documents this as the third deviation.
+const PUNCT = ['==', '!=', '<=', '>=', '&&', '||', '(', ')', '[', ']', '.', ',', '!', '<', '>', '+', '*', '/']
 const IDENT_START = /[A-Za-z_]/
 const IDENT = /[A-Za-z0-9_-]/
 const NUMBER = /^-?(0x[0-9a-fA-F]+|[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?)/

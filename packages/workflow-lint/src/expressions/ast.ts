@@ -3,7 +3,7 @@ export interface Span {
   end: number
 }
 
-export type BinOp = '==' | '!=' | '<' | '<=' | '>' | '>=' | '&&' | '||'
+export type BinOp = '==' | '!=' | '<' | '<=' | '>' | '>=' | '&&' | '||' | '+' | '*' | '/'
 
 export type Expr =
   | { kind: 'null' | 'true' | 'false'; span: Span }
