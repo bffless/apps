@@ -10,16 +10,24 @@
  * list endpoint must answer the very same records, or `RunsPage.test.tsx`
  * would be proving the note against a fiction.
  */
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { db, MOCK_MEMBER, seedFinishedRun, seedWaitingRun, stepsOf, toRecord, toRunRecord } from './db'
 import { WAITING_RUN_ID, WAITING_STEP_KEY } from './fixtures/waitingRun'
+import { CLAIM_STALE_MS } from '../mcp/driveGate'
 import { toRunsPageRow } from '../lib/coerce'
 
 /** A run that was dispatched and has not been picked up — a claim, no run row (apps#671). */
 const QUEUED_RUN_ID = 'run_queued'
+/**
+ * When the fixture claims were written: a moment ago, not an absolute date.
+ * The listing ages a claim out on the drive gate's window (apps#681), so a
+ * claim dated in 2023 would be a dispatch the gate has long written off, and
+ * these tests would be proving the queued half against rows it never lists.
+ */
+const CLAIMED_AT = Date.now() - 30_000
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const FN_PATH = join(
@@ -56,7 +64,7 @@ const claim = (runId: string, extra: Record<string, unknown> = {}) => ({
   startedBy: 'user_1',
   startedByEmail: 'member@example.com',
   driveKey: 'nonce-abc',
-  createdAt: 1_700_000_000_000,
+  createdAt: CLAIMED_AT,
   ...extra,
 })
 
@@ -144,7 +152,7 @@ describe('runs shape.fn.js', () => {
           impl: 'hello',
           workflow: 'hello',
           status: 'queued',
-          startedAt: 1_700_000_000_000,
+          startedAt: CLAIMED_AT,
           startedBy: 'user_1',
           startedByEmail: 'member@example.com',
           waitingOn: [],
@@ -176,7 +184,7 @@ describe('runs shape.fn.js', () => {
           waiting: [],
           // `run_a`'s claim is spent but still in its own snapshot; `run_q` was
           // claimed twice (a dispatch that failed and was retried).
-          queuedMine: [claim('run_a'), claim('run_q'), claim('run_q', { createdAt: 1_700_000_009_000 })],
+          queuedMine: [claim('run_a'), claim('run_q'), claim('run_q', { createdAt: CLAIMED_AT + 9_000 })],
         },
       })
 
@@ -190,11 +198,140 @@ describe('runs shape.fn.js', () => {
     // render 1970 and sort the newest entry to the bottom.
     it('passes `createdAt` through as stored, for the client to coerce', () => {
       const out = handler({
-        steps: { mine: [], waiting: [], queuedMine: [claim('run_q', { createdAt: '1700000000000' })] },
+        steps: { mine: [], waiting: [], queuedMine: [claim('run_q', { createdAt: String(CLAIMED_AT) })] },
       })
 
-      expect(out[0].startedAt).toBe('1700000000000')
-      expect(toRunsPageRow(out[0]).startedAt).toBe(1_700_000_000_000)
+      expect(out[0].startedAt).toBe(String(CLAIMED_AT))
+      expect(toRunsPageRow(out[0]).startedAt).toBe(CLAIMED_AT)
+    })
+
+    /**
+     * The other half of apps#672's window (apps#681). Past `CLAIM_STALE_MS`
+     * the drive gate hands the run id to the next caller and `workflow.status`
+     * stops calling the run `pending` — a claim that old is a dispatch that
+     * never landed, and the list must not be the one surface still promising
+     * it. The `.fn.js` cannot import the constant, so it restates the number;
+     * this pins the restatement to the export, to the millisecond, from
+     * outside: a claim one tick inside the window lists and one tick past it
+     * does not.
+     */
+    describe('ageing out on the drive gate’s window (apps#681)', () => {
+      const NOW = Date.UTC(2026, 8, 12, 12, 0, 0)
+
+      afterEach(() => {
+        vi.useRealTimers()
+      })
+
+      it('lists a claim inside `CLAIM_STALE_MS` and drops one past it', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(NOW)
+
+        const fresh = handler({
+          steps: { mine: [], waiting: [], queuedMine: [claim('run_q', { createdAt: NOW - (CLAIM_STALE_MS - 1) })] },
+        })
+        const stale = handler({
+          steps: { mine: [], waiting: [], queuedMine: [claim('run_q', { createdAt: NOW - (CLAIM_STALE_MS + 1) })] },
+        })
+
+        expect(fresh.map((row) => row.runId)).toEqual(['run_q'])
+        expect(stale).toEqual([])
+      })
+
+      // The gate keeps a foreign claim at `<=` and this drops at `>`: on the
+      // boundary itself both still say the claim stands.
+      it('still lists a claim exactly `CLAIM_STALE_MS` old', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(NOW)
+
+        const out = handler({
+          steps: { mine: [], waiting: [], queuedMine: [claim('run_q', { createdAt: NOW - CLAIM_STALE_MS })] },
+        })
+
+        expect(out.map((row) => row.runId)).toEqual(['run_q'])
+      })
+
+      // `run/drive` reuses the caller's own standing claim whatever its age,
+      // `createdAt` included (spec 11 §Attribution), so a retry after the
+      // window that DOES land is unlisted until the driver's first write —
+      // the same gap `workflow.status` reports as no run, measured from the
+      // id's mint. Accepted, and pinned here so a change to it is deliberate.
+      it('does not list a claim reused by a retry after the window, until its run row lands', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(NOW)
+        const reused = claim('run_q', { createdAt: NOW - (CLAIM_STALE_MS + 60_000) })
+
+        expect(handler({ steps: { mine: [], waiting: [], queuedMine: [reused] } })).toEqual([])
+        // The moment the run row exists it lists as itself, claim or no claim.
+        expect(
+          handler({ steps: { mine: [run('run_q')], waiting: [], queuedMine: [reused] } }).map((row) => row.status),
+        ).toEqual(['running'])
+      })
+
+      // The comparison reads `createdAt` through `Number()`: a numeric string
+      // must age out too, or the filter is inert on exactly the rows the
+      // pass-through above exists for.
+      it('ages a numeric-string `createdAt` out the same way', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(NOW)
+
+        const out = handler({
+          steps: {
+            mine: [],
+            waiting: [],
+            queuedMine: [
+              claim('run_fresh', { createdAt: String(NOW - (CLAIM_STALE_MS - 1)) }),
+              claim('run_stale', { createdAt: String(NOW - (CLAIM_STALE_MS + 1)) }),
+            ],
+          },
+        })
+
+        expect(out.map((row) => row.runId)).toEqual(['run_fresh'])
+      })
+
+      // Wrongly hiding a real queued run is worse than listing a stale one:
+      // a `createdAt` that does not read as a time keeps its entry.
+      it('keeps a claim whose `createdAt` is not a finite time', () => {
+        const out = handler({
+          steps: {
+            mine: [],
+            waiting: [],
+            queuedMine: [claim('run_none', { createdAt: undefined }), claim('run_text', { createdAt: 'soon' })],
+          },
+        })
+
+        expect(out.map((row) => row.runId)).toEqual(['run_none', 'run_text'])
+        expect(out.map((row) => row.status)).toEqual(['queued', 'queued'])
+      })
+
+      it('drops it from the mock list endpoint too, so the page tests see what production would', async () => {
+        db.claims.set('run_stale', {
+          runId: 'run_stale',
+          impl: 'hello',
+          workflow: 'hello',
+          startedBy: MOCK_MEMBER.id,
+          startedByEmail: MOCK_MEMBER.email,
+          driveKey: 'nonce-abc',
+          createdAt: Date.now() - (CLAIM_STALE_MS + 1_000),
+        })
+        db.claims.set(QUEUED_RUN_ID, {
+          runId: QUEUED_RUN_ID,
+          impl: 'hello',
+          workflow: 'hello',
+          startedBy: MOCK_MEMBER.id,
+          startedByEmail: MOCK_MEMBER.email,
+          driveKey: 'nonce-abc',
+          createdAt: CLAIMED_AT,
+        })
+
+        const queuedMine = [...db.claims.values()].map((row) => ({ ...row }))
+        const expected = handler({ steps: { mine: [], waiting: [], queuedMine } })
+        expect(expected.map((row) => row.runId)).toEqual([QUEUED_RUN_ID])
+
+        const res = await fetch('/api/workflow/runs?impl=hello&workflow=hello')
+        const records = ((await res.json()) as { records: Array<Record<string, unknown>> }).records
+        expect(records).toEqual(expected)
+        expect(records.map((row) => row.runId)).not.toContain('run_stale')
+      })
     })
 
     it('skips a claim row with no runId rather than putting a nameless entry in the page', () => {
@@ -216,7 +353,7 @@ describe('runs shape.fn.js', () => {
           impl: 'hello',
           workflow: 'hello',
           status: 'queued',
-          startedAt: 1_700_000_000_000,
+          startedAt: CLAIMED_AT,
           startedBy: 'user_1',
           startedByEmail: 'member@example.com',
           waitingOn: [],
@@ -233,7 +370,7 @@ describe('runs shape.fn.js', () => {
         startedBy: MOCK_MEMBER.id,
         startedByEmail: MOCK_MEMBER.email,
         driveKey: 'nonce-abc',
-        createdAt: 1_700_000_000_000,
+        createdAt: CLAIMED_AT,
       })
 
       const mine = [...db.runs.values()].map(toRunRecord)
