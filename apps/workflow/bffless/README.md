@@ -283,10 +283,15 @@ results all strip `driveKey` before answering (apps#665 follow-up); it travels o
 and `expiresAt` (retention, spec 05 — `startedAt + keep`, apps#686) are additive per
 `adoptFields`'s rules, but `deploy-workflow.yml`'s `bffless/deploy-proxy-rules@v1` step has no
 input for it, so a merge that adds them does not sync the live schema by itself. After the deploy,
-run by hand from `apps/workflow`:
+run by hand from `apps/workflow`, **once per instance** — `deploy-workflow.yml` deploys to
+`workflow.j5s.dev` (`vars.BFFLESS_URL` / `secrets.BFFLESS_WORKFLOW_API_KEY`) and then
+`workflow.bffless.dev` (`vars.BFFLESS_DEV_URL` / `secrets.BFFLESS_DEV_API_KEY`), and the adopt
+is needed on both. Pull `main` first: the CLI reads the working tree, and a stale checkout pushes
+the pre-merge rule bodies over the deploy's (it happened on j5s, 2026-09-12):
 
 ```bash
-bffless rules push --adopt-fields
+git pull --ff-only origin main
+npx --yes bffless@0.3.6 rules push .bffless/proxy-rules/workflow --api-url <instance admin url> --api-key "$KEY" --project bffless/workflow --adopt-fields
 ```
 
 **New schema `workflow_run_claims`** — `{ runId, impl, workflow, startedBy, startedByEmail?,
