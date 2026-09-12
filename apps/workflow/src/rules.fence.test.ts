@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { parse } from 'yaml'
 import { ruleScopeOf, scopeOf } from '@bffless/workflow-agent-tools'
 
@@ -207,7 +208,10 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
   const FILTERED = ['/runs/get/', '/mcp-tools/runs/']
   const NEITHER = [
     '/runs/post/', '/project/get/', '/aliases/get/', '/whoami/get/', '/mcp-tools/list/', '/mcp-tools/describe/', '/mcp-tools/start/',
-    '/_custom/well-known/', '/api/auth/', '/api/workflow/mcp/', '/mcp-resources/',
+    // `/mcp-resources/` names the resources INDEX (`mcp-resources/get/`) only;
+    // `step-view` is its own route one level deeper, so it is listed in its own
+    // right rather than inheriting the index's class through a loose prefix.
+    '/_custom/well-known/', '/api/auth/', '/api/workflow/mcp/', '/mcp-resources/', '/mcp-resources/step-view/',
   ]
   const CLASSES: Array<[string, string[]]> = [['GATED', GATED], ['FILTERED', FILTERED], ['NEITHER', NEITHER]]
   /**
@@ -222,15 +226,133 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     id?: string
     handler: string
     code?: string
-    config?: { schemaId?: string; filters?: Record<string, { op?: string; value?: unknown } | undefined> }
+    config?: {
+      schemaId?: string
+      filters?: Record<string, { op?: string; value?: unknown } | undefined>
+      condition?: string
+      body?: string
+    }
   }
   const stepsOf = (rel: string): Step[] => {
     const doc = parse(readFileSync(join(SET, rel), 'utf8')) as { pipeline?: { steps?: Step[] } }
     return doc.pipeline?.steps ?? []
   }
 
+  /**
+   * A fragment classifies a rule only where it is followed by that rule's OWN
+   * file: `rule.yaml` or `<method>.rule.yaml`, optionally under ONE more
+   * segment — and that segment must be a METHOD (`post/rule.yaml`) or a
+   * catch-all param (`[...path]/any.rule.yaml`), never a named route. A bare
+   * `.includes` let a rule inserted under an existing prefix inherit that
+   * prefix's class unasked: both a hypothetical
+   * `mcp-tools/list/stream/post/rule.yaml` and a `mcp-tools/list/stream/rule.yaml`
+   * would have been read as `/mcp-tools/list/`'s NEITHER, i.e. an ungated route
+   * waved through. Anchored, neither matches anything and the fence fails on
+   * them, which is the point — a new route is placed deliberately or not at all.
+   */
+  const METHOD = '(?:get|post|put|patch|delete|head|options|any)'
+  const RULE_TAIL = new RegExp(`^(?:(?:${METHOD}|\\[\\.\\.\\.[^/]+\\])/)?(?:${METHOD}\\.)?rule\\.yaml$`)
+  const anchoredToRuleDir = (rel: string, fragment: string): boolean => {
+    for (let i = rel.indexOf(fragment); i > -1; i = rel.indexOf(fragment, i + 1)) {
+      if (RULE_TAIL.test(rel.slice(i + fragment.length))) return true
+    }
+    return false
+  }
+
+  /**
+   * Does a step sitting past `runGate` actually trace to it? The gate being
+   * present says nothing about it being honored — a later step left
+   * unconditioned, or conditioned on something unrelated, runs for a caller the
+   * gate refused. Every such step must reach the gate one of three ways (the
+   * shapes surveyed across all 22 GATED rules in apps#674):
+   *
+   * - **(a) direct** — its own `condition` names `steps.runGate`.
+   * - **(b) delegated** — its condition names another step of the rule that
+   *   itself traces, recursively (`files` on `steps.gate.ok`, `gate` on
+   *   `steps.runGate.ok`).
+   * - **(c) self-gating** — it carries NO condition, and either (c1) it is a
+   *   `function_handler` whose own code reads `steps.runGate`, or (c2) it is a
+   *   `response_handler` rendering nothing but such a step's output
+   *   (`{{{steps.shape}}}`, `{{{steps.reply.json}}}`) — the same "bare output
+   *   of one step" reading the `driveKey` fence below already uses.
+   *
+   * (a)/(b) are tried FIRST and (c) only for a step with no condition at all, so
+   * a comment merely mentioning `steps.runGate` — as `run/delete`, `run/fork`
+   * and `run/lease`'s local `gate.fn.js` each do, harmlessly, being gated by
+   * shape (a) — can never stand in for a real property read. Comment lines are
+   * skipped for the same reason.
+   *
+   * Shape (a) accepts any condition NAMING the gate, `steps.runGate.notFound`
+   * included: the 404 responders are refusals, and a refusal is as much an
+   * honouring of the gate as a success path. So what this proves is that no step
+   * past the gate runs without consulting it — which sense of the gate a given
+   * step takes is the rule's own business, and is read by review.
+   *
+   * Returns `null` when the step traces, or the reason it does not.
+   */
+  /**
+   * The functions allowed to gate themselves (shape c1), by set-relative path.
+   * An allowlist rather than "any file containing the string", because these
+   * `.fn.js` are esbuild BUNDLES: `merge.fn.js` and `plan.fn.js` carry
+   * `steps.runGate` through the inlined `admittedRun` helper, so a future bundle
+   * could inherit the token from its import graph without its own entry ever
+   * reading the gate — and pass a fence that only grepped. Membership is
+   * deliberate; the read is still checked (below, and by `every entry … really
+   * reads it`), so a listed file that stops reading the gate fails too.
+   */
+  const SELF_GATING = new Set(
+    [
+      'mcp-fn/runGate.fn.js',
+      'mcp-fn/merge.fn.js',
+      'mcp-fn/plan.fn.js',
+      'mcp-fn/reply.fn.js',
+      'mcp-fn/driveGate.fn.js',
+      'rules/api/workflow/run/get/shape.fn.js',
+    ].map((p) => join(SET, p)),
+  )
+  const readsGate = (file: string): boolean =>
+    existsSync(file) &&
+    readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*(?:\/\/|\/?\*)/.test(line))
+      .some((line) => /steps\.runGate\b/.test(line))
+  const selfGates = (ruleDir: string, code: string | undefined, allowed: Set<string>): boolean => {
+    if (!code) return false
+    const resolved = join(ruleDir, code)
+    return allowed.has(resolved) && readsGate(resolved)
+  }
+  const tracesToRunGate = (
+    steps: Step[],
+    step: Step,
+    ruleDir: string,
+    allowed: Set<string> = SELF_GATING,
+    seen = new Set<string>(),
+  ): string | null => {
+    if (step.id === 'runGate') return null
+    const byId = (id: string) => steps.find((s) => s.id === id)
+    const traced = (id: string): boolean => {
+      if (seen.has(id)) return false // a condition cycle traces to nothing
+      const via = byId(id)
+      return !!via && tracesToRunGate(steps, via, ruleDir, allowed, new Set([...seen, id])) === null
+    }
+    const condition = step.config?.condition
+    if (condition) {
+      if (/steps\.runGate\b/.test(condition)) return null // (a)
+      const named = [...condition.matchAll(/steps\.(\w+)/g)].map((m) => m[1])
+      if (named.some(traced)) return null // (b)
+      return `condition \`${condition}\` traces to no gated step`
+    }
+    if (step.handler === 'function_handler' && selfGates(ruleDir, step.code, allowed)) return null // (c1)
+    if (step.handler === 'response_handler') {
+      const bare = String(step.config?.body ?? '').match(/^\{\{\{steps\.(\w+)(?:\.[\w.]+)?\}\}\}$/)
+      if (bare && (bare[1] === 'runGate' || traced(bare[1]))) return null // (c2)
+    }
+    return `is unconditioned (${step.handler}) and neither reads \`steps.runGate\` itself nor renders a step that does`
+  }
+
   it('classifies every rule against the ownership boundary (spec 11)', () => {
-    const classesOf = (rel: string) => CLASSES.filter(([, fragments]) => fragments.some((f) => rel.includes(f))).map(([cls]) => cls)
+    const classesOf = (rel: string) =>
+      CLASSES.filter(([, fragments]) => fragments.some((f) => anchoredToRuleDir(rel, f))).map(([cls]) => cls)
     const classified: Record<string, string[]> = { GATED: [], FILTERED: [], NEITHER: [] }
 
     for (const file of files) {
@@ -244,7 +366,7 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     // renamed or retired cannot leave a dead entry standing in for it.
     for (const [cls, fragments] of CLASSES) {
       for (const fragment of fragments) {
-        expect(files.some((f) => f.slice(SET.length).includes(fragment)), `${cls}: ${fragment} matches no rule`).toBe(true)
+        expect(files.some((f) => anchoredToRuleDir(f.slice(SET.length), fragment)), `${cls}: ${fragment} matches no rule`).toBe(true)
       }
     }
     expect(classified.GATED.length + classified.FILTERED.length + classified.NEITHER.length).toBe(files.length)
@@ -256,6 +378,14 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       const gateAt = steps.findIndex((s) => s.handler === 'function_handler' && s.id === 'runGate' && String(s.code).endsWith(GATE_FILE))
       expect(gateAt, `${rel} must judge that run with the shared gate (a \`runGate\` function step on ${GATE_FILE})`).toBeGreaterThan(-1)
       expect(gateAt, `${rel}: the gate must come after the \`run\` query it judges`).toBeGreaterThan(runAt)
+      // Present is not honored: every step past the gate must trace back to it.
+      const ruleDir = join(SET, rel, '..')
+      for (const s of steps.slice(gateAt + 1)) {
+        expect(
+          tracesToRunGate(steps, s, ruleDir),
+          `${rel}: step \`${s.id}\` runs past the gate but does not trace to it — condition it on \`steps.runGate.ok\`, on a step that is, or read the gate in its own code (spec 11 §One gate, not twenty-five copies)`,
+        ).toBeNull()
+      }
     }
 
     for (const rel of classified.FILTERED) {
@@ -270,6 +400,91 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     for (const rel of classified.NEITHER) {
       expect(readFileSync(join(SET, rel), 'utf8').includes(GATE_FILE), `${rel} names no run — it must not reference the gate`).toBe(false)
     }
+  })
+
+  /**
+   * The check above only ever sees rules that already pass it, so it is proved
+   * here against a rule that does not: the same `tracesToRunGate` over a
+   * hand-built `Step[]` (nothing on disk) whose `steps` query is left
+   * unconditioned with no self-gating function behind it — the exact shape
+   * apps#674 was filed about. Conditioning that one step is the whole
+   * difference between flagged and clean.
+   */
+  it('flags a step past the gate that traces to nothing (the assertion above, proved)', () => {
+    // A rule of its own, on a scratch dir: every function this fixture reads is
+    // written here, so neither direction of the shape-(c1) case depends on what
+    // a generated `mcp-fn/*.fn.js` bundle happens to contain today.
+    const DIR = mkdtempSync(join(tmpdir(), 'rules-fence-'))
+    writeFileSync(join(DIR, 'gatekeeper.fn.js'), 'function handler({ steps }) {\n  return { ok: !!(steps.runGate && steps.runGate.ok) }\n}\n')
+    writeFileSync(join(DIR, 'blind.fn.js'), 'function handler({ steps }) {\n  return { ok: !!steps.run }\n}\n')
+    // Contains the token — inlined from a shared helper it never calls — but is
+    // not on the list, which is the case the allowlist exists for.
+    writeFileSync(join(DIR, 'inlined.fn.js'), 'function admittedRun(steps) {\n  const gate = steps.runGate;\n  return gate && gate.ok\n}\nfunction handler({ steps }) {\n  return { ok: !!steps.run }\n}\n')
+    const ALLOWED = new Set([join(DIR, 'gatekeeper.fn.js')])
+
+    const rule = (condition?: string): Step[] => [
+      { id: 'run', handler: 'data_query', config: { schemaId: '$schema:workflow_runs' } },
+      { id: 'runGate', handler: 'function_handler', code: './gatekeeper.fn.js' },
+      { id: 'steps', handler: 'data_query', config: { schemaId: '$schema:workflow_run_steps', condition } },
+      { id: 'respond', handler: 'response_handler', config: { body: '{{{steps.steps}}}' } },
+    ]
+    const traces = (steps: Step[], step: Step) => tracesToRunGate(steps, step, DIR, ALLOWED)
+
+    const ungated = rule()
+    expect(traces(ungated, ungated[2])).toMatch(/unconditioned/)
+    // …and the bare responder over it inherits the hole, rather than papering over it.
+    expect(traces(ungated, ungated[3])).not.toBeNull()
+
+    // Conditioned on something real but unrelated is still not the gate.
+    const unrelated = rule('steps.run.length')
+    expect(traces(unrelated, unrelated[2])).toMatch(/traces to no gated step/)
+
+    // Shape (a), and shape (c2) delegating to it.
+    const gated = rule('steps.runGate.ok')
+    expect(traces(gated, gated[2])).toBeNull()
+    expect(traces(gated, gated[3])).toBeNull()
+
+    // Shape (c1): no condition, but the function is allowed to gate itself and
+    // really reads the gate. Its two near-misses are both refused — a function
+    // that does not read the gate, and one that carries the token without being
+    // on the list.
+    const fn = (id: string, code: string): Step[] => [...gated.slice(0, 3), { id, handler: 'function_handler', code }]
+    const self = fn('shape', './gatekeeper.fn.js')
+    expect(traces(self, self[3])).toBeNull()
+    const blind = fn('shape', './blind.fn.js')
+    expect(traces(blind, blind[3])).not.toBeNull()
+    const inlined = fn('shape', './inlined.fn.js')
+    expect(traces(inlined, inlined[3])).not.toBeNull()
+
+    rmSync(DIR, { recursive: true, force: true })
+  })
+
+  /** Every entry of the allowlist is a real file that really reads the gate, so
+   * the list cannot outlive what it permits. */
+  it('every self-gating function on the allowlist really reads the gate', () => {
+    for (const file of SELF_GATING) {
+      expect(existsSync(file), `${file.slice(SET.length)} is on the self-gating list but is not there`).toBe(true)
+      expect(readsGate(file), `${file.slice(SET.length)} is on the self-gating list but does not read steps.runGate`).toBe(true)
+    }
+  })
+
+  /**
+   * The anchoring itself, as a table — the claim "never a deeper route" is
+   * otherwise only visible by adding a rule file and watching the fence fail.
+   */
+  it.each([
+    ['/mcp-tools/list/', '/rules/api/workflow/mcp-tools/list/post/rule.yaml', true],
+    ['/mcp-tools/list/', '/rules/api/workflow/mcp-tools/list/stream/post/rule.yaml', false],
+    ['/mcp-tools/list/', '/rules/api/workflow/mcp-tools/list/stream/rule.yaml', false],
+    ['/run/get/', '/rules/api/workflow/run/get/rule.yaml', true],
+    ['/run/get/', '/rules/api/workflow/runs/get/rule.yaml', false],
+    ['/mcp-resources/', '/rules/api/workflow/mcp-resources/get/rule.yaml', true],
+    ['/mcp-resources/', '/rules/api/workflow/mcp-resources/step-view/get/rule.yaml', false],
+    ['/mcp-resources/step-view/', '/rules/api/workflow/mcp-resources/step-view/get/rule.yaml', true],
+    ['/api/auth/', '/rules/api/auth/[...path]/any.rule.yaml', true],
+    ['/_custom/well-known/', '/rules/_custom/well-known/get.rule.yaml', true],
+  ])('anchors %s against %s', (fragment, rel, expected) => {
+    expect(anchoredToRuleDir(rel, fragment)).toBe(expected)
   })
 
   // `driveKey` (spec 11 D28) is a column on `workflow_runs`, never something a
