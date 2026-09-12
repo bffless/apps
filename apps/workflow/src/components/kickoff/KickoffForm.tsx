@@ -5,11 +5,18 @@
  *
  * Re-run prefill (`initial`) reuses a previous run's File refs untouched: a
  * value already present in `initial` is never re-derived from `def.default`.
+ *
+ * `on.manual.warnings` (01) are re-evaluated on every change against the
+ * current values — with each media file's measured `duration` folded in for
+ * evaluation only (`lib/kickoffWarnings`) — and listed above Start in the
+ * `kickoff-invalid` markup. They are cautions, not validation: Start is never
+ * disabled by one, and `onStart(values)` never carries a duration.
  */
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import type { InputDef } from '@bffless/workflow-lint/definition'
+import type { InputDef, KickoffWarning } from '@bffless/workflow-lint/definition'
 import { blank, initialValues, validateInputs } from '../../lib/autoStart'
+import { evalKickoffWarnings, warningInputs, type Durations } from '../../lib/kickoffWarnings'
 import type { FileRef } from '../../lib/runner/types'
 import { FieldControl } from './FieldControl'
 
@@ -25,13 +32,24 @@ export interface KickoffFormProps {
    * fact, not an input, so it never lands in `values`). Absent = not offered.
    */
   unattended?: { value: boolean; onChange: (value: boolean) => void }
+  /** `on.manual.warnings` (01): listed above Start while their `if` holds; never blocks it. */
+  warnings?: readonly KickoffWarning[]
+  /** The implementation alias — the `impl` context a warning may read. */
+  impl?: string
 }
 
-export function KickoffForm({ inputs, initial, uploading, onStart, unattended }: KickoffFormProps) {
+export function KickoffForm({ inputs, initial, uploading, onStart, unattended, warnings, impl }: KickoffFormProps) {
   const names = Object.keys(inputs)
   const [values, setValues] = useState<Record<string, unknown>>(() => initialValues(inputs, initial))
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [uploadsInFlight, setUploadsInFlight] = useState(0)
+  // Browser-only form state: what the previews measured, by File-ref path.
+  // Never stored on a ref and never submitted — read by the warnings alone.
+  const [durations, setDurations] = useState<Durations>({})
+
+  function noteDuration(path: string, seconds: number) {
+    setDurations((prev) => (prev[path] === seconds ? prev : { ...prev, [path]: seconds }))
+  }
 
   function setValue(name: string, v: unknown) {
     setValues((prev) => ({ ...prev, [name]: v }))
@@ -68,6 +86,11 @@ export function KickoffForm({ inputs, initial, uploading, onStart, unattended }:
   })
   const disabled = uploadsInFlight > 0 || missingRequired
 
+  const shownWarnings =
+    warnings && warnings.length > 0
+      ? evalKickoffWarnings(warnings, warningInputs(inputs, values, durations), impl)
+      : []
+
   return (
     <form className="form" data-testid="kickoff-form" onSubmit={handleSubmit} noValidate>
       {names.length === 0 && <p className="note">This workflow takes no inputs.</p>}
@@ -80,6 +103,7 @@ export function KickoffForm({ inputs, initial, uploading, onStart, unattended }:
           onChange={(v) => setValue(name, v)}
           upload={upload}
           error={errors[name]}
+          onDuration={noteDuration}
         />
       ))}
       {unattended && (
@@ -99,6 +123,19 @@ export function KickoffForm({ inputs, initial, uploading, onStart, unattended }:
             <code>skip</code> use their declared outputs. Steps that declare neither still wait
             for you.
           </p>
+        </div>
+      )}
+      {shownWarnings.length > 0 && (
+        <div className="lint kickoff-warnings" data-testid="kickoff-warnings">
+          <p className="empty-title">Before you start</p>
+          <ul className="findings">
+            {shownWarnings.map((w, i) => (
+              <li className="finding" key={i} data-severity={w.severity}>
+                <span className="finding-severity">{w.severity}</span>
+                <span className="finding-message">{w.message}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <button type="submit" data-testid="kickoff-start" disabled={disabled}>

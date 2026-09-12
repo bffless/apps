@@ -54,6 +54,16 @@
  * A `list: true` field collapses each player behind a Play button
  * (`MediaPreview`'s `collapsed`), so ten recordings are ten small tiles, not
  * ten full-width players; a single field's player is open from the start.
+ *
+ * **Duration, lifted.** The seconds a preview measures are also reported up
+ * (`onDuration(path, seconds)`) so the kickoff form can evaluate
+ * `on.manual.warnings` (01) against them — "about N stills at this interval"
+ * before Start. Keyed by the ref's `path`, the one identity a file keeps
+ * across re-renders, Re-run prefill and Resume; a value the form submits
+ * never carries it. A duration measured from the local file *while it
+ * uploads* has no path yet, so it is parked under the pending row's key and
+ * reported the moment the ref lands — the registered url's own metadata
+ * reports the same number again later, harmlessly.
  */
 import { useEffect, useRef, useState } from 'react'
 import type { InputDef } from '@bffless/workflow-lint/definition'
@@ -102,6 +112,8 @@ interface FileItem {
   contentType: string
   /** The url a preview may be drawn from — absent when there is nothing safe to draw. */
   src: string | undefined
+  /** The ref's `path` once registered — what a measured duration is reported under; a pending row has none yet. */
+  path: string | undefined
 }
 
 function itemOfRef(ref: FileRef, key: string): FileItem {
@@ -109,6 +121,7 @@ function itemOfRef(ref: FileRef, key: string): FileItem {
   const previewable = contentType.startsWith('image/') || mediaKind(contentType) !== undefined
   return {
     key,
+    path: ref.path,
     name: ref.name,
     size: typeof ref.size === 'number' ? ref.size : undefined,
     contentType,
@@ -127,14 +140,31 @@ function objectUrlFor(file: File): string | undefined {
   return URL.createObjectURL(file)
 }
 
-function FileRow({ item, collapsed }: { item: FileItem; collapsed: boolean }) {
+function FileRow({
+  item,
+  collapsed,
+  onDuration,
+}: {
+  item: FileItem
+  collapsed: boolean
+  onDuration: (seconds: number) => void
+}) {
   const [duration, setDuration] = useState<number | undefined>(undefined)
   const kind = mediaKind(item.contentType)
   const durationLabel = formatDuration(duration)
   return (
     <li className={`field-file-item${kind && item.src ? ' field-file-item-media' : ''}`}>
       {item.src !== undefined && kind !== undefined && (
-        <MediaPreview kind={kind} src={item.src} name={item.name} collapsed={collapsed} onDuration={setDuration} />
+        <MediaPreview
+          kind={kind}
+          src={item.src}
+          name={item.name}
+          collapsed={collapsed}
+          onDuration={(seconds) => {
+            setDuration(seconds)
+            onDuration(seconds)
+          }}
+        />
       )}
       {item.src !== undefined && kind === undefined && (
         <img className="field-file-preview" data-testid="file-preview" src={item.src} alt={item.name} />
@@ -161,6 +191,7 @@ export function FileControl({
   invalid,
   describedBy,
   onError,
+  onDuration,
 }: {
   def: InputDef
   value: unknown
@@ -170,6 +201,8 @@ export function FileControl({
   invalid: boolean
   describedBy: string | undefined
   onError: (message: string | undefined) => void
+  /** A media file's measured duration, by the ref's `path` (see the header). */
+  onDuration?: (path: string, seconds: number) => void
 }) {
   const [progress, setProgress] = useState<number | null>(null)
   // The files still uploading, each with the object URL its preview draws from.
@@ -197,6 +230,9 @@ export function FileControl({
   // it settles; unmount revokes whatever a still-running batch left.
   const objectUrlsRef = useRef(new Set<string>())
   const batchSeq = useRef(0)
+  // Durations measured from a still-uploading file, by its pending row key,
+  // until the ref they belong to lands (see the header).
+  const pendingDurations = useRef<Record<string, number>>({})
 
   useEffect(() => {
     const urls = objectUrlsRef.current
@@ -206,9 +242,15 @@ export function FileControl({
     }
   }, [])
 
+  function noteDuration(item: FileItem, seconds: number) {
+    if (item.path !== undefined) onDuration?.(item.path, seconds)
+    else pendingDurations.current[item.key] = seconds
+  }
+
   function releaseBatch(items: FileItem[]) {
     for (const item of items) {
       if (item.src !== undefined && objectUrlsRef.current.delete(item.src)) URL.revokeObjectURL(item.src)
+      delete pendingDurations.current[item.key]
     }
     setPending((rows) => rows.filter((row) => !items.includes(row)))
   }
@@ -233,7 +275,7 @@ export function FileControl({
     const items: FileItem[] = picked.map((file, i) => {
       const src = objectUrlFor(file)
       if (src !== undefined) objectUrlsRef.current.add(src)
-      return { key: `pending-${batch}-${i}`, name: file.name, size: file.size, contentType: file.type, src }
+      return { key: `pending-${batch}-${i}`, path: undefined, name: file.name, size: file.size, contentType: file.type, src }
     })
     setPending((rows) => (list ? [...rows, ...items] : items))
 
@@ -250,6 +292,12 @@ export function FileControl({
         ),
       )
       setKeyByPath((keys) => ({ ...keys, ...Object.fromEntries(uploaded.map((ref, i) => [ref.path, items[i]!.key])) }))
+      // A duration measured while the file was still uploading belongs to the
+      // ref it has just become: report it under the ref's path now.
+      uploaded.forEach((ref, i) => {
+        const measured = pendingDurations.current[items[i]!.key]
+        if (measured !== undefined) onDuration?.(ref.path, measured)
+      })
       const next = list ? [...refsRef.current, ...uploaded] : (uploaded[0] ?? null)
       // Emit *and* remember: a batch that resolves before this one's `onChange`
       // has been committed must still append to it, not to the value before it.
@@ -291,7 +339,7 @@ export function FileControl({
       {items.length > 0 && (
         <ul className="field-file-list">
           {items.map((item) => (
-            <FileRow key={item.key} item={item} collapsed={list} />
+            <FileRow key={item.key} item={item} collapsed={list} onDuration={(seconds) => noteDuration(item, seconds)} />
           ))}
         </ul>
       )}

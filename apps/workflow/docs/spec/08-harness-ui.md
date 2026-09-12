@@ -264,6 +264,13 @@ ordinary input the workflow wires to one step's `auto-accept:` (07 "Per step") �
 "Auto-accept the cut edits" (`accept_cuts`, default on) is declared last so it renders directly
 above the toggle as its sibling; it *does* land in `inputs`, which is how Resume remembers it.
 
+Above Start, the `on.manual.warnings` (01) whose `if` currently holds are listed in a
+`kickoff-warnings` block — the `kickoff-invalid` markup with `data-severity="warning"` —
+re-evaluated on every change against the form's values (a media file's measured `duration`
+included, for evaluation only) and `impl`. They are cautions, not validation: Start is never
+disabled by one. An entry the form cannot evaluate is listed as a `notice` naming the reason
+rather than hidden. The headless entry renders no form, so it evaluates none.
+
 ## Past runs
 
 Table with status, started by, started at, duration, outputs (count + first file name),
@@ -302,7 +309,7 @@ they were left in.
 ## Headless-visible contract
 
 `data-testid`s: `run-status`, `run-follow`, `run-outputs`, `island-backstage`, `kickoff-form`,
-`kickoff-start`, `kickoff-auto`, `kickoff-invalid`, `implementations`, `workflow-list`; `data-state`
+`kickoff-start`, `kickoff-auto`, `kickoff-invalid`, `kickoff-warnings`, `implementations`, `workflow-list`; `data-state`
 as in 07. `step[data-key][data-state]` lives on the job page's step rows (spec 2026-09-08, phase
 3) and on the workflow page's declared rows (`data-state="declared"`, phase 5) — `job-page`,
 `job-head`, `job-io`, `job-steps`, `job-items`, `job-item[data-index]` are that page's own

@@ -8,6 +8,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { describe, expect, it, vi } from 'vitest'
 import type { InputDef } from '@bffless/workflow-lint/definition'
 import helloYaml from '../../../docs/spec/examples/hello.workflow.yaml?raw'
+import stillsYaml from '../../../docs/spec/examples/stills.workflow.yaml?raw'
 import { loadWorkflow } from '../../lib/runner/definition'
 import type { FileRef } from '../../lib/runner/types'
 import { KickoffForm } from './KickoffForm'
@@ -317,5 +318,92 @@ describe('KickoffForm — "Don\'t wait for me" (07)', () => {
     fireEvent.click(within(form).getByTestId('kickoff-start'))
     // A run-level choice, never an input: the values are exactly the declared ones.
     expect(onStart).toHaveBeenCalledWith({ greeting: 'Hello', names: ['world'], photo: null, shout: false })
+  })
+})
+
+// apps#616: a workflow can warn *before* Start — "about N stills at this
+// interval" — from what the form already knows, including a recording's
+// measured duration. Cautions, not validation: Start is never disabled.
+// Driven by the spec's own example so a drift in it fails here.
+describe('KickoffForm — on.manual.warnings (01/08, apps#616)', () => {
+  const stills = loadWorkflow(stillsYaml, 'stills.workflow.yaml')
+  if (!stills.def) throw new Error('stills.workflow.yaml no longer parses')
+  const stillsInputs = stills.def.inputs
+  const stillsWarnings = stills.def.warnings
+  const take: FileRef = {
+    path: 'workflows/capture/capture/inputs/1/take-1.mp4',
+    name: 'take-1.mp4',
+    contentType: 'video/mp4',
+    size: 2048,
+    url: '/api/uploads/workflows/capture/capture/inputs/1/take-1.mp4',
+  }
+
+  function loadMetadata(el: Element, duration: number) {
+    Object.defineProperty(el, 'duration', { configurable: true, value: duration })
+    fireEvent(el, new Event('loadedmetadata'))
+  }
+
+  it('declares two warnings in the example, and the form renders no block until one holds', () => {
+    expect(stillsWarnings).toHaveLength(2)
+    const { form } = renderForm()
+    expect(within(form).queryByTestId('kickoff-warnings')).toBeNull()
+
+    render(
+      <KickoffForm inputs={stillsInputs} initial={{ recording: take }} uploading={vi.fn()} onStart={vi.fn()} warnings={stillsWarnings} impl="capture" />,
+    )
+    // Unmeasured: `duration` is null, null / 5 is 0, and 0 > 240 is false.
+    expect(screen.queryByTestId('kickoff-warnings')).toBeNull()
+  })
+
+  it('re-evaluates live: the measured duration fires the warning, a wider interval clears it, Start never disables', () => {
+    const onStart = vi.fn()
+    render(
+      <KickoffForm inputs={stillsInputs} initial={{ recording: take }} uploading={vi.fn()} onStart={onStart} warnings={stillsWarnings} impl="capture" />,
+    )
+    expect(screen.queryByTestId('kickoff-warnings')).toBeNull()
+
+    loadMetadata(screen.getByTestId('file-media'), 1234.5)
+
+    const block = screen.getByTestId('kickoff-warnings')
+    const rows = within(block).getAllByRole('listitem')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toHaveAttribute('data-severity', 'warning')
+    expect(rows[0]).toHaveTextContent('About 246 stills — past 150 MB the zip lists the sheets rather than containing them.')
+    expect(screen.getByTestId('kickoff-start')).not.toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('Seconds between stills'), { target: { value: '10' } })
+    expect(screen.queryByTestId('kickoff-warnings')).toBeNull()
+
+    fireEvent.change(screen.getByLabelText('Seconds between stills'), { target: { value: '0.5' } })
+    const both = within(screen.getByTestId('kickoff-warnings')).getAllByRole('listitem')
+    expect(both.map((r) => r.textContent)).toEqual([
+      expect.stringContaining('About 2469 stills'),
+      expect.stringContaining('An interval under a second'),
+    ])
+
+    // The duration is form state only: what Start submits is the ref as stored.
+    fireEvent.click(screen.getByTestId('kickoff-start'))
+    expect(onStart).toHaveBeenCalledWith({ recording: take, interval: 0.5 })
+  })
+
+  it('reads impl, and lists an entry it cannot evaluate as a notice instead of breaking the form', () => {
+    render(
+      <KickoffForm
+        inputs={stillsInputs}
+        initial={{ recording: take }}
+        uploading={vi.fn()}
+        onStart={vi.fn()}
+        warnings={[
+          { if: "${{ impl.alias == 'capture' }}", message: 'Stills go to ${{ impl.api }}/stills' },
+          { if: '${{ success() }}', message: 'never' },
+        ]}
+        impl="capture"
+      />,
+    )
+    const rows = within(screen.getByTestId('kickoff-warnings')).getAllByRole('listitem')
+    expect(rows.map((r) => r.getAttribute('data-severity'))).toEqual(['warning', 'notice'])
+    expect(rows[0]).toHaveTextContent('Stills go to /api/capture/stills')
+    expect(rows[1]).toHaveTextContent('Warning 2 could not be evaluated — success() has nothing to report before a run starts')
+    expect(screen.getByTestId('kickoff-start')).not.toBeDisabled()
   })
 })

@@ -180,3 +180,30 @@ jobs:
   expect(f?.rule).toBe('unknown-function')
   expect(f?.message).toMatch(/pluck, floor, success/)
 })
+
+test('kickoff warnings (01): run/steps are not there yet, status functions have nothing to report', () => {
+  const f = run(`
+name: x
+on:
+  manual:
+    inputs: { recording: { type: file }, interval: { type: number, default: 5 } }
+    warnings:
+      - if: "\${{ inputs.recording.duration / inputs.interval > 240 && impl.alias == 'capture' }}"
+        message: "About \${{ floor(inputs.recording.duration / inputs.interval) }} stills"
+      - if: "\${{ success() }}"
+        message: "\${{ run.id }} \${{ steps.plan.outputs.n }}"
+jobs:
+  a:
+    steps:
+      - id: plan
+        uses: pipeline
+        with: { path: echo }
+`)
+  expect(f.map((x) => [x.rule, x.path])).toEqual([
+    ['status-fn-position', '/on/manual/warnings/1/if'],
+    ['context-position', '/on/manual/warnings/1/message'],
+    ['context-position', '/on/manual/warnings/1/message'],
+  ])
+  expect(f[0]!.message).toMatch(/no run has started yet/)
+  expect(f[1]!.message).toMatch(/`run` does not exist yet on the kickoff form/)
+})

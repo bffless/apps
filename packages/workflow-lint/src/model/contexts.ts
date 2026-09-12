@@ -36,7 +36,14 @@ const RESPONSE_SLOTS = new Set<Slot['where']>([
  * The context roots legal in a slot, per the table in 01-workflow-yaml.md.
  * `inputs`, `run`, `impl` are available everywhere.
  */
+/** The two `on.manual.warnings` slots: read on the kickoff form, before a run exists. */
+export const KICKOFF_SLOTS = new Set<Slot['where']>(['kickoff-warning-if', 'kickoff-warning-message'])
+
 export function allowedRoots(slot: Slot, job?: Job): Set<string> {
+  // A kickoff warning (01) is evaluated against the form's current values:
+  // there is no run yet, so not even `run` is there to read.
+  if (KICKOFF_SLOTS.has(slot.where)) return new Set(['inputs', 'impl'])
+
   const roots = new Set(['inputs', 'run', 'impl'])
 
   if (slot.where === 'top-output') {

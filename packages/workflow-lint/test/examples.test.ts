@@ -13,6 +13,12 @@ test('hello.workflow.yaml lints clean (one known notice)', () => {
   expect(r.counts).toEqual({ errors: 0, warnings: 0, notices: 1 })
 })
 
+test('stills.workflow.yaml (on.manual.warnings, apps#616) lints fully clean', () => {
+  const r = lintSource(example('stills.workflow.yaml'), { file: 'stills.workflow.yaml' })
+  expect(r.findings).toEqual([])
+  expect(r.counts).toEqual({ errors: 0, warnings: 0, notices: 0 })
+})
+
 // studio.workflow.yaml moved with its implementation to
 // bffless/workflow-implementations (M4); its "lints fully clean against the
 // real rule set" check runs in that repo's own CI, and the built-bin smokes in

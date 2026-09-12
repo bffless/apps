@@ -1,6 +1,6 @@
 import { KNOWN_FUNCTIONS, STATUS_FUNCTIONS } from '../expressions/functions.js'
 import type { Finding } from '../findings.js'
-import { allowedRoots } from '../model/contexts.js'
+import { KICKOFF_SLOTS, allowedRoots } from '../model/contexts.js'
 import type { Definition } from '../model/definition.js'
 import type { ExprSite } from '../model/slots.js'
 import { collectRefs } from './refs.js'
@@ -33,8 +33,9 @@ export function checkContexts(def: Definition, sites: ExprSite[]): Finding[] {
     for (const ref of refs) {
       if (allowed.has(ref.root)) continue
       if (ALL_CONTEXTS.has(ref.root)) {
-        const detail =
-          ref.root === 'response'
+        const detail = KICKOFF_SLOTS.has(site.slot.where)
+          ? `\`${ref.root}\` does not exist yet on the kickoff form — a warning reads inputs and impl only (01)`
+          : ref.root === 'response'
             ? "`response` is only readable in a pipeline step's poll, retry, outputs, summary and annotations"
             : ref.root === 'matrix' || ref.root === 'strategy'
               ? `\`${ref.root}\` is only available inside a job with strategy.matrix`
@@ -72,7 +73,9 @@ export function checkContexts(def: Definition, sites: ExprSite[]): Finding[] {
         findings.push({
           rule: 'status-fn-position',
           severity: 'error',
-          message: `\`${call.callee}()\` is only valid in an \`if\` condition (01)`,
+          message: KICKOFF_SLOTS.has(site.slot.where)
+            ? `\`${call.callee}()\` has nothing to report on the kickoff form — no run has started yet (01)`
+            : `\`${call.callee}()\` is only valid in an \`if\` condition (01)`,
           path: site.pointer,
         })
       }

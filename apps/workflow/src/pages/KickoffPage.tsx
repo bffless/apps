@@ -280,6 +280,8 @@ export function KickoffPage() {
         <div className="panel form-panel">
           <KickoffForm
             inputs={loaded.def.inputs}
+            warnings={loaded.def.warnings}
+            impl={impl?.alias}
             initial={previousRun?.run?.inputs}
             uploading={upload}
             onStart={(values) => start(values, false, unattended)}

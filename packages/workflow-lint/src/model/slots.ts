@@ -23,11 +23,17 @@ export interface Slot {
     | 'headless-output'
     | 'auto-accept'
     | 'top-output'
+    | 'kickoff-warning-if'
+    | 'kickoff-warning-message'
   jobId?: string
   stepIndex?: number
   stepId?: string
   stepUses?: StepKind
-  /** Status functions are legal here. */
+  /**
+   * Status functions are legal here. Every `if` slot but one sets it: a
+   * `kickoff-warning-if` is read on the form before any run exists, so it
+   * takes the bare-`if` spelling (`IF_SLOTS`) but has no status to report.
+   */
   isIf: boolean
 }
 
@@ -43,7 +49,8 @@ export interface ExprSite {
   isWholeValue: boolean
 }
 
-const IF_SLOTS = new Set<Slot['where']>(['job-if', 'step-if', 'retry-if', 'annotation-if'])
+/** Slots whose scalar is parsed as a whole `if` (bare spelling allowed, 01). */
+const IF_SLOTS = new Set<Slot['where']>(['job-if', 'step-if', 'retry-if', 'annotation-if', 'kickoff-warning-if'])
 
 function esc(seg: string | number): string {
   return String(seg).replaceAll('~', '~0').replaceAll('/', '~1')
@@ -53,7 +60,7 @@ export function collectSites(def: Definition): ExprSite[] {
   const sites: ExprSite[] = []
 
   function addScalar(value: string, pointer: string, slot: Slot): void {
-    if (slot.isIf && IF_SLOTS.has(slot.where)) {
+    if (IF_SLOTS.has(slot.where)) {
       const whole = isSingleExpression(value) || !value.includes('${{')
       for (const s of parseIfExpression(value).spans) {
         sites.push({
@@ -202,6 +209,16 @@ export function collectSites(def: Definition): ExprSite[] {
   }
 
   walkOutputMap(def.outputs, '/outputs', { where: 'top-output', isIf: false })
+
+  // `on.manual.warnings` (01): document-level, evaluated on the kickoff form
+  // before a run exists — `inputs` and `impl` only, no status functions.
+  def.warnings.forEach((w, i) => {
+    const p = `/on/manual/warnings/${i}`
+    if (typeof w.if === 'string') addScalar(w.if, `${p}/if`, { where: 'kickoff-warning-if', isIf: false })
+    if (typeof w.message === 'string') {
+      addScalar(w.message, `${p}/message`, { where: 'kickoff-warning-message', isIf: false })
+    }
+  })
 
   return sites
 }

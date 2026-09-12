@@ -15,7 +15,7 @@
  * the radiogroup role went away (it promised a keyboard pattern this never
  * implemented).
  */
-import { useState } from 'react'
+import { act, useState } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InputDef } from '@bffless/workflow-lint/definition'
@@ -622,5 +622,70 @@ describe('FieldControl — aria-invalid (M1 minor)', () => {
     const input = screen.getByLabelText('doc')
     expect(input).toHaveAttribute('aria-invalid', 'true')
     expect(input.getAttribute('aria-describedby')).toBe(screen.getByText('Too big').id)
+  })
+})
+
+// apps#616: the duration a preview measures is reported up by the ref's path
+// so the kickoff form can evaluate `on.manual.warnings` against it.
+describe('file: lifting the measured duration (apps#616)', () => {
+  const TAKE: FileRef = {
+    ...A,
+    path: 'workflows/hello/hello/inputs/1/take-1.mp4',
+    name: 'take-1.mp4',
+    contentType: 'video/mp4',
+    size: 2048,
+    url: '/api/uploads/workflows/hello/hello/inputs/1/take-1.mp4',
+  }
+  const restore: (() => void)[] = []
+  function stub(target: object, name: string, value: unknown) {
+    const original = Object.getOwnPropertyDescriptor(target, name)
+    Object.defineProperty(target, name, { configurable: true, writable: true, value })
+    restore.push(() => {
+      if (original) Object.defineProperty(target, name, original)
+      else delete (target as Record<string, unknown>)[name]
+    })
+  }
+  beforeEach(() => {
+    stub(URL, 'createObjectURL', vi.fn(() => 'blob:harness/lift'))
+    stub(URL, 'revokeObjectURL', vi.fn())
+  })
+  afterEach(() => {
+    while (restore.length > 0) restore.pop()!()
+  })
+  function loadMetadata(el: Element, duration: number) {
+    Object.defineProperty(el, 'duration', { configurable: true, value: duration })
+    fireEvent(el, new Event('loadedmetadata'))
+  }
+
+  it('reports a held ref\'s duration under its path once the metadata loads', () => {
+    const onDuration = vi.fn()
+    render(
+      <FieldControl name="cover" def={{ type: 'file', accept: 'video/*' }} value={TAKE} onChange={vi.fn()} upload={vi.fn()} onDuration={onDuration} />,
+    )
+    expect(onDuration).not.toHaveBeenCalled()
+    loadMetadata(screen.getByTestId('file-media'), 83.4)
+    expect(onDuration).toHaveBeenCalledWith(TAKE.path, 83.4)
+    expect(screen.getByTestId('file-duration')).toHaveTextContent('1:23')
+  })
+
+  it('parks a duration measured while uploading and reports it under the ref path the moment it lands', async () => {
+    let land: ((ref: FileRef) => void) | undefined
+    const upload = vi.fn(() => new Promise<FileRef>((resolve) => (land = resolve)))
+    const onDuration = vi.fn()
+    render(
+      <FieldControl name="cover" def={{ type: 'file', accept: 'video/*' }} value={null} onChange={vi.fn()} upload={upload} onDuration={onDuration} />,
+    )
+    fireEvent.change(screen.getByLabelText('cover'), { target: { files: [new File(['mp4'], 'take-1.mp4', { type: 'video/mp4' })] } })
+
+    const video = await screen.findByTestId('file-media')
+    expect(video).toHaveAttribute('src', 'blob:harness/lift')
+    loadMetadata(video, 61)
+    // No path yet: nothing to report it under.
+    expect(onDuration).not.toHaveBeenCalled()
+
+    await act(async () => {
+      land!(TAKE)
+    })
+    expect(onDuration).toHaveBeenCalledWith(TAKE.path, 61)
   })
 })
