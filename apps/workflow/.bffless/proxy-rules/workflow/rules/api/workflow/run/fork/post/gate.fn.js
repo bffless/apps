@@ -134,6 +134,13 @@ function handler({ steps, request, user }) {
   }
 
   const now = Date.now()
+  // Retention (spec 05, apps#686): `startedAt + keep` when the SENT definition has
+  // a top-level `keep:` (`<n>h` | `<n>d` — `$defs.keep`, not `duration`), `null`
+  // (no column) otherwise. A fork measures from its own start, not the parent's.
+  // The same arithmetic as `runs/post/expiry.fn.js`; the parity test holds them
+  // together.
+  const keep = typeof definition.keep === 'string' ? /^([0-9]+)(h|d)$/.exec(definition.keep) : null
+  const expiresAt = keep ? now + Number(keep[1]) * (keep[2] === 'd' ? 86400000 : 3600000) : null
   return {
     ok: true,
     badRequest: false,
@@ -159,6 +166,7 @@ function handler({ steps, request, user }) {
       startedBy: caller.id || null,
       startedByEmail: caller.email || null,
       startedAt: now,
+      expiresAt,
       leaseOwner: String(body.owner || ''),
       leaseUntil: now + 60000,
       forkedFrom: from,

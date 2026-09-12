@@ -67,6 +67,12 @@ export interface RunRow {
   startedByEmail?: string
   startedAt: number
   finishedAt?: number | null
+  /**
+   * Retention (05, apps#686): `startedAt + keep` (epoch ms), stamped by the create
+   * rules when the definition has a top-level `keep:`. Absent on a run that is
+   * never swept, and on every row written before the column existed.
+   */
+  expiresAt?: number
   leaseOwner?: string | null
   leaseUntil?: number | null
   outputs?: Record<string, unknown> | null

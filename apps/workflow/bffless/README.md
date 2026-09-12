@@ -279,10 +279,11 @@ key cleared at the seal would refuse the driver its own results. The next dispat
 results all strip `driveKey` before answering (apps#665 follow-up); it travels only in
 `client_payload.drive_key` and the `x-workflow-drive-key` request header.
 
-**Two new optional `workflow_runs` fields need `--adopt-fields`.** `driveKey` and
-`startedByEmail` are additive per `adoptFields`'s rules, but `deploy-workflow.yml`'s
-`bffless/deploy-proxy-rules@v1` step has no input for it, so a merge that adds them does not sync
-the live schema by itself. After the deploy, run by hand from `apps/workflow`:
+**Three optional `workflow_runs` fields need `--adopt-fields`.** `driveKey`, `startedByEmail`
+and `expiresAt` (retention, spec 05 — `startedAt + keep`, apps#686) are additive per
+`adoptFields`'s rules, but `deploy-workflow.yml`'s `bffless/deploy-proxy-rules@v1` step has no
+input for it, so a merge that adds them does not sync the live schema by itself. After the deploy,
+run by hand from `apps/workflow`:
 
 ```bash
 bffless rules push --adopt-fields

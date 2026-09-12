@@ -17,6 +17,7 @@
  */
 import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { ServerRunRow, ServerStepRow } from '../lib/coerce'
+import { expiresAtOf } from './expiry'
 
 /** `graph.ts` `TERMINAL_STEP`: a row the rule will copy as-is, whatever it says. */
 const TERMINAL = new Set(['succeeded', 'failed', 'skipped', 'cancelled'])
@@ -115,6 +116,9 @@ export function forkGate({ parent, rows, existing, body, user }: ForkGateInput):
   }
 
   const now = Date.now()
+  // Retention (spec 05, apps#686): from the SENT definition's `keep:`, measured
+  // from the fork's own start — the same stamp `gate.fn.js` computes inline.
+  const expiresAt = expiresAtOf(definition, now)
   return {
     status: 200,
     createRun: !existing,
@@ -133,6 +137,7 @@ export function forkGate({ parent, rows, existing, body, user }: ForkGateInput):
       ...(user?.id ? { startedBy: user.id } : {}),
       ...(user?.email ? { startedByEmail: user.email } : {}),
       startedAt: now,
+      ...(expiresAt === undefined ? {} : { expiresAt }),
       leaseOwner: String(body.owner ?? ''),
       leaseUntil: now + 60_000,
       forkedFrom: from,

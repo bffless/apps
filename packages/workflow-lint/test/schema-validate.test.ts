@@ -87,3 +87,39 @@ test('on.manual.warnings: a list of { if, message }; anything else is a schema e
   expect(extra).toHaveLength(1)
   expect(extra[0]!.message).toMatch(/level/)
 })
+
+// `keep:` (05 Retention, apps#686) is a top-level key with its own grammar —
+// `^[0-9]+(h|d)$` — deliberately separate from `$defs/duration` (`ms|s|m|h`),
+// so a run's retention reads in hours or days and a `timeout: 30d` stays invalid.
+test.each(['30d', '12h', '1h', '365d'])('keep: %s passes at the top level', (keep) => {
+  expect(validateDefinition({ name: 'x', keep, on: { manual: {} }, jobs: { a: minimalJob } })).toEqual([])
+})
+
+test.each(['30m', '30', '30ms', '1d12h', 'd', ''])('keep: %j is a schema error at the document root', (keep) => {
+  const f = validateDefinition({ name: 'x', keep, on: { manual: {} }, jobs: { a: minimalJob } })
+  expect(f).toHaveLength(1)
+  expect(f[0]!.rule).toBe('schema')
+  expect(f[0]!.path).toBe('/keep')
+})
+
+test('keep: under a job is a schema error — it is a workflow key, not a job key', () => {
+  const f = validateDefinition({
+    name: 'x',
+    on: { manual: {} },
+    jobs: { a: { ...minimalJob, keep: '30d' } },
+  })
+  expect(f).toHaveLength(1)
+  expect(f[0]!.rule).toBe('schema')
+  expect(f[0]!.path).toBe('/jobs/a')
+  expect(f[0]!.message).toMatch(/keep/)
+})
+
+test('a duration is not a keep: retry.delay: 30d is still refused', () => {
+  const f = validateDefinition({
+    name: 'x',
+    on: { manual: {} },
+    jobs: { a: { steps: [{ ...minimalJob.steps[0], retry: { max: 1, delay: '30d' } }] } },
+  })
+  expect(f.length).toBeGreaterThanOrEqual(1)
+  expect(f.some((x) => x.rule === 'schema' && /delay/.test(x.path))).toBe(true)
+})

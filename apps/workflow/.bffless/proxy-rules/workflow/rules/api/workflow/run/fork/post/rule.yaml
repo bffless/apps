@@ -126,6 +126,7 @@ pipeline:
           startedBy: steps.gate.run.startedBy
           startedByEmail: steps.gate.run.startedByEmail
           startedAt: steps.gate.run.startedAt
+          expiresAt: steps.gate.run.expiresAt
           leaseOwner: steps.gate.run.leaseOwner
           leaseUntil: steps.gate.run.leaseUntil
           forkedFrom: steps.gate.run.forkedFrom

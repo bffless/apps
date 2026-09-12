@@ -25,6 +25,9 @@ const workflowSchema: Record<string, any> = {
     "description": {
       "type": "string"
     },
+    "keep": {
+      "$ref": "#/$defs/keep"
+    },
     "on": {
       "type": "object",
       "required": [
@@ -100,6 +103,11 @@ const workflowSchema: Record<string, any> = {
     "duration": {
       "type": "string",
       "pattern": "^[0-9]+(ms|s|m|h)$"
+    },
+    "keep": {
+      "description": "Retention for the workflow's runs (05): hours or days, e.g. 30d. Absent means a run is never swept. Its own grammar, not `duration` — no ms/s/m, and `retry.delay: 30d` stays invalid.",
+      "type": "string",
+      "pattern": "^[0-9]+(h|d)$"
     },
     "level": {
       "enum": [
