@@ -45,7 +45,10 @@ type ConfineResult = {
   runId: string
   runless: boolean
 }
-type ConfineHandler = (ctx: { request: { path: string }; deployment: { owner: string; repo: string } }) => ConfineResult
+type ConfineHandler = (ctx: {
+  request: { path: string; headers?: Record<string, string | string[]> }
+  deployment: { owner: string; repo: string }
+}) => ConfineResult
 
 function loadFnHandler(): ConfineHandler {
   const src = readFileSync(FN_PATH, 'utf8')
@@ -71,6 +74,8 @@ const CASES: {
   runless: boolean
   /** Not deliverable through `fetch()` — see `FETCHABLE` below. */
   fnOnly?: boolean
+  /** `request.headers` as CE's function_handler hands them (Express: lowercase keys). */
+  headers?: Record<string, string | string[]>
 }[] = [
   {
     desc: 'a confined run path',
@@ -143,6 +148,71 @@ const CASES: {
   { desc: 'a /./ segment', path: `/api/uploads/workflows/hello/./runs/${CASE_RUN_ID}/x`, ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'an empty path', path: '/api/uploads/', ok: false, hasRun: false, runId: '', runless: false },
   { desc: 'a non-string path', path: undefined, ok: false, hasRun: false, runId: '', runless: false },
+  // The domain-mapped shape (the regression the 2026-09-12 `hello` walk found):
+  // on a workspace served through a mapped hostname, nginx rewrites the URL to
+  // the internal public path BEFORE the pipeline runs, so `request.path` is
+  // `/public/<owner>/<repo>/alias/<alias>/<basePath>/api/uploads/…` and only
+  // the `X-Original-URI` header nginx sets still carries the URL the browser
+  // asked for. CE's file_serve_handler (the very `serve` step this rule gates)
+  // falls back to that header when `request.path` lacks the prefix, so the
+  // gate must read the same source or it refuses every run file on every
+  // mapped instance — which is what it did.
+  {
+    desc: 'a nginx-rewritten path resolves the run through x-original-uri',
+    path: `/public/o/r/alias/workflow/apps/workflow/dist/api/uploads/workflows/hello/interactive/runs/${CASE_RUN_ID}/poster.svg`,
+    headers: { 'x-original-uri': `/api/uploads/workflows/hello/interactive/runs/${CASE_RUN_ID}/poster.svg?download=1` },
+    ok: true,
+    normalized: `workflows/hello/interactive/runs/${CASE_RUN_ID}/poster.svg`,
+    hasRun: true,
+    runId: CASE_RUN_ID,
+    runless: false,
+    fnOnly: true,
+  },
+  {
+    desc: 'a nginx-rewritten inputs/ path stays runless through x-original-uri',
+    path: '/public/o/r/alias/workflow/apps/workflow/dist/api/uploads/workflows/hello/hello/inputs/u1/cat.png',
+    headers: { 'X-Original-URI': '/api/uploads/workflows/hello/hello/inputs/u1/cat.png' },
+    ok: true,
+    normalized: 'workflows/hello/hello/inputs/u1/cat.png',
+    hasRun: false,
+    runId: '',
+    runless: true,
+    fnOnly: true,
+  },
+  {
+    // The header is read the way CE reads it — sliced from `/api/uploads/workflows/`
+    // wherever it sits, never trusted before that — and held to the same grammar.
+    desc: 'a nginx-rewritten path with traversal in the original uri is still refused',
+    path: '/public/o/r/alias/workflow/apps/workflow/dist/api/uploads/workflows/x',
+    headers: { 'x-original-uri': '/api/uploads/workflows/../secrets/x' },
+    ok: false,
+    hasRun: false,
+    runId: '',
+    runless: false,
+    fnOnly: true,
+  },
+  {
+    // `request.path` wins when it carries the prefix, exactly as in CE: the header
+    // is a fallback, not an override a caller could aim at another run.
+    desc: 'x-original-uri never overrides a request.path that already carries the prefix',
+    path: `/api/uploads/workflows/hello/hello/inputs/u1/cat.png`,
+    headers: { 'x-original-uri': `/api/uploads/workflows/hello/interactive/runs/${CASE_RUN_ID}/poster.svg` },
+    ok: true,
+    normalized: 'workflows/hello/hello/inputs/u1/cat.png',
+    hasRun: false,
+    runId: '',
+    runless: true,
+    fnOnly: true,
+  },
+  {
+    desc: 'a rewritten path with no x-original-uri is refused, never guessed from the rewrite',
+    path: `/public/o/r/alias/workflow/apps/workflow/dist/api/uploads/workflows/hello/interactive/runs/${CASE_RUN_ID}/poster.svg`,
+    ok: false,
+    hasRun: false,
+    runId: '',
+    runless: false,
+    fnOnly: true,
+  },
 ]
 
 describe("the serve rule's confine.fn.js parity with the mock re-implementation", () => {
@@ -156,8 +226,8 @@ describe("the serve rule's confine.fn.js parity with the mock re-implementation"
     db.runs.set(CASE_RUN_ID, { ...FINISHED_RUN.run, runId: CASE_RUN_ID, _id: nextId() })
   })
 
-  it.each(CASES)('confine.fn.js: $desc', ({ path, ok, normalized, hasRun, runId, runless }) => {
-    const result = handler({ request: { path: path as string }, deployment: DEPLOYMENT })
+  it.each(CASES)('confine.fn.js: $desc', ({ path, headers, ok, normalized, hasRun, runId, runless }) => {
+    const result = handler({ request: { path: path as string, headers }, deployment: DEPLOYMENT })
     expect(result.ok).toBe(ok)
     expect(result.notOk).toBe(!ok)
     expect(result.storagePath).toBe(ok ? `${DEPLOYMENT.owner}/${DEPLOYMENT.repo}/uploads/${normalized}` : '')

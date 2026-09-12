@@ -39,6 +39,19 @@ describe('fetchPayload', () => {
     await expect(fetchPayload(value)).resolves.toEqual({ $file: value, $error: 'the payload request answered 404' })
   })
 
+  it('drains the body of a non-2xx answer, so the request completes rather than idling open', async () => {
+    // A `Response` handed back without its body read leaves the request
+    // in flight as far as the browser's network stack is concerned (the
+    // 2026-09-12 `hello` walk: a 404 here held Playwright's `networkidle`
+    // open for the full 30 s). The sentinel is the answer either way — the
+    // body is read and dropped so the connection settles.
+    const value = ref(PAYLOAD_URL)
+    const res = new Response('{"error":"not found"}', { status: 404, headers: { 'content-type': 'application/json' } })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(res)
+    await expect(fetchPayload(value)).resolves.toEqual({ $file: value, $error: 'the payload request answered 404' })
+    expect(res.bodyUsed).toBe(true)
+  })
+
   it('answers the sentinel when the fetch itself throws', async () => {
     server.use(http.get(PAYLOAD_URL, () => HttpResponse.error()))
     const value = ref(PAYLOAD_URL)
