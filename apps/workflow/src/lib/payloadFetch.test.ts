@@ -52,6 +52,20 @@ describe('fetchPayload', () => {
     expect(res.bodyUsed).toBe(true)
   })
 
+  it('still answers the sentinel when the non-2xx body fails mid-read', async () => {
+    // A truncated error envelope must not turn the drain into a rejection
+    // that escapes into the memo (apps#685 review, Tests).
+    const value = ref(PAYLOAD_URL)
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"err'))
+        controller.error(new Error('stream reset'))
+      },
+    })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(broken, { status: 502 }))
+    await expect(fetchPayload(value)).resolves.toEqual({ $file: value, $error: 'the payload request answered 502' })
+  })
+
   it('answers the sentinel when the fetch itself throws', async () => {
     server.use(http.get(PAYLOAD_URL, () => HttpResponse.error()))
     const value = ref(PAYLOAD_URL)

@@ -15,6 +15,12 @@
  * rule runs `runGate` unconditionally rather than skipping it the way
  * sign/prepare/register do ahead of their own 400 — so every refusal here,
  * parse failure or ownership, is the SAME 404.
+ *
+ * One branch is deliberately fn-only (apps#685): on a domain-mapped host the fn
+ * reads the served path off the `x-original-uri` header nginx sets, and a
+ * browser `fetch()` cannot send that header, so the mock's `confinePath` never
+ * grew the branch and its rows are `fnOnly`. The gate composition for that
+ * branch is pinned in the ownership `describe` below by loading both fns.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -205,6 +211,20 @@ const CASES: {
     fnOnly: true,
   },
   {
+    // apps#685 review, finding 1: CE tests `request.path` with a raw `startsWith`, so a
+    // `//api/…` spelling falls to the header there — and therefore here. Proven by the header
+    // naming a DIFFERENT (runless) object than the path: the answer is the header's.
+    desc: 'a double-slash request.path falls to x-original-uri, as CE does — never normalised into the path branch',
+    path: `//api/uploads/workflows/hello/interactive/runs/${CASE_RUN_ID}/poster.svg`,
+    headers: { 'x-original-uri': '/api/uploads/workflows/hello/hello/inputs/u1/cat.png' },
+    ok: true,
+    normalized: 'workflows/hello/hello/inputs/u1/cat.png',
+    hasRun: false,
+    runId: '',
+    runless: true,
+    fnOnly: true,
+  },
+  {
     desc: 'a rewritten path with no x-original-uri is refused, never guessed from the rewrite',
     path: `/public/o/r/alias/workflow/apps/workflow/dist/api/uploads/workflows/hello/interactive/runs/${CASE_RUN_ID}/poster.svg`,
     ok: false,
@@ -386,6 +406,33 @@ describe('serve: run ownership (spec 11 D29)', () => {
    * in-process with a hand-built path. `ok: false` on this route is the same
    * 404 an unreachable run gets (the rule has no 400).
    */
+  /**
+   * The header branch through the gate (apps#685 review, Tests): the property the
+   * fix exists to keep is that a rewritten `request.path` plus an `x-original-uri`
+   * naming ANOTHER member's run still ends in the gate's `notFound`. The rule's
+   * `run` step is a `data_query` on `steps.confine.runId`; here it is the one row
+   * the fixture owns, handed to the real gate the way CE hands it — so this pins
+   * confine → runGate for the branch no `fetch()` can reach.
+   */
+  it('a header-derived run through the real gate: the owner is admitted, another member is not (apps#685)', () => {
+    const gateSrc = readFileSync(join(appDir, '.bffless', 'proxy-rules', 'workflow', 'mcp-fn', 'runGate.fn.js'), 'utf8')
+    const gate = new Function(`${gateSrc}\nreturn handler;`)() as (data: unknown) => { ok: boolean; notFound: boolean; door: string }
+    const request = {
+      path: `/public/o/r/alias/workflow/apps/workflow/dist/api/uploads/workflows/hello/hello/runs/${RUN_ID}/poster.png`,
+      headers: { 'x-original-uri': `/api/uploads/workflows/hello/hello/runs/${RUN_ID}/poster.png` },
+    }
+    const confine = loadFnHandler()({ request, deployment: DEPLOYMENT })
+    expect(confine.hasRun).toBe(true)
+    expect(confine.runId).toBe(RUN_ID)
+    const run = [{ ...FINISHED_RUN.run, runId: RUN_ID, startedBy: MOCK_MEMBER.id }]
+
+    const asOther = gate({ steps: { confine, run }, request, user: { id: MOCK_OTHER.id, projectRole: 'member' } })
+    expect(asOther).toMatchObject({ ok: false, notFound: true })
+
+    const asOwner = gate({ steps: { confine, run }, request, user: { id: MOCK_MEMBER.id, projectRole: 'member' } })
+    expect(asOwner).toMatchObject({ ok: true, notFound: false, door: 'owner' })
+  })
+
   it('refuses a /./ path — no 200 for a spelling the filesystem normalises away (fix round 2)', () => {
     setMockUser(MOCK_MEMBER)
     const result = loadFnHandler()({

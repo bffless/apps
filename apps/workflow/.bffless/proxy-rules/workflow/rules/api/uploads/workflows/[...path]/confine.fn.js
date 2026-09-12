@@ -60,9 +60,12 @@ function header(request, name) {
 // The uploads-relative path CE's file_serve_handler will derive for this request, or '' when
 // it will derive none (:139 — no `filePath`, CE answers its own 404 and this gate's answer is
 // moot; `ok:false` here keeps the two in step).
+// The request path is tested RAW — no leading-slash collapse, no trim — because CE's
+// `startsWith` is (apps#685 review, finding 1): a `//api/uploads/workflows/…` spelling fails
+// CE's prefix test and falls to the header, so it must fall to the header here too, or the
+// gate would clear the run the path names while CE serves the object the header names.
 function servedPath(request) {
   var reqPath = (request && typeof request.path === 'string') ? request.path : ''
-  reqPath = '/' + reqPath.replace(/^\/+/, '')
   if (reqPath.indexOf(SERVE_PREFIX) === 0) return reqPath.slice('/api/uploads/'.length)
   var original = header(request, 'x-original-uri').split('?')[0]
   var at = original.indexOf(SERVE_PREFIX)
