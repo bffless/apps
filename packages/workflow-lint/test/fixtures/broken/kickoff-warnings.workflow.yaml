@@ -1,0 +1,21 @@
+# Broken: on.manual.warnings (01) are read on the kickoff form before a run
+# exists — `run` and `steps` are not there, and status functions have nothing
+# to report. `inputs` and `impl` are the only contexts.
+name: kickoff warnings misuse
+on:
+  manual:
+    inputs:
+      recording: { type: file, accept: video/*, required: true }
+      interval: { type: number, default: 5, min: 0.5 }
+    warnings:
+      - if: ${{ success() && inputs.recording != null }}
+        message: "ready"
+      - if: "${{ run.headless }}"
+        message: "${{ steps.plan.outputs.count }} stills"
+jobs:
+  j:
+    steps:
+      - id: plan
+        uses: pipeline
+        with: { path: plan, body: { n: "${{ floor(inputs.recording.duration / inputs.interval) }}" } }
+        outputs: { count: { type: number, value: "${{ response.count }}" } }

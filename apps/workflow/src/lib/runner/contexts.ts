@@ -301,6 +301,15 @@ function runPrefix(state: RunState): string {
   return `workflows/${state.impl}/${state.workflow}/runs/${state.runId}`
 }
 
+/**
+ * The `impl` context (01): the resolved prefixes of one implementation.
+ * Exported because the kickoff form evaluates `on.manual.warnings` before a
+ * run exists (`lib/kickoffWarnings`) and must read the same `impl` a run will.
+ */
+export function implCtx(alias: string): { alias: string; base: string; api: string } {
+  return { alias, base: `/w/${alias}`, api: `/api/${alias}` }
+}
+
 function ambientCtx(state: RunState): Record<string, unknown> {
   return {
     inputs: state.inputs,
@@ -311,7 +320,7 @@ function ambientCtx(state: RunState): Record<string, unknown> {
       started_at: state.startedAt,
       headless: state.headless,
     },
-    impl: { alias: state.impl, base: `/w/${state.impl}`, api: `/api/${state.impl}` },
+    impl: implCtx(state.impl),
   }
 }
 

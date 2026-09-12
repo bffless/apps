@@ -61,3 +61,29 @@ test('island step missing outputs is caught against its branch', () => {
   })
   expect(f.some((x) => /outputs/.test(x.message))).toBe(true)
 })
+
+test('on.manual.warnings: a list of { if, message }; anything else is a schema error (01)', () => {
+  const ok = validateDefinition({
+    name: 'x',
+    on: { manual: { inputs: { n: { type: 'number' } }, warnings: [{ if: '${{ inputs.n > 1 }}', message: 'big' }] } },
+    jobs: { a: minimalJob },
+  })
+  expect(ok).toEqual([])
+
+  const missing = validateDefinition({
+    name: 'x',
+    on: { manual: { warnings: [{ message: 'no if' }] } },
+    jobs: { a: minimalJob },
+  })
+  expect(missing).toHaveLength(1)
+  expect(missing[0]!.path).toBe('/on/manual/warnings/0')
+  expect(missing[0]!.message).toMatch(/if/)
+
+  const extra = validateDefinition({
+    name: 'x',
+    on: { manual: { warnings: [{ if: 'true', message: 'm', level: 'error' }] } },
+    jobs: { a: minimalJob },
+  })
+  expect(extra).toHaveLength(1)
+  expect(extra[0]!.message).toMatch(/level/)
+})

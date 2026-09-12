@@ -388,6 +388,7 @@ var __mcp = (() => {
     return {
       name: data.name,
       inputs: data.on?.manual?.inputs ?? {},
+      warnings: data.on?.manual?.warnings ?? [],
       jobs,
       outputs: data.outputs ?? {},
       raw: data

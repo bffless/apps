@@ -38,6 +38,27 @@ const workflowSchema: Record<string, any> = {
           "properties": {
             "inputs": {
               "$ref": "#/$defs/inputMap"
+            },
+            "warnings": {
+              "type": "array",
+              "description": "Evaluated live on the kickoff form against inputs and impl (01); shown above Start, never blocking it.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "if",
+                  "message"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "if": {
+                    "$ref": "#/$defs/exprString"
+                  },
+                  "message": {
+                    "type": "string",
+                    "description": "Template over ${{ }}"
+                  }
+                }
+              }
             }
           }
         }

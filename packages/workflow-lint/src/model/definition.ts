@@ -1,5 +1,14 @@
 export type StepKind = 'pipeline' | 'island' | 'form' | 'script'
 
+/**
+ * One `on.manual.warnings` entry (01): evaluated live on the kickoff form
+ * against `inputs` and `impl`, shown above Start, never blocking it.
+ */
+export interface KickoffWarning {
+  if: string
+  message: string
+}
+
 export interface InputDef {
   type: string
   list?: boolean
@@ -47,6 +56,8 @@ export interface Job {
 export interface Definition {
   name: string
   inputs: Record<string, InputDef>
+  /** `on.manual.warnings` (01) in declaration order; `[]` when absent. */
+  warnings: KickoffWarning[]
   jobs: Record<string, Job>
   outputs: Record<string, OutputDecl>
   raw: any
@@ -71,6 +82,7 @@ export function toDefinition(data: any): Definition {
   return {
     name: data.name,
     inputs: data.on?.manual?.inputs ?? {},
+    warnings: data.on?.manual?.warnings ?? [],
     jobs,
     outputs: data.outputs ?? {},
     raw: data,

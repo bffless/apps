@@ -1,0 +1,39 @@
+# The example behind `on.manual.warnings` (01, apps#616): a capture-style
+# implementation that cuts a recording into stills every `interval` seconds.
+# A long recording at a short interval is thousands of stills, and the person
+# should learn that on the kickoff form — from the recording's measured
+# duration — rather than from the plan step's annotation after Start.
+
+spec: 1
+name: Stills from a recording
+description: Warns before Start when the interval would produce too many stills.
+
+on:
+  manual:
+    inputs:
+      recording: { type: file, accept: "video/*", required: true, label: Recording }
+      interval:  { type: number, default: 5, min: 0.5, label: Seconds between stills }
+    warnings:   # evaluated live on the kickoff form against inputs/impl; shown above Start, never blocks it (01, 08)
+      - if: "${{ inputs.recording.duration / inputs.interval > 240 }}"
+        message: "About ${{ floor(inputs.recording.duration / inputs.interval) }} stills — past 150 MB the zip lists the sheets rather than containing them."
+      - if: "${{ inputs.interval < 1 }}"
+        message: "An interval under a second is rarely useful for a talk — 5 s is the default for a reason."
+
+jobs:
+  plan:
+    name: Plan the stills
+    steps:
+      - id: plan
+        uses: pipeline
+        with:
+          path: plan
+          body: { recording: "${{ inputs.recording.path }}", interval: "${{ inputs.interval }}" }
+        outputs:
+          count: { type: number, value: "${{ response.count }}" }
+        annotations:
+          - { level: warning, if: "${{ response.count > 240 }}", message: "${{ response.count }} stills — the zip will list the sheets rather than contain them" }
+    outputs:
+      count: ${{ steps.plan.outputs.count }}
+
+outputs:
+  count: ${{ jobs.plan.outputs.count }}

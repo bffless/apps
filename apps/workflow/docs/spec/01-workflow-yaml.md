@@ -16,6 +16,7 @@ on:
       recordings: { type: file, accept: video/*, list: true, required: true, label: Recordings }
       target_length: { type: string, default: "8 minutes" }
       note_to_director: { type: string, format: textarea }
+    warnings: [ … ]                       # live kickoff-form cautions — see Triggers
 
 jobs:
   <job-id>: …                             # see Jobs
@@ -36,6 +37,25 @@ kickoff form; each entry is an *input definition* (02). A workflow with no input
 Start button. `on.schedule` / `on.webhook` are later: a `schedule:` block or a second
 `repository_dispatch` type on the implementation's `workflow-drive.yml`, dispatching
 `mode: run` (ADR-0006). The runner stays a browser either way (07 covers unattended runs).
+
+`on.manual.warnings` is an optional list of `{ if, message }` evaluated **live on the kickoff
+form** (08) against the form's current `inputs` and `impl` — nothing else exists yet, so
+`run`, `steps` and the status functions are not available (linted: `context-position`,
+`status-fn-position`). An entry whose `if` holds is listed above Start and **never blocks
+it**; a headless start (07) has no form and evaluates none. Inside a warning a media `file`
+input additionally carries `duration` (seconds, measured by the form's preview) — form-only,
+never stored on the File ref, `null` until measured:
+
+```yaml
+on:
+  manual:
+    inputs:
+      recording: { type: file, accept: video/*, required: true }
+      interval:  { type: number, default: 5, min: 0.5, label: Seconds between stills }
+    warnings:
+      - if: "${{ inputs.recording.duration / inputs.interval > 240 }}"
+        message: "About ${{ floor(inputs.recording.duration / inputs.interval) }} stills — past 150 MB the zip lists the sheets rather than containing them."
+```
 
 ## Jobs
 
@@ -153,14 +173,14 @@ Contexts:
 
 | context | available in | contents |
 |---|---|---|
-| `inputs` | everywhere | kickoff form values (files as `{path,name,contentType,size,url}`) |
+| `inputs` | everywhere | kickoff form values (files as `{path,name,contentType,size,url}`; inside `on.manual.warnings` a media file also has `duration`, seconds, form-measured) |
 | `needs` | job `if`, steps, job `outputs` | `needs.<job>.outputs.<name>`, `needs.<job>.result` |
 | `steps` | steps after the referenced one (or the step itself in its own `summary`/`annotations` and a `markdown` output's `images` map, 02), job `outputs` | `steps.<id>.outputs.<name>`, `steps.<id>.outcome` (`success\|failure\|skipped\|cancelled`, the raw result), `steps.<id>.conclusion` (as `outcome`, but `success` when the failure was tolerated by `continue-on-error`), `steps.<id>.error`, `steps.<id>.response` (pipeline: `{ initial, last }`) |
 | `matrix`, `strategy` | inside a matrix job | `matrix.<var>`, `strategy.job-index`, `strategy.job-total` |
 | `response` | a pipeline step's `poll`, `retry`, `outputs`, `summary`, `annotations` | the **most recent** response of this step: the initial response when `poll.query/body` are evaluated, the latest poll response in `poll.until/fail`, the final one in `outputs` |
 | `error` | a pipeline step's `retry.if`, `annotations`; any later step of the same job | `{ code, message, status }` — inside a step: its own last failure; in later steps: the **last failed step of this job** (prefer `steps.<id>.error` when you mean a specific one) |
 | `step` | inside a step | `key` (`<job>/<index>/<id>`), `prefix` (`run.prefix` + `/<job>/<index>/<id>` — where this step's produced files go), `attempt` |
-| `run` | everywhere | `id`, `prefix` (run storage prefix, 06), `started_by`, `started_at`, `headless` (bool) |
+| `run` | everywhere except `on.manual.warnings` (no run exists yet) | `id`, `prefix` (run storage prefix, 06), `started_by`, `started_at`, `headless` (bool) |
 | `impl` | everywhere | `alias`, `base` (`/w/<alias>`), `api` (`/api/<alias>`) |
 | `jobs` | top-level `outputs` only | `jobs.<id>.outputs.<name>`, `jobs.<id>.result` |
 

@@ -101,3 +101,44 @@ test('stepOutputNames resolves each kind', () => {
   expect(stepOutputNames(def.jobs.fan!.steps[0]!)).toEqual(['line'])
   expect(stepOutputNames(def.jobs.ask!.steps[0]!)).toEqual(['ok'])
 })
+
+test('on.manual.warnings: two document-level sites per entry, bare if allowed, inputs + impl only (01)', () => {
+  const d = toDefinition(
+    loadYaml(`
+name: Warnings fixture
+on:
+  manual:
+    inputs:
+      recording: { type: file, accept: video/*, required: true }
+      interval: { type: number, default: 5 }
+    warnings:
+      - if: inputs.recording.duration / inputs.interval > 240
+        message: "About \${{ floor(inputs.recording.duration / inputs.interval) }} stills from \${{ impl.alias }}"
+jobs:
+  j:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: echo }
+`).data,
+  )
+  expect(d.warnings).toEqual([
+    {
+      if: 'inputs.recording.duration / inputs.interval > 240',
+      message: 'About ${{ floor(inputs.recording.duration / inputs.interval) }} stills from ${{ impl.alias }}',
+    },
+  ])
+  const sites = collectSites(d).filter((s) => s.pointer.startsWith('/on/manual/warnings'))
+  expect(sites.map((s) => [s.pointer, s.slot.where, s.slot.isIf, s.parseError])).toEqual([
+    ['/on/manual/warnings/0/if', 'kickoff-warning-if', false, undefined],
+    ['/on/manual/warnings/0/message', 'kickoff-warning-message', false, undefined],
+    ['/on/manual/warnings/0/message', 'kickoff-warning-message', false, undefined],
+  ])
+  expect(sites[0]!.isWholeValue).toBe(true)
+  expect(sites[0]!.slot.jobId).toBeUndefined()
+  for (const s of sites) expect([...allowedRoots(s.slot)].sort()).toEqual(['impl', 'inputs'])
+})
+
+test('a workflow without warnings has an empty list, not undefined', () => {
+  expect(def.warnings).toEqual([])
+})

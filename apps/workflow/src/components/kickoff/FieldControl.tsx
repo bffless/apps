@@ -33,6 +33,8 @@ export interface FieldControlProps {
   onChange: (v: unknown) => void
   upload?: (file: File, onProgress: (fraction: number) => void) => Promise<FileRef>
   error?: string
+  /** `file` fields only: a media file's measured duration, by the ref's `path` (FileControl). */
+  onDuration?: (path: string, seconds: number) => void
 }
 
 /** `format` values (02) that map onto a native `<input type>`. */
@@ -94,7 +96,7 @@ function MarkdownControl({
   )
 }
 
-export function FieldControl({ name, def, value, onChange, upload, error }: FieldControlProps) {
+export function FieldControl({ name, def, value, onChange, upload, error, onDuration }: FieldControlProps) {
   const id = useId()
   const errorId = `${id}-error`
   const [localError, setLocalError] = useState<string | undefined>()
@@ -233,6 +235,7 @@ export function FieldControl({ name, def, value, onChange, upload, error }: Fiel
           invalid={invalid}
           describedBy={describedBy}
           onError={setLocalError}
+          onDuration={onDuration}
         />
       )
       break

@@ -2395,6 +2395,14 @@ button {
   margin-bottom: 8px;
 }
 
+/* `on.manual.warnings` (01/08): the kickoff form's warning block above Start —
+   a caution, never a blocker, so it takes the warn colour, not the error one. */
+.form .kickoff-warnings {
+  max-width: none;
+  margin-bottom: 0;
+  border-color: var(--warn-ink);
+}
+
 .findings {
   display: flex;
   flex-direction: column;
