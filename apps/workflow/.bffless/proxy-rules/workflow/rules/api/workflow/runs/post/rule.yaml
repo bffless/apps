@@ -33,6 +33,13 @@ pipeline:
       name: admit
       handler: function_handler
       code: ./admit.fn.js
+    # Retention (spec 05, apps#686): `startedAt + keep` when the snapshotted
+    # definition has a top-level `keep:`; no key at all otherwise, so `create`
+    # writes no column. Its own step: `admit` decides ownership and nothing else.
+    - id: expiry
+      name: expiry
+      handler: function_handler
+      code: ./expiry.fn.js
     - id: create
       name: create
       handler: data_create
@@ -58,6 +65,9 @@ pipeline:
           startedByEmail: steps.admit.startedByEmail
           driveKey: steps.admit.driveKey
           startedAt: request.body.startedAt
+          # Never `request.body.expiresAt`: retention is the definition's, computed
+          # by `expiry` from the `keep:` it snapshots (spec 05).
+          expiresAt: steps.expiry.expiresAt
           leaseOwner: request.body.leaseOwner
           leaseUntil: request.body.leaseUntil
           annotations: request.body.annotations

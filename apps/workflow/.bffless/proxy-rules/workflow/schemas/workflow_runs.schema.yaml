@@ -27,3 +27,8 @@ fields:
   # denormalised owner email for lists. Both optional → adopted live via `--adopt-fields`.
   - { name: driveKey, type: string, required: false }
   - { name: startedByEmail, type: string, required: false }
+  # Retention (05, apps#686): `startedAt + keep` (epoch ms) when the definition has a
+  # top-level `keep:`; absent (no key, not null) otherwise, and such a run is never swept. Stamped by
+  # `runs/post` (expiry.fn.js) and `run/fork` (gate.fn.js) — never read from the body.
+  # Optional → adopted live via `--adopt-fields`.
+  - { name: expiresAt, type: number, required: false }

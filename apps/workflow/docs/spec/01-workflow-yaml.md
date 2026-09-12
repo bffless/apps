@@ -9,6 +9,7 @@ Where we deviate it is called out with **Deviation**. The machine-checkable form
 spec: 1                                   # optional, default 1
 name: Long recording to published short   # required, shown in the UI
 description: …                            # optional, markdown
+keep: 30d                                 # optional retention, `<n>h` | `<n>d` — see 05
 
 on:
   manual:                                 # the only trigger in v1

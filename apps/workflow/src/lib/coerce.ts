@@ -388,6 +388,8 @@ export function toRunRow(raw: unknown): ServerRunRow {
     // row; the SPA must not carry it.
     startedAt: num(f.startedAt),
     finishedAt: optionalNum(f.finishedAt),
+    // Retention (05, apps#686): absent, not `null`, on a run that is never swept.
+    ...(optionalNum(f.expiresAt) === null ? {} : { expiresAt: optionalNum(f.expiresAt)! }),
     leaseOwner: optionalStr(f.leaseOwner) ?? null,
     leaseUntil: optionalNum(f.leaseUntil),
     outputs: optionalRecord(f.outputs),
