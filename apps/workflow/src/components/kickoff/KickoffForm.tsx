@@ -126,7 +126,7 @@ export function KickoffForm({ inputs, initial, uploading, onStart, unattended, w
         </div>
       )}
       {shownWarnings.length > 0 && (
-        <div className="lint kickoff-warnings" data-testid="kickoff-warnings">
+        <div className="lint kickoff-warnings" data-testid="kickoff-warnings" role="status" aria-live="polite">
           <p className="empty-title">Before you start</p>
           <ul className="findings">
             {shownWarnings.map((w, i) => (

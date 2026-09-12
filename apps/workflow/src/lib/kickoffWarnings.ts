@@ -15,7 +15,7 @@
  * a warning cannot disagree with a lint. A warning is a caution, never
  * validation: nothing here disables Start. Pure: no React.
  */
-import { EvalError, type EvalOptions } from '@bffless/workflow-lint/expressions'
+import { EvalError, interpolate, type EvalOptions } from '@bffless/workflow-lint/expressions'
 import type { InputDef, KickoffWarning } from '@bffless/workflow-lint/definition'
 import { evalIf, evalValue, implCtx } from './runner/contexts'
 import { isFileRefLike } from './runner/fileRef'
@@ -71,13 +71,6 @@ const NO_RUN_YET: NonNullable<EvalOptions['status']> = {
   },
 }
 
-function text(v: unknown): string {
-  if (v === null || v === undefined) return ''
-  if (typeof v === 'string') return v
-  if (typeof v === 'object') return JSON.stringify(v)
-  return String(v)
-}
-
 /**
  * The warnings to show right now, in declaration order: each entry whose `if`
  * holds, with its `message` rendered; an entry that throws (a status function,
@@ -93,7 +86,9 @@ export function evalKickoffWarnings(
   warnings.forEach((w, i) => {
     try {
       if (!evalIf(w.if, contexts, NO_RUN_YET)) return
-      shown.push({ severity: 'warning', message: text(evalValue(w.message, contexts)) })
+      // The message goes through the same status stubs as the `if`, so a
+      // status function degrades with the same wording in either slot.
+      shown.push({ severity: 'warning', message: interpolate(evalValue(w.message, contexts, NO_RUN_YET)) })
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
       shown.push({ severity: 'notice', message: `Warning ${i + 1} could not be evaluated — ${reason}` })

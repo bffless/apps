@@ -105,6 +105,11 @@ schema. A pipeline `outputs` value that does not match its declared type fails t
   "url": "/api/uploads/workflows/studio/…/take-2.mov" }
 ```
 
+These five keys are the whole ref. One more, `duration` (seconds), exists **only** inside
+`on.manual.warnings` (01), where the kickoff form folds in what its preview measured; it is
+never stored on the ref, so in any step, output or summary `inputs.<file>.duration` is a
+missing property — `null`, which arithmetic reads as `0` — not the recording's length.
+
 `path` is the storage key (what pipelines take and return); `url` is the same-origin
 serve route the harness mints (06). Pipelines may return a bare `path` string where a `file`
 is declared — the runner registers it and fills the rest. Files never travel as bytes inside

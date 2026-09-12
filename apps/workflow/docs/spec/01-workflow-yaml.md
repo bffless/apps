@@ -180,7 +180,7 @@ Contexts:
 | `response` | a pipeline step's `poll`, `retry`, `outputs`, `summary`, `annotations` | the **most recent** response of this step: the initial response when `poll.query/body` are evaluated, the latest poll response in `poll.until/fail`, the final one in `outputs` |
 | `error` | a pipeline step's `retry.if`, `annotations`; any later step of the same job | `{ code, message, status }` — inside a step: its own last failure; in later steps: the **last failed step of this job** (prefer `steps.<id>.error` when you mean a specific one) |
 | `step` | inside a step | `key` (`<job>/<index>/<id>`), `prefix` (`run.prefix` + `/<job>/<index>/<id>` — where this step's produced files go), `attempt` |
-| `run` | everywhere | `id`, `prefix` (run storage prefix, 06), `started_by`, `started_at`, `headless` (bool) |
+| `run` | everywhere except `on.manual.warnings` (no run exists yet) | `id`, `prefix` (run storage prefix, 06), `started_by`, `started_at`, `headless` (bool) |
 | `impl` | everywhere | `alias`, `base` (`/w/<alias>`), `api` (`/api/<alias>`) |
 | `jobs` | top-level `outputs` only | `jobs.<id>.outputs.<name>`, `jobs.<id>.result` |
 

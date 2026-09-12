@@ -64,6 +64,43 @@ describe('KickoffPage', () => {
     expect(screen.queryByText('No such run')).not.toBeInTheDocument()
   })
 
+  // apps#616: the page hands the definition's `on.manual.warnings` and the
+  // implementation alias to the form — the one line wiring the feature in.
+  it('renders the on.manual.warnings that hold, evaluated with the impl context, above an enabled Start', async () => {
+    server.use(
+      http.get(YAML_URL, () =>
+        HttpResponse.text(`spec: 1
+name: Warned
+on:
+  manual:
+    inputs:
+      greeting: { type: string, default: Hello }
+    warnings:
+      - if: "\${{ impl.alias == 'hello' }}"
+        message: "Posting to \${{ impl.api }}"
+      - if: "\${{ impl.alias == 'other' }}"
+        message: "never"
+jobs:
+  greet:
+    steps:
+      - id: say
+        uses: pipeline
+        with: { path: echo }
+        outputs: { line: { type: string, value: "\${{ response.text }}" } }
+`),
+      ),
+    )
+
+    const { page } = renderApp()
+
+    const form = await within(page).findByTestId('kickoff-form')
+    const block = within(form).getByTestId('kickoff-warnings')
+    expect(block).toHaveAttribute('role', 'status')
+    expect(within(block).getAllByRole('listitem')).toHaveLength(1)
+    expect(block).toHaveTextContent('Posting to /api/hello')
+    expect(within(form).getByTestId('kickoff-start')).not.toBeDisabled()
+  })
+
   it('reports the lint errors and offers no kickoff form when the workflow does not validate', async () => {
     server.use(http.get(YAML_URL, () => HttpResponse.text('spec: 1\nname: broken\njobs: 42\n')))
 

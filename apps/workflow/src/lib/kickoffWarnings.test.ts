@@ -77,6 +77,7 @@ describe('evalKickoffWarnings', () => {
       [
         { if: '${{ success() }}', message: 'never' },
         { if: '${{ ceil(1.5) > 1 }}', message: 'never' },
+        { if: 'true', message: 'Done? ${{ failure() }}' },
         { if: 'true', message: 'still shown' },
       ],
       {},
@@ -85,6 +86,7 @@ describe('evalKickoffWarnings', () => {
     expect(shown).toEqual([
       { severity: 'notice', message: 'Warning 1 could not be evaluated — success() has nothing to report before a run starts' },
       { severity: 'notice', message: 'Warning 2 could not be evaluated — unknown function ceil()' },
+      { severity: 'notice', message: 'Warning 3 could not be evaluated — failure() has nothing to report before a run starts' },
       { severity: 'warning', message: 'still shown' },
     ])
   })
