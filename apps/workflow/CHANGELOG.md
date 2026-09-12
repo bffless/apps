@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.1](https://github.com/bffless/apps/compare/workflow-v1.12.0...workflow-v1.12.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **workflow:** a claim the drive gate has given up on stops listing as queued ([#683](https://github.com/bffless/apps/issues/683)) ([e4ed69b](https://github.com/bffless/apps/commit/e4ed69bbd6cef96730b3c228e565838542947400))
+* **workflow:** the serve gate resolves the run from x-original-uri on a domain-mapped instance ([#685](https://github.com/bffless/apps/issues/685)) ([416c2e4](https://github.com/bffless/apps/commit/416c2e4b2f33bca682eaaebe362dce33cf511b5d))
+
 ## [1.12.0](https://github.com/bffless/apps/compare/workflow-v1.11.0...workflow-v1.12.0) (2026-09-12)
 
 
