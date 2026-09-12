@@ -126,13 +126,22 @@ GitHub's grammar, as a subset, evaluated by one parser shared by the harness and
 
 - Literals: `null`, booleans, numbers, single-quoted strings. Property access `a.b`, index
   `a[0]`, `a['k']`, `a[expr]` (dynamic index, as GitHub). A missing property or out-of-range
-  index evaluates to `null` — never throws (GitHub semantics); `null.x` is `null`. Operators `( ) ! == != < <= > >= && ||`. Comparison rules as GitHub
-  (loose, case-insensitive strings).
+  index evaluates to `null` — never throws (GitHub semantics); `null.x` is `null`. Operators `( ) ! == != < <= > >= && ||`
+  plus the arithmetic deviation below. Comparison rules as GitHub (loose, case-insensitive strings).
 - Functions: `contains`, `startsWith`, `endsWith`, `format`, `join`, `toJSON`, `fromJSON`;
   status functions `success()`, `failure()`, `always()`, `cancelled()` (valid in `if` only).
   **Deviations:** `length(x)` (list/string) — GitHub cannot count, summaries and `if`s need
   it; `pluck(list, 'key')` — projects a list of objects to a list of one property (the common
-  case: a list of File refs → a list of paths for a pipeline body). Both are pure and tiny.
+  case: a list of File refs → a list of paths for a pipeline body); arithmetic `+ * /` and
+  `floor(x)` — GitHub cannot do sums, and a form warning like "about
+  `${{ floor(inputs.recording.duration / inputs.interval) }}` stills" needs one. Arithmetic
+  binds tighter than comparison (`a / b > 240` is `(a / b) > 240`), coerces operands as
+  comparison does, and yields `null` (never throws) for a non-numeric operand or a
+  non-finite result such as `x / 0`; `floor(null)` is `null`, so the hole propagates into an
+  interpolation as `''` rather than as `0`. There is **no** binary `-`: identifiers may contain
+  it (`needs.per-video`) and a number literal carries its own sign (`-1`). Mind the spelling
+  without spaces — `inputs.count-1` is a property literally named `count-1` (so `null`), not
+  a subtraction; `a - 1` and `a -1` are syntax errors. All three are pure and tiny.
 - A value that is **exactly** one expression keeps its type (object/list/number); anything
   else is string interpolation.
 - Any YAML scalar may contain expressions; keys may not. **YAML gotcha (same as GitHub):**

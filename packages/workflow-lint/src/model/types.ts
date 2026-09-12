@@ -124,10 +124,12 @@ export class TypeEnv {
         return { base: 'boolean', list: 0 }
       case 'binary':
         if (expr.op === '&&' || expr.op === '||') return UNKNOWN
+        // Arithmetic (01 deviation) is a number; every other operator compares.
+        if (expr.op === '+' || expr.op === '*' || expr.op === '/') return { base: 'number', list: 0 }
         return { base: 'boolean', list: 0 }
       case 'call': {
         const name = expr.callee.toLowerCase()
-        if (name === 'length') return { base: 'number', list: 0 }
+        if (name === 'length' || name === 'floor') return { base: 'number', list: 0 }
         if (name === 'fromjson') return { base: 'json', list: 0 }
         if (name === 'tojson' || name === 'format' || name === 'join') return { base: 'string', list: 0 }
         if (name === 'contains' || name === 'startswith' || name === 'endswith') {

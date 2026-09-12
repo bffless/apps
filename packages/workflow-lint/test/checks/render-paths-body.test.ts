@@ -43,6 +43,14 @@ jobs:
 
 const def = toDefinition(loadYaml(FIXTURE).data)
 const env = new TypeEnv(def)
+
+test('inference: arithmetic and floor() are numbers, comparison stays boolean (01 deviation)', () => {
+  const t = (src: string) => env.infer(parseExpression(src), undefined)
+  expect(t('inputs.a / inputs.b')).toEqual({ base: 'number', list: 0 })
+  expect(t('1 + 2 * 3')).toEqual({ base: 'number', list: 0 })
+  expect(t('floor(inputs.a / inputs.b)')).toEqual({ base: 'number', list: 0 })
+  expect(t('inputs.a / inputs.b > 240')).toEqual({ base: 'boolean', list: 0 })
+})
 const infer = (src: string, jobId?: string) =>
   env.infer(parseExpression(src), jobId ? def.jobs[jobId] : undefined)
 

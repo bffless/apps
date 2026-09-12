@@ -6673,6 +6673,7 @@ ${end.comment}` : end.comment;
     "fromjson",
     "length",
     "pluck",
+    "floor",
     ...STATUS_FUNCTIONS
   ];
 

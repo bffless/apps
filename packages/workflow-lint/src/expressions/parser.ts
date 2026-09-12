@@ -99,7 +99,11 @@ export function parseExpression(src: string): Expr {
     throw new ExprSyntaxError('unexpected end of expression', t.span.start)
   }
 
-  const parseRelational = binaryLevel(['<', '<=', '>', '>='], parseUnary)
+  // Arithmetic binds tighter than comparison, as in GitHub-style C precedence: `a / b > 240`
+  // is `(a / b) > 240`. There is no binary `-` (see lexer.ts).
+  const parseMultiplicative = binaryLevel(['*', '/'], parseUnary)
+  const parseAdditive = binaryLevel(['+'], parseMultiplicative)
+  const parseRelational = binaryLevel(['<', '<=', '>', '>='], parseAdditive)
   const parseEquality = binaryLevel(['==', '!='], parseRelational)
   const parseAnd = binaryLevel(['&&'], parseEquality)
   const parseOr = binaryLevel(['||'], parseAnd)

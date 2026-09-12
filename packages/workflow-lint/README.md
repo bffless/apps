@@ -188,7 +188,8 @@ Findings carry `rule`, `severity`, `message`, a JSON-pointer `path`, a 1-based
 
 - `@bffless/workflow-lint/expressions` — lexer, parser, template scanner and the
   full evaluator (GitHub semantics: null propagation, loose comparison,
-  operand-returning `&&`/`||`, plus the `length()` / `pluck()` deviations).
+  operand-returning `&&`/`||`, plus the `length()` / `pluck()` / arithmetic
+  `+ * /` + `floor()` deviations — no binary `-`, see spec 01).
 - `@bffless/workflow-lint/definition` — the typed `Definition`/`Job`/`Step`
   model over schema-valid data.
 

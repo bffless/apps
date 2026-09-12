@@ -64,3 +64,22 @@ test('errors: trailing garbage, empty, dangling operator', () => {
   expect(() => parseExpression('f(a,)')).toThrow()
   expect(() => parseExpression('(a')).toThrow()
 })
+
+test('arithmetic binds tighter than comparison, * / tighter than +', () => {
+  const e = parseExpression('inputs.recording.duration / inputs.interval > 240') as any
+  expect(e.op).toBe('>')
+  expect(e.left.op).toBe('/')
+  expect(e.right).toMatchObject({ kind: 'number', value: 240 })
+  const f = parseExpression('a + b * c / d') as any
+  expect(f.op).toBe('+')
+  expect(f.right.op).toBe('/')
+  expect(f.right.left.op).toBe('*')
+  const g = parseExpression('(a + b) * c') as any
+  expect(g.op).toBe('*')
+  expect(g.left.op).toBe('+')
+})
+
+test('binary - is not part of the grammar', () => {
+  expect(() => parseExpression('a - 1')).toThrow()
+  expect(() => parseExpression('a -1')).toThrow()
+})

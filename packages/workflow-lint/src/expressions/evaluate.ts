@@ -30,7 +30,8 @@ export function truthy(v: unknown): boolean {
   return true
 }
 
-function toNum(v: unknown): number {
+/** GitHub numeric coercion: null/'' → 0, booleans → 0/1, strings via Number, objects → NaN. */
+export function toNum(v: unknown): number {
   if (v === null || v === undefined) return 0
   if (typeof v === 'number') return v
   if (typeof v === 'boolean') return v ? 1 : 0
@@ -116,6 +117,13 @@ export function evaluate(expr: Expr, opts: EvalOptions): unknown {
       if (op === '!=') return !looseEq(l, r)
       const x = toNum(l)
       const y = toNum(r)
+      if (op === '+' || op === '*' || op === '/') {
+        // Arithmetic (deviation, 01): a non-numeric operand or a non-finite result
+        // (`x / 0`) is null, never a throw — the same rule as a missing property.
+        if (Number.isNaN(x) || Number.isNaN(y)) return null
+        const v = op === '+' ? x + y : op === '*' ? x * y : x / y
+        return Number.isFinite(v) ? v : null
+      }
       if (Number.isNaN(x) || Number.isNaN(y)) return false
       if (op === '<') return x < y
       if (op === '<=') return x <= y
