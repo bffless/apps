@@ -1,0 +1,115 @@
+targetUrl: pipeline
+order: 26
+pipeline:
+  name: Sweep expired runs (retention)
+  description: "POST, no body — the nightly retention sweep (spec 05 §Retention, apps#615). Fired by a pipeline_schedule as a USERLESS system run, so it carries no auth_required validator (a userless run fails it — the reader's /api/prune precedent) and never consults runGate (there is no caller to judge); the private alias is its protection. Selects terminal runs whose expiresAt has passed — never a `running` one, however long it has been parked — and deletes each the way run/delete does, in the same order and with the same idempotency: every object under its run prefix (file_delete `prefixes`, CE >= 0.4.58), the workflow_files records under it, its step rows, its run row. Kickoff inputs/ are never touched (D18). One pass is bounded; what it does not reach tonight it reaches tomorrow."
+  steps:
+    # The instant, the statuses and the scan pattern the filters below compare
+    # against — from a function, because every filter `value` is evaluated as
+    # an expression, so none of the three can be a YAML literal.
+    - id: cutoff
+      name: cutoff
+      handler: function_handler
+      code: ./cutoff.fn.js
+    # The runs due this pass. `expiresAt` is absent (no key, not null) on a run
+    # whose workflow has no `keep:`, and `lt` casts `data->>'expiresAt'` to
+    # numeric, so such a run is NULL < now — never selected. `in` protects a
+    # parked driven run: it is `running` for as long as it waits (07). Bounded:
+    # a backlog larger than one pass drains over the following nights, oldest
+    # expiry first — text order on a JSONB field, which equals numeric order
+    # while epoch ms are 13 digits (until 2286).
+    - id: due
+      name: due
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_runs
+        limit: 50
+        filterLogic: and
+        filters:
+          expiresAt: { op: lt, value: steps.cutoff.now }
+          status: { op: in, value: steps.cutoff.terminal }
+        orderBy: { field: expiresAt, direction: asc }
+    # Every run-scoped `workflow_files` row (`sub_dir` is the key's uploads-
+    # relative directory, `workflows/<impl>/<wf>/runs/<id>/…` — apps#381), for
+    # `targets` to intersect with the due prefixes. One `like` can anchor on ONE
+    # prefix and this pass has many, which is why the rows are read and matched
+    # rather than deleted by pattern. `inputs/` rows never match the pattern.
+    # `limit` MUST equal SCAN_LIMIT in targets.fn.js (the parity test holds them
+    # equal): a scan that comes back this long is treated as truncated, and the
+    # pass then keeps every run's rows for the next night (see targets.fn.js).
+    - id: records
+      name: records
+      handler: data_query
+      config:
+        schemaId: $schema:workflow_files
+        limit: 5000
+        filters:
+          sub_dir: { op: like, value: steps.cutoff.scanLike }
+    # The four lists the deletes below consume. No `condition` on any of them:
+    # an empty list is each handler's own no-op (`prefixes: []` → `deleted: 0`;
+    # `in []` → a match-nothing predicate, `count: 0`), so a night with nothing
+    # due runs every step and reports zeros — and `respond` can name every
+    # count without a skipped step leaving a hole in its JSON.
+    - id: targets
+      name: targets
+      handler: function_handler
+      code: ./targets.fn.js
+    # Bytes first, exactly as run/delete: a pass that fails after this step
+    # leaves rows pointing at objects that are gone, which the next pass (or a
+    # manual run/delete) fixes — never the reverse. `prefixes` is the
+    # expression-string form of file_delete's list modes (file-delete.handler.ts
+    # resolveList): resolved to the function's array at runtime, every entry
+    # then guarded (blank / `..` refused, confined to the uploads root) BEFORE
+    # any storage call, and summed into one `deleted`.
+    - id: files
+      name: files
+      handler: file_delete
+      config:
+        prefixes: steps.targets.prefixes
+    # The upload records CE wrote for those objects — by exact `sub_dir`, the
+    # values `targets` found under the due prefixes. `sub_dir` carries the
+    # runId, so `in` cannot reach another run's rows.
+    - id: recs
+      name: recs
+      handler: data_delete
+      config:
+        schemaId: $schema:workflow_files
+        filters:
+          sub_dir: { op: in, value: steps.targets.subDirs }
+    # `stepRows`, not `steps` — a step named `steps` reads as the expression
+    # root (run/delete's own note).
+    - id: stepRows
+      name: stepRows
+      handler: data_delete
+      config:
+        schemaId: $schema:workflow_run_steps
+        filters:
+          runId: { op: in, value: steps.targets.rowRunIds }
+    # The run rows, and only rows that are STILL terminal and STILL expired —
+    # `status` cannot leave a terminal value, so this is belt-and-braces on the
+    # id list rather than a second decision.
+    - id: rows
+      name: rows
+      handler: data_delete
+      config:
+        schemaId: $schema:workflow_runs
+        filterLogic: and
+        filters:
+          runId: { op: in, value: steps.targets.rowRunIds }
+          status: { op: in, value: steps.cutoff.terminal }
+          expiresAt: { op: lt, value: steps.cutoff.now }
+    # Numbers only, each rendered bare by `{{…}}`. `swept` counts runs whose
+    # rows went; `deferred` runs whose bytes went but whose rows wait for a
+    # pass that can see all their records; `skipped` due rows the sweep would
+    # not build a prefix for. `records: 0` beside a non-zero `files` is the
+    # same signature run/delete documents: the `sub_dir` shape stopped matching.
+    - id: respond
+      name: respond
+      handler: response_handler
+      config:
+        body: '{"ok":true,"swept":{{steps.targets.swept}},"deferred":{{steps.targets.deferred}},"skipped":{{steps.targets.skipped}},"deleted":{"files":{{steps.files.deleted}},"records":{{steps.recs.count}},"steps":{{steps.stepRows.count}},"runs":{{steps.rows.count}}}}'
+        status: 200
+        headers: { Cache-Control: no-store }
+        contentType: application/json
+  validators: []
+description: "Nightly retention sweep (spec 05, apps#615): deletes every terminal run whose expiresAt has passed — its storage prefix, its file records, its step rows, its run row — in run/delete's order. Schedule-fired as a userless system run: no auth_required (the private alias is the protection), no run gate (no caller to judge). Kickoff inputs are kept (D18). Needs CE >= 0.4.58 (file_delete `prefixes`)."

@@ -33,6 +33,7 @@ import { analyzeLines } from './analyze'
 import { expiresAtOf } from './expiry'
 import { forkGate } from './forkGate'
 import { DRIVE_KEY_HEADER, mockGate } from './runGate'
+import { sweepExpired } from './sweep'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import interactiveYaml from '../../docs/spec/examples/interactive.workflow.yaml?raw'
 
@@ -530,6 +531,14 @@ const runRecord = [
     const { files, records } = deleteRun(run.runId)
     return HttpResponse.json({ ok: true, deleted: { files, records } }, { headers: NO_STORE })
   }),
+
+  // The nightly retention sweep (spec 05 §Retention, apps#615). On the real
+  // instance a `pipeline_schedule` fires it as a USERLESS system run — the
+  // rule carries no validator and never consults `runGate` — so no
+  // `mockUser()` and no `mockGate` here either: there is no caller to judge.
+  // `sweep.ts` mirrors the rule's two functions and four deletes, in the
+  // rule's order; `sweep.fn.parity.test.ts` holds them together.
+  http.post('/api/workflow/sweep', () => HttpResponse.json(sweepExpired(), { headers: NO_STORE })),
 
   // Gated (spec 11 D26): the caller must be able to reach the PARENT run
   // (`from`) — `mockGate` decides that before `forkGate` (see `forkGate.ts`)

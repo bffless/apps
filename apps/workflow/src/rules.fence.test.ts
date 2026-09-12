@@ -42,6 +42,7 @@ const SURFACE: Record<string, string[]> = {
     '/files/prepare/post/', '/files/register/post/', '/files/sign/post/',
     '/uploads/workflows/[...path]/',
     '/api/auth/',
+    '/sweep/post/',
   ],
 }
 
@@ -155,6 +156,38 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       }
       return
     }
+    if (file.includes('/api/workflow/sweep/')) {
+      // The nightly retention sweep (spec 05 §Retention, apps#615): fired by a
+      // `pipeline_schedule` as a USERLESS system run, which `auth_required`
+      // refuses (the reader's `/api/prune` precedent, apps/reader/CONTEXT.md),
+      // so the rule carries no validator and the private alias is its
+      // protection. It has no caller, so it never consults the run gate
+      // (spec 11 — it is NEITHER below) and must never grow a `user.*` read.
+      // Held here to the shape that makes an ungated delete safe: one
+      // `file_delete` in `prefixes` mode over the function's list — never a
+      // bare `prefix`, never a template a row could steer — every row delete an
+      // `in` over the same function's ids, and no `condition` anywhere (an
+      // empty list is each handler's own no-op, so nothing runs ungated by
+      // accident because a step before it was skipped).
+      expect(auth, `${file} is schedule-fired: a userless run fails auth_required`).toBeUndefined()
+      expect(doc.pipeline.validators ?? []).toEqual([])
+      const steps: Step[] = doc.pipeline.steps
+      expect(steps.map((s) => s.id)).toEqual(['cutoff', 'due', 'records', 'targets', 'files', 'recs', 'stepRows', 'rows', 'respond'])
+      expect(JSON.stringify(steps)).not.toMatch(/runGate|\buser\./)
+      const purge = steps.find((s) => s.id === 'files')!
+      expect(purge.handler).toBe('file_delete')
+      expect(purge.config).toEqual({ prefixes: 'steps.targets.prefixes' })
+      for (const s of steps) {
+        expect(s.config?.condition, `${file}: ${s.id} must not be conditioned`).toBeUndefined()
+        if (s.handler !== 'data_delete') continue
+        expect(s.config, `${file}: ${s.id} deletes by list, never by recordId`).not.toHaveProperty('recordId')
+        const filters = s.config?.filters ?? {}
+        const ids = filters.runId ?? filters.sub_dir
+        expect(ids?.op, `${file}: ${s.id} must select rows with \`in\``).toBe('in')
+        expect(ids?.value, `${file}: ${s.id} must select the function's own list`).toMatch(/^steps\.targets\.(rowRunIds|subDirs)$/)
+      }
+      return
+    }
     expect(auth, `${file} must be auth_required (D14)`).toBeDefined()
     // The global constraint names `allowApiKey` explicitly: CI (`workflow-ci`)
     // and the headless runner call every route with an API key, not a cookie.
@@ -212,6 +245,11 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     // `step-view` is its own route one level deeper, so it is listed in its own
     // right rather than inheriting the index's class through a loose prefix.
     '/_custom/well-known/', '/api/auth/', '/api/workflow/mcp/', '/mcp-resources/', '/mcp-resources/step-view/',
+    // The nightly retention sweep (spec 05, apps#615) names MANY runs but has
+    // no caller — a `pipeline_schedule` fires it with no user — so the gate has
+    // nothing to judge. Its own branch above holds it to no validator, no gate
+    // and list-only deletes.
+    '/sweep/post/',
   ]
   const CLASSES: Array<[string, string[]]> = [['GATED', GATED], ['FILTERED', FILTERED], ['NEITHER', NEITHER]]
   /**
@@ -483,6 +521,7 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     ['/mcp-resources/step-view/', '/rules/api/workflow/mcp-resources/step-view/get/rule.yaml', true],
     ['/api/auth/', '/rules/api/auth/[...path]/any.rule.yaml', true],
     ['/_custom/well-known/', '/rules/_custom/well-known/get.rule.yaml', true],
+    ['/sweep/post/', '/rules/api/workflow/sweep/post/rule.yaml', true],
   ])('anchors %s against %s', (fragment, rel, expected) => {
     expect(anchoredToRuleDir(rel, fragment)).toBe(expected)
   })

@@ -154,8 +154,24 @@ that finishes after its `expires_at` (a form answered the next morning under `ke
 already due when it finishes, so pick a `keep` with the workflow's waiting steps in mind. A
 workflow with no `keep:` writes no `expires_at` at all (the key is absent, not `null`), and such
 a run is **never swept**. Expiry removes the **whole run** — its rows and its run prefix, in the
-same order and with the same idempotency as a manual delete — never just its artifacts; the
-nightly sweep that acts on `expires_at` is apps#615.
+same order and with the same idempotency as a manual delete — never just its artifacts.
+
+**The nightly sweep** (`POST /api/workflow/sweep`) is what acts on `expires_at`. A
+`pipeline_schedule` fires it once a night as a *userless* system run — there is no caller, so the
+rule carries no `auth_required` (a userless run fails it) and never consults the ownership gate
+(11); the private alias is its protection. It selects runs with `expires_at < now` **and** a
+terminal status — `succeeded`, `failed` or `cancelled`; a `running` run is never swept, however
+long it has been parked on a form (07), so a `keep:` that elapses during the wait costs nothing —
+and deletes each the way a manual delete does: every object under its run prefix (one
+`file_delete` in `prefixes` mode, CE ≥ 0.4.58), the `workflow_files` records under it, its step
+rows, its run row. Kickoff `inputs/` are never touched. One pass is bounded (50 runs, oldest
+expiry first); what it does not reach tonight it reaches tomorrow. The `workflow_files` records
+are matched from a bounded scan rather than deleted by pattern (one `like` can anchor on one
+prefix, and a pass has many): when that scan comes back truncated, the pass still removes the
+bytes and the records it found but keeps the rows, so the next pass selects the same runs again —
+a deferred run is the retryable state a half-done manual delete leaves, never an orphan, and the
+pass reports it as `deferred`. The schedule itself is created per instance, out of band
+(`bffless/README.md` §Background schedules).
 
 ## Not in v1
 

@@ -135,6 +135,30 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   the authored snake_case fields (needs the hand `bffless rules push --adopt-fields` per the
   standing sync gap), but filtering on an undeclared column is proven to work here — the
   `storage_path` filter returned `records: 3` while equally undeclared.
+- **Retention sweep** (`POST /api/workflow/sweep`, spec 05 §Retention, apps#615): the nightly
+  twin of run deletion, for runs whose workflow declared `keep:` (`expiresAt = startedAt + keep`,
+  apps#686). Fired by a `pipeline_schedule` as a **userless** system run (see **Background
+  schedules** below), so the rule carries **no `auth_required`** and never consults `runGate` —
+  there is no caller to judge; the private alias is its protection. `cutoff.fn.js` fixes `now`,
+  the terminal list (`succeeded`, `failed`, `cancelled` — a `running` run is never swept, however
+  long parked) and the scan pattern; `due` selects `expiresAt lt now AND status in terminal`
+  (50 per pass, oldest expiry first); `records` reads every run-scoped `workflow_files` row
+  (`sub_dir like 'workflows/%/runs/%'`, 5000 max); `targets.fn.js` builds the lists; then the
+  same four deletes in the same order as run/delete — `file_delete` in **`prefixes`** mode
+  (CE ≥ 0.4.58, bffless/ce#792 — hence `requires.ceMin`), `workflow_files` by exact `sub_dir in`,
+  step rows and run rows by `runId in`. Nothing is conditioned: an empty list is each handler's
+  own no-op, so a quiet night runs every step and reports zeros. `inputs/` is never touched (D18).
+  The 200 is `{"ok":true,"swept":n,"deferred":n,"skipped":n,"deleted":{"files":n,"records":n,"steps":n,"runs":n}}`:
+  **`deferred`** counts runs whose bytes and found records went but whose rows were kept because
+  the `records` scan came back truncated (5000 rows) — the next pass selects them again and sees
+  the rest, the same retryable state a half-done run/delete leaves; a `deferred` that never drops
+  to 0 means the live table has outgrown the scan, so raise the `records` limit **and**
+  `SCAN_LIMIT` in `targets.fn.js` together (the parity test holds them equal). **`skipped`**
+  counts due rows the sweep would not build a prefix for (an `impl`, `workflow` or `runId` with a
+  `/`, `..`, `{` or whitespace — one bad `file_delete` entry aborts the whole step, so such a row
+  is left for an operator rather than risked). `records: 0` beside a non-zero `files` is the same
+  `sub_dir`-shape signature run/delete documents. Idempotent: a second pass over the same tables
+  reports zeros. **Edit as rules-as-code only**, like run/delete.
 - **`GET /api/workflow/whoami`** (M2 Phase 3): `{ id, email, role }` for the calling session —
   the one thing the SPA cannot derive, and what the run header uses to decide whether to offer
   Delete. `no-store`. A caller CE cannot tie to a person (an API key with no user) gets empty
@@ -312,6 +336,45 @@ ownership`, `packages/workflow-live`) proves the four doors — owner, drive non
 all-scope, and files following the run — against a real second identity, which the walk cannot
 create for itself: set `WORKFLOW_EMAIL_2`/`WORKFLOW_PASSWORD_2` (or `WORKFLOW_APP_TOKEN_2`) to a
 second project member's credentials, or every ownership check blocks (not fails).
+
+## Background schedules
+
+Retention (spec 05, apps#615) is the one thing the harness does with nobody at the keyboard: a
+`pipeline_schedule` (CE's `pipeline_schedules` primitive) fires `POST /api/workflow/sweep` once a
+night **as system context** (no user session), and every terminal run whose `expiresAt` has
+passed is deleted the way Delete on the run page deletes it. Runs of a workflow with no `keep:`
+carry no `expiresAt` and are never selected — retention is opt-in per workflow.
+
+Create it against **each instance that carries the harness** — today `bffless/workflow` on
+`workflow.j5s.dev` and on `workflow.bffless.dev` (rule IDs are the instance's own, not the
+reference project's):
+
+| Schedule | Cron (UTC) | Target rule | Effect |
+| --- | --- | --- | --- |
+| Workflow nightly sweep (retention) | `41 3 * * *` | `POST /api/workflow/sweep` | deletes expired terminal runs — bytes, file records, step rows, run rows |
+
+**Claude / MCP:** ask Claude (BFFless MCP connected) to `create_pipeline_schedule`, pointing
+`targetProxyRuleId` at that instance's `/api/workflow/sweep` rule ID. The `install-app` skill does
+it for a catalog install from `install.schedules` in `bffless-app.json`; the two live instances
+are deployed by `deploy-workflow.yml`, which syncs rules and never schedules, so on those it is a
+one-time, by-hand step after the rule first lands — the same standing gap `--adopt-fields` has.
+
+**REST:** `POST /api/pipeline-schedules/projects/:projectId/schedules` with
+`{ targetProxyRuleId, cronExpression: "41 3 * * *", timezone: "UTC", enabled: true }` (repo-scoped
+API key). The path is `/api/pipeline-schedules/projects/:id/schedules`, *not*
+`/api/projects/:id/pipeline-schedules` (which collides with the projects catch-all — see the
+reader's CONTEXT.md).
+
+The target rule **omits** the `auth_required` validator on purpose: CE fires a schedule as a
+*userless* system run, and `auth_required` needs `context.user`, so a gated pipeline fails with
+`"Authentication required to access this pipeline"` (`allowApiKey` only helps a *keyed HTTP
+request*, not a scheduler run). The endpoint stays protected by the **private alias** (anonymous
+HTTP is edge-bounced to login); the scheduler bypasses the edge and runs the pipeline directly. It
+never consults `runGate` either — `rules.fence.test.ts` places it as NEITHER and holds it to no
+validator, no gate, and list-only deletes. The sweep's `file_delete` runs in `prefixes` mode, which
+is why `requires.ceMin` is `0.4.58` (bffless/ce#792): on an older CE the step fails config
+validation and nothing is deleted. Running it by hand (a keyed `POST` from a member, or the admin
+panel's *Run now*) is the same pass the schedule makes.
 
 ## First-success checkpoint
 

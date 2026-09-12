@@ -140,7 +140,10 @@ tool arguments rather than the query string, and is otherwise the same two-query
 **Neither** — nothing here names a run: `project/get`, `aliases/get`, `whoami`,
 `mcp-tools/list`, `mcp-tools/describe` (it takes `{ impl, workflow }` and describes a
 *workflow*, not a run), `mcp-tools/start` (it creates one — `run/drive` carries the gate for
-its `resume` mode), `_custom/well-known`, `api/auth/*`, `api/workflow/mcp`.
+its `resume` mode), `_custom/well-known`, `api/auth/*`, `api/workflow/mcp` — and `sweep/post`, the
+nightly retention sweep (05), which names many runs but has no caller: a `pipeline_schedule`
+fires it with no user at all, so there is nothing to judge — it carries no validator, never
+consults the gate, and the private alias is its protection.
 
 > The MCP tool rules are **generated** (`scripts/build-mcp.mjs` from `src/mcp/mcpConfig.ts` —
 > "do not edit"). The gate goes in the generator; `bundle.test.ts` keeps the committed files

@@ -7,7 +7,7 @@
   "category": "automation",
   "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/workflow",
   "requires": {
-    "ceMin": "0.4.57"
+    "ceMin": "0.4.58"
   },
   "install": {
     "alias": "workflow",
@@ -26,7 +26,15 @@
       "isPublic": false,
       "isSpa": true
     },
-    "schedules": [],
+    "schedules": [
+      {
+        "name": "Workflow nightly sweep (retention)",
+        "cronExpression": "41 3 * * *",
+        "timezone": "UTC",
+        "targetRulePath": "/api/workflow/sweep",
+        "targetRuleMethod": "POST"
+      }
+    ],
     "manualSteps": [
       {
         "id": "public-origin-local-fs",
