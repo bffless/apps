@@ -246,6 +246,16 @@ claim with no run row of its own up as a synthetic `status: 'queued'` entry. It 
 only: `RunStatus` is unchanged, nothing that switches on a run's status is ever handed one, and
 the claim's `driveKey` stays off the wire (D28) because the entry is built from an allow-list.
 
+**Since apps#681:** the listing ages out on the same window the gate uses. `runs/get`'s
+`shape.fn.js` drops a claim older than `CLAIM_STALE_MS` (restated there, pinned to the export by
+its parity test), so a claim stops listing as `queued` at the moment the gate stops honouring it
+— one row, one answer: past the window a dispatch that never landed is *no run*, not a run
+forever about to begin. The filter runs after the two claim queries, not in them (a
+`data_query` filter value is a literal or a request path, never "now minus a constant"), so a
+stale claim still holds one of the query's 50 slots. The row itself is not reaped: it is the
+only record of who asked for a dispatch that never landed, and `run/drive` reusing a caller's
+own standing claim is what makes a retry safe.
+
 ## Files follow the run (D29)
 
 Ownership over run **records** and not run **bytes** would not be worth stating: run ids appear
@@ -296,5 +306,6 @@ Sharing/grants (the gate is shaped for it; the table is not built) · a cross-wo
 page · guest/public runs (already backlog in 06) · per-user partitioning of the `inputs/` area.
 
 Both claim follow-ups have since landed and are specified under §Attribution above, not deferred:
-listing an unconsumed claim as a `queued` run (apps#671) and ageing one out so it stops holding
-its run id (apps#672).
+listing an unconsumed claim as a `queued` run (apps#671), ageing one out so it stops holding
+its run id (apps#672), and ageing the listing out on that same window (apps#681). Reaping the
+aged-out rows is still not done anywhere, and deliberately so (apps#681).

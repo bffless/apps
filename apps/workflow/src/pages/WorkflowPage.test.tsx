@@ -132,7 +132,9 @@ describe('WorkflowPage', () => {
       startedBy: MOCK_MEMBER.id,
       startedByEmail: MOCK_MEMBER.email,
       driveKey: 'nonce-abc',
-      createdAt: Date.parse('2026-09-11T10:00:00Z'),
+      // A moment ago: the list ages a claim out on the drive gate's window
+      // (apps#681), so an absolute date here would go stale on the calendar.
+      createdAt: Date.now(),
     })
     renderApp()
 

@@ -15,6 +15,17 @@
 // it) — exactly one of the two is ever anything but `undefined`. The same is
 // true of `queuedMine`/`queuedAll`, the claim queries whose unconsumed rows
 // this appends to the page as `queued` entries (apps#671).
+
+// How long a claim lists as `queued` before the list writes it off (apps#681).
+// Kept in sync with `src/mcp/driveGate.ts`'s `CLAIM_STALE_MS` (which is
+// `src/mcp/ids.ts`'s `PENDING_WINDOW_MS`, 10 minutes) — restated because an
+// authored `.fn.js` cannot import, and pinned to that export behaviourally by
+// `src/mocks/runs.shape.fn.parity.test.ts`. Past this window the drive gate
+// hands the run id to the next caller and `workflow.status` stops answering
+// `pending` for it, so a claim older than this is a dispatch that never landed:
+// the list must stop promising the run is coming when the gate already has.
+const CLAIM_STALE_MS = 600000
+
 function handler({ steps }) {
   // data_query answers a bare array (or one record with returnSingle) — CE's
   // data-query.handler.ts `output = returnSingle ? results[0] : results`; the envelope
@@ -83,6 +94,14 @@ function handler({ steps }) {
     // re-usable after a failed dispatch — either way the page must carry one
     // entry per runId, not two.
     if (typeof f.runId !== 'string' || f.runId === '' || seen[f.runId]) continue
+    // The gate gave this id away (apps#681): the list stops promising it is
+    // coming. Read through `Number()` for the comparison only — a claim's
+    // `createdAt` can arrive as a numeric string (see `startedAt` below) and a
+    // `typeof` test would leave this inert on it. A value that does not read
+    // as a finite time keeps the entry: wrongly hiding a real queued run is
+    // worse than listing a stale one.
+    const age = Date.now() - Number(f.createdAt)
+    if (Number.isFinite(age) && age > CLAIM_STALE_MS) continue
     seen[f.runId] = true
     const queued = {
       runId: f.runId,

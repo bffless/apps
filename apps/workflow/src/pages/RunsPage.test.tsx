@@ -120,7 +120,9 @@ describe('RunsPage', () => {
         startedBy: startedBy.id,
         startedByEmail: startedBy.email,
         driveKey: 'nonce-abc',
-        createdAt: Date.parse('2026-09-11T10:00:00Z'),
+        // A moment ago: the list ages a claim out on the drive gate's window
+        // (apps#681), so an absolute date here would go stale on the calendar.
+        createdAt: Date.now(),
       })
     }
 
@@ -178,7 +180,7 @@ describe('RunsPage', () => {
         .slice(1)
         .map((row) => within(row).getAllByRole('link')[0].textContent)
 
-      // The claim was written in 2026; the finished fixture ran before it.
+      // The claim was written just now; the finished fixture ran before it.
       expect(ids).toEqual([QUEUED_RUN_ID, FIXTURE_RUN_ID])
     })
 
