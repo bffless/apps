@@ -366,6 +366,7 @@ var __mcp = (() => {
     "fromjson",
     "length",
     "pluck",
+    "floor",
     ...STATUS_FUNCTIONS
   ];
 
