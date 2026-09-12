@@ -1,10 +1,10 @@
 {
   "apps/reader": "1.0.3",
   "apps/handoff": "1.1.0",
-  "apps/studio": "1.15.0",
+  "apps/studio": "1.15.1",
   "apps/recall": "0.3.1",
-  "apps/workflow": "1.12.1",
-  "packages/workflow-lint": "1.6.0",
+  "apps/workflow": "1.13.0",
+  "packages/workflow-lint": "1.7.0",
   "packages/workflow-cli": "1.4.0",
   "packages/workflow-script": "1.0.0",
   "packages/workflow-headless": "1.6.0",
