@@ -65,7 +65,7 @@ export function checkContexts(def: Definition, sites: ExprSite[]): Finding[] {
         findings.push({
           rule: 'unknown-function',
           severity: 'error',
-          message: `unknown function \`${call.callee}()\` — functions are: contains, startsWith, endsWith, format, join, toJSON, fromJSON, length, pluck, success, failure, always, cancelled`,
+          message: `unknown function \`${call.callee}()\` — functions are: contains, startsWith, endsWith, format, join, toJSON, fromJSON, length, pluck, floor, success, failure, always, cancelled`,
           path: site.pointer,
         })
       } else if (STATUS.has(name) && !site.slot.isIf) {

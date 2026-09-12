@@ -157,3 +157,26 @@ jobs:
 `),
   ).toEqual([])
 })
+
+test('floor() is in the closed function set; arithmetic lints clean (01 deviation)', () => {
+  expect(
+    run(`${BASE}
+jobs:
+  a:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: echo, body: { n: "\${{ floor(inputs.a / 2) * 3 + 1 }}" } }
+`),
+  ).toEqual([])
+  const [f] = run(`${BASE}
+jobs:
+  a:
+    steps:
+      - id: s
+        uses: pipeline
+        with: { path: echo, body: { n: "\${{ ceil(inputs.a) }}" } }
+`)
+  expect(f?.rule).toBe('unknown-function')
+  expect(f?.message).toMatch(/pluck, floor, success/)
+})
