@@ -153,6 +153,109 @@ describe('createScriptHost', () => {
     expect(worker.terminated).toBe(1)
   })
 
+  it('copies Blob/File outputs into page-owned memory before the sandbox is torn down', async () => {
+    // A `File` built inside the sandboxed Worker is only a handle on this side;
+    // once the frame's process is gone the bytes go with it and the upload dies
+    // with net::ERR_BLOB_SOURCE_DIED_IN_TRANSIT. So the host reads every Blob
+    // output while the Worker is still alive and resolves page-owned copies.
+    const zipBytes = new Uint8Array([80, 75, 3, 4, 9, 9])
+    const zip = new File([zipBytes], 'out.zip', { type: 'application/zip' })
+    const sheets = [new Blob(['a'], { type: 'image/jpeg' }), new Blob(['bb'], { type: 'image/jpeg' })]
+    const worker = createFakeWorker({
+      run: () => [{ t: 'done', outputs: { zip, sheets, n: 1, note: 'x' } }],
+    })
+    const h = makeHarness(worker)
+    let terminatedWhenRead = -1
+    const read = vi.spyOn(zip, 'arrayBuffer')
+    read.mockImplementation(async function (this: File) {
+      terminatedWhenRead = worker.terminated
+      return zipBytes.slice().buffer
+    })
+
+    const outputs = (await start(h).outputs) as {
+      zip: File
+      sheets: Blob[]
+      n: number
+      note: string
+    }
+
+    expect(outputs.zip).not.toBe(zip)
+    expect(outputs.zip).toBeInstanceOf(File)
+    expect(outputs.zip.name).toBe('out.zip')
+    expect(outputs.zip.type).toBe('application/zip')
+    expect(new Uint8Array(await outputs.zip.arrayBuffer())).toEqual(zipBytes)
+    expect(outputs.sheets).toHaveLength(2)
+    expect(outputs.sheets[0]).not.toBe(sheets[0])
+    expect(outputs.sheets[1].type).toBe('image/jpeg')
+    expect(await outputs.sheets[1].text()).toBe('bb')
+    expect(outputs.n).toBe(1)
+    expect(outputs.note).toBe('x')
+    // The bytes were read while the Worker (and its frame) still existed.
+    expect(terminatedWhenRead).toBe(0)
+    expect(worker.terminated).toBe(1)
+  })
+
+  it('ignores Worker messages and errors that land while the copies are being read', async () => {
+    const zip = new Blob(['x'], { type: 'application/zip' })
+    let release!: (bytes: ArrayBuffer) => void
+    vi.spyOn(zip, 'arrayBuffer').mockImplementation(
+      () => new Promise<ArrayBuffer>((resolve) => (release = resolve)),
+    )
+    const worker = createFakeWorker({ run: () => [{ t: 'done', outputs: { zip } }] })
+    const h = makeHarness(worker)
+    const run = start(h)
+    await vi.waitFor(() => expect(release).toBeDefined())
+
+    // The module has returned; whatever the Worker says now is not the run's.
+    worker.emit({ t: 'error', code: 'LATE', message: 'after done' })
+    worker.emit({ t: 'log', line: 'late' })
+    worker.fail('uncaught after done')
+    expect(worker.terminated).toBe(0)
+
+    release(new TextEncoder().encode('x').buffer as ArrayBuffer)
+    const outputs = (await run.outputs) as { zip: Blob }
+    expect(await outputs.zip.text()).toBe('x')
+    expect(h.onLog).not.toHaveBeenCalledWith('late')
+    expect(worker.terminated).toBe(1)
+  })
+
+  it('an abort during the copy still wins: AbortError at once, one termination', async () => {
+    const zip = new Blob(['x'], { type: 'application/zip' })
+    let release!: (bytes: ArrayBuffer) => void
+    vi.spyOn(zip, 'arrayBuffer').mockImplementation(
+      () => new Promise<ArrayBuffer>((resolve) => (release = resolve)),
+    )
+    const worker = createFakeWorker({ run: () => [{ t: 'done', outputs: { zip } }] })
+    const h = makeHarness(worker)
+    const controller = new AbortController()
+    const run = start(h, { signal: controller.signal })
+    await vi.waitFor(() => expect(release).toBeDefined())
+
+    controller.abort()
+    const err = await failure(run)
+    expect(err.name).toBe('AbortError')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(worker.terminated).toBe(1)
+
+    // The copy finishing later cannot revive the cancelled run or tear down twice.
+    release(new TextEncoder().encode('x').buffer as ArrayBuffer)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(worker.terminated).toBe(1)
+  })
+
+  it('fails the run as SCRIPT when a Blob output cannot be read', async () => {
+    const zip = new Blob(['x'], { type: 'application/zip' })
+    vi.spyOn(zip, 'arrayBuffer').mockRejectedValue(new Error('source died'))
+    const worker = createFakeWorker({ run: () => [{ t: 'done', outputs: { zip } }] })
+    const h = makeHarness(worker)
+    const err = await failure(start(h))
+    expect(err).toBeInstanceOf(ScriptError)
+    expect(err.code).toBe('SCRIPT')
+    expect(err.message).toContain('zip')
+    expect(err.message).toContain('source died')
+    expect(worker.terminated).toBe(1)
+  })
+
   it('forwards ctx.annotate', async () => {
     const args = { level: 'warning', message: 'slow' }
     const worker = createFakeWorker({

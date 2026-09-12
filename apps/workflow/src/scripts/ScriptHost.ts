@@ -105,6 +105,48 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/**
+ * Page-owned copies of every `Blob`/`File` a script returned — top-level values
+ * and one list level, the shapes `coerceScriptOutputs` consumes.
+ *
+ * A Blob that crosses `postMessage` is a handle, not bytes: when the browser
+ * isolates the sandboxed frame in its own process (Chrome does), the bytes stay
+ * in that process until something reads them, and small ones are only safe
+ * because they were inlined in the message. The host tears the frame down the
+ * moment `done` arrives, so a multi-megabyte zip read later by the upload PUT
+ * died with `net::ERR_BLOB_SOURCE_DIED_IN_TRANSIT`. Reading here, while the
+ * Worker is still alive, is what makes "outputs the host resolves are safe to
+ * use after it" true; a `File` keeps its name so `blobFileName` still sees it.
+ *
+ * The cost is a second copy of every output in page memory while the original
+ * handle is still referenced from the message — fine for a contact-sheet zip,
+ * noticeable for a large ffmpeg.wasm video. The read happens while the frame is
+ * alive, so the browser answers it; if it ever hangs, the run's own abort still
+ * rejects the step at once (`abort` flips `settled` regardless of the copy).
+ */
+async function copyBlobOutputs(outputs: unknown): Promise<unknown> {
+  if (outputs === null || typeof outputs !== 'object' || Array.isArray(outputs)) return outputs
+  const copied: Record<string, unknown> = {}
+  for (const [name, value] of Object.entries(outputs as Record<string, unknown>)) {
+    try {
+      copied[name] = Array.isArray(value)
+        ? await Promise.all(value.map(copyBlob))
+        : await copyBlob(value)
+    } catch (err) {
+      throw new Error(`output ${name}: ${messageOf(err)}`, { cause: err })
+    }
+  }
+  return copied
+}
+
+async function copyBlob(value: unknown): Promise<unknown> {
+  if (!(value instanceof Blob)) return value
+  const bytes = await value.arrayBuffer()
+  return value instanceof File
+    ? new File([bytes], value.name, { type: value.type, lastModified: value.lastModified })
+    : new Blob([bytes], { type: value.type })
+}
+
 /** A message off the wire is `unknown` in practice: absent and `''` mean the same thing. */
 function textOr(value: unknown, fallback: string): string {
   return typeof value === 'string' && value !== '' ? value : fallback
@@ -257,8 +299,15 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
         }
       }
 
+      /**
+       * `done` has arrived and the Blob copies are being read: the module has
+       * returned, so nothing the Worker posts (or throws) after this point is
+       * the run's business — the same rule `settled` enforces once it flips.
+       */
+      let finishing = false
+
       const receive = (msg: FromWorker) => {
-        if (settled || !msg) return
+        if (settled || finishing || !msg) return
         progressed = true
         switch (msg.t) {
           case 'log':
@@ -271,7 +320,14 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
             void relay(msg)
             return
           case 'done':
-            finish(msg.outputs)
+            // Not `finish` directly: the copies must exist before `cleanup`
+            // takes the Worker (and the frame's process) down. An abort that
+            // lands meanwhile still wins — `settled` flips at once and both
+            // `finish` and `fail` are no-ops after it.
+            finishing = true
+            void copyBlobOutputs(msg.outputs).then(finish, (err: unknown) =>
+              fail(new ScriptError('SCRIPT', `script ${url}: ${messageOf(err)}`)),
+            )
             return
           case 'error':
             fail(
@@ -331,6 +387,7 @@ export function createScriptHost(deps: ScriptHostDeps): ScriptHost {
 
         worker.onmessage = (event: MessageEvent) => receive(event.data as FromWorker)
         worker.onerror = (event: ErrorEvent) => {
+          if (finishing) return
           fail(
             new ScriptError(
               progressed ? 'SCRIPT' : 'SCRIPT_LOAD',
