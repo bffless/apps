@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/bffless/apps/compare/workflow-v1.13.0...workflow-v1.13.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **workflow:** a script step's Blob outputs are copied before the sandbox is torn down ([#694](https://github.com/bffless/apps/issues/694)) ([bf2ab56](https://github.com/bffless/apps/commit/bf2ab56f4cc4509dff2ebcfcc31749fb9116a491))
+
 ## [1.13.0](https://github.com/bffless/apps/compare/workflow-v1.12.1...workflow-v1.13.0) (2026-09-12)
 
 
