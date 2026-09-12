@@ -269,13 +269,16 @@ const runRecord = [
     // `toRunRow` never coerces `driveKey` onto the row (spec 11 D28) — it is the
     // driver's nonce, not something a kickoff body may set — so `row` already
     // strips it whatever the client sent.
-    const posted = toRunRow(await body(request))
+    const fields = await body(request)
+    const posted = toRunRow(fields)
     // Retention (spec 05, apps#686) is the definition's, never the body's: the
     // real rule's `expiry` step computes it from the `keep:` being snapshotted,
-    // and an `expiresAt` in the body is dropped here the way `driveKey` is.
+    // and an `expiresAt` in the body is dropped here the way `driveKey` is. It
+    // measures from the body's NUMERIC `startedAt`, as `expiry.fn.js` does —
+    // not from the `0` `toRunRow` coerces a missing one to.
     const { expiresAt: _postedExpiresAt, ...unstamped } = posted
     void _postedExpiresAt
-    const stamped = expiresAtOf(unstamped.definition, unstamped.startedAt)
+    const stamped = typeof fields.startedAt === 'number' ? expiresAtOf(unstamped.definition, fields.startedAt) : undefined
     const row = stamped === undefined ? unstamped : { ...unstamped, expiresAt: stamped }
     // The create rule's own backstop (07 `runId=`): the page checks first, but
     // a race between that read and this insert — two dispatches racing the

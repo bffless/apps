@@ -3,9 +3,12 @@
  *
  * `expiresAt = startedAt + keep`, epoch ms, when the definition being snapshotted
  * carries a top-level `keep:` — `<n>h` or `<n>d`, the schema's own `$defs.keep`
- * grammar and not the `duration` one, so `30m` is not a keep. Absent (`null`, so
- * the `create` step writes no column) otherwise: a workflow without `keep:` is
- * never swept. The nightly sweep that reads the column is apps#615.
+ * grammar and not the `duration` one, so `30m` is not a keep. No `expiresAt` key
+ * at all otherwise — CE's evaluator answers `undefined` for a property the step
+ * output lacks (expression-evaluator.ts getNestedValue) and the JSONB write drops
+ * it, so the row carries no column, the way a kickoff run carries no `forkedFrom`.
+ * An explicit `null` would be STORED as null. A workflow without `keep:` is never
+ * swept. The nightly sweep that reads the column is apps#615.
  *
  * Computed here and never read from the body — like `startedBy` (`admit.fn.js`),
  * the caller does not get to choose it. `admit` decides ownership and nothing
@@ -25,7 +28,7 @@ function handler(data) {
 
   const match = typeof definition.keep === 'string' ? /^([0-9]+)(h|d)$/.exec(definition.keep) : null
   const startedAt = typeof body.startedAt === 'number' && Number.isFinite(body.startedAt) ? body.startedAt : null
-  if (!match || startedAt === null) return { expiresAt: null }
+  if (!match || startedAt === null) return {}
 
   const unit = match[2] === 'd' ? 86400000 : 3600000
   return { expiresAt: startedAt + Number(match[1]) * unit }

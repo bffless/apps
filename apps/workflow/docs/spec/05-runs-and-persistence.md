@@ -23,7 +23,7 @@ away. *Who* may reopen one is 11: a run belongs to the person who started it (D2
 | `headless` | bool — the driver started it (07) |
 | `unattended` | bool — "Don't wait for me" was ticked at kickoff (07); absent on older rows, read as `false` |
 | `started_by`, `started_at`, `finished_at` | |
-| `expires_at` | `started_at + keep`, stamped by the create rules when the definition has a top-level `keep:`; **absent** otherwise (never read from the request body) |
+| `expires_at` | `started_at + keep`, stamped by the create rules when the definition has a top-level `keep:`; **absent** (no key) otherwise — never read from the request body, never revised at finish |
 | `lease_owner`, `lease_until` | the tab currently driving the run; heartbeat every 15 s sets `lease_until = now + 60 s` (see Resume) |
 | `outputs` | top-level `outputs` map, filled at completion |
 | `annotations` | run-level annotations (cancel notice, headless fail-fast, …) |
@@ -149,8 +149,11 @@ Owner or admin only.
 **Retention** is opt-in per workflow through the top-level `keep:` key (01): `<n>h` or `<n>d`
 (its own grammar — not a `duration`, so there is no `keep: 30m`). A run's row is stamped with
 `expires_at = started_at + keep` at create time, on both the kickoff and the fork path; a forked
-run measures from its own start. A workflow with no `keep:` writes no `expires_at`, and such a
-run is **never swept**. Expiry removes the **whole run** — its rows and its run prefix, in the
+run measures from its own start. It is measured from the **start**, and never revised — a run
+that finishes after its `expires_at` (a form answered the next morning under `keep: 12h`) is
+already due when it finishes, so pick a `keep` with the workflow's waiting steps in mind. A
+workflow with no `keep:` writes no `expires_at` at all (the key is absent, not `null`), and such
+a run is **never swept**. Expiry removes the **whole run** — its rows and its run prefix, in the
 same order and with the same idempotency as a manual delete — never just its artifacts; the
 nightly sweep that acts on `expires_at` is apps#615.
 

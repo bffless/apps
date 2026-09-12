@@ -11,13 +11,20 @@
  * What is decided: `expiresAt = startedAt + keep` (epoch ms) when the definition
  * being snapshotted carries a top-level `keep:` in the schema's own `$defs.keep`
  * grammar (`<n>h` | `<n>d`), and no column at all otherwise — a workflow without
- * `keep:` is never swept. It is the definition's, never the body's: a caller
- * cannot send its own `expiresAt`, just as it cannot send `startedBy`.
+ * `keep:` is never swept. "No column" means NO KEY on every leg: CE stores an
+ * explicit `null` (pipeline-data.service.ts inserts the evaluated fields as-is)
+ * but drops an `undefined` (expression-evaluator.ts `getNestedValue` answers
+ * `undefined` for a property the step output lacks, and the JSONB write drops
+ * it), so the functions leave the key off rather than writing `null`, the mock
+ * does the same, and `toRunRow` reads it back as absent. It is the definition's,
+ * never the body's: a caller cannot send its own `expiresAt`, just as it cannot
+ * send `startedBy`.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parse } from 'yaml'
 import { MOCK_MEMBER, db, seedFinishedRun, setMockUser } from './db'
 import { expiresAtOf } from './expiry'
 import { FINISHED_RUN } from './fixtures/finishedRun'
@@ -27,7 +34,7 @@ const RULES = join(appDir, '.bffless', 'proxy-rules', 'workflow', 'rules', 'api'
 const EXPIRY_FN_PATH = join(RULES, 'runs', 'post', 'expiry.fn.js')
 const GATE_FN_PATH = join(RULES, 'run', 'fork', 'post', 'gate.fn.js')
 
-type ExpiryHandler = (ctx: { request?: { body?: unknown } }) => { expiresAt: number | null }
+type ExpiryHandler = (ctx: { request?: { body?: unknown } }) => { expiresAt?: number }
 type GateHandler = (ctx: {
   steps: { run: unknown; rows: unknown; existing: unknown }
   request: { body: Record<string, unknown> }
@@ -46,7 +53,7 @@ const STARTED_AT = 1_700_000_000_000
 const definition = FINISHED_RUN.run.definition as Record<string, unknown>
 const withKeep = (keep: unknown) => (keep === undefined ? { ...definition } : { ...definition, keep })
 
-/** One table for every implementation: the keep, and the offset it adds to `startedAt` (`null` = no column). */
+/** One table for every implementation: the keep, and the offset it adds to `startedAt` (`null` = no key). */
 const CASES: { desc: string; keep?: unknown; offset: number | null }[] = [
   { desc: 'keep: 30d', keep: '30d', offset: 30 * DAY },
   { desc: 'keep: 2h', keep: '2h', offset: 2 * HOUR },
@@ -69,7 +76,8 @@ describe('runs/post expiry.fn.js', () => {
 
   it.each(CASES)('expiry.fn.js: $desc', ({ keep, offset }) => {
     const result = handler({ request: { body: { definition: withKeep(keep), startedAt: STARTED_AT } } })
-    expect(result.expiresAt).toBe(offset === null ? null : STARTED_AT + offset)
+    if (offset === null) expect(result).not.toHaveProperty('expiresAt')
+    else expect(result.expiresAt).toBe(STARTED_AT + offset)
   })
 
   it('answers the exact stamp the issue names: keep: 30d from 1_700_000_000_000', () => {
@@ -81,19 +89,19 @@ describe('runs/post expiry.fn.js', () => {
     const result = handler({
       request: { body: { definition: withKeep(undefined), startedAt: STARTED_AT, expiresAt: STARTED_AT + DAY } },
     })
-    expect(result.expiresAt).toBeNull()
+    expect(result).not.toHaveProperty('expiresAt')
   })
 
   it('writes no column without a numeric startedAt to measure from', () => {
-    expect(handler({ request: { body: { definition: withKeep('30d') } } }).expiresAt).toBeNull()
-    expect(handler({ request: { body: { definition: withKeep('30d'), startedAt: '1700000000000' } } }).expiresAt).toBeNull()
+    expect(handler({ request: { body: { definition: withKeep('30d') } } })).toEqual({})
+    expect(handler({ request: { body: { definition: withKeep('30d'), startedAt: '1700000000000' } } })).toEqual({})
   })
 
   it('never throws on the empty call CE makes of a bundle', () => {
     expect(() => handler({})).not.toThrow()
-    expect(handler({})).toEqual({ expiresAt: null })
-    expect(handler({ request: { body: null } })).toEqual({ expiresAt: null })
-    expect(handler({ request: { body: { definition: 'not an object', startedAt: STARTED_AT } } })).toEqual({ expiresAt: null })
+    expect(handler({})).toEqual({})
+    expect(handler({ request: { body: null } })).toEqual({})
+    expect(handler({ request: { body: { definition: 'not an object', startedAt: STARTED_AT } } })).toEqual({})
   })
 })
 
@@ -122,8 +130,44 @@ describe('run/fork gate.fn.js stamps the same value from the SENT definition', (
     expect(result.ok).toBe(true)
     const run = result.run!
     // The fork measures from its OWN start (`now`), not the parent's `startedAt`.
-    expect(run.expiresAt).toBe(offset === null ? null : (run.startedAt as number) + offset)
-    if (offset !== null) expect(run.expiresAt).not.toBe(parent.startedAt + offset)
+    if (offset === null) {
+      expect(run).not.toHaveProperty('expiresAt')
+    } else {
+      expect(run.expiresAt).toBe((run.startedAt as number) + offset)
+      expect(run.expiresAt).not.toBe(parent.startedAt + offset)
+    }
+  })
+})
+
+/**
+ * The one link the functions cannot test for themselves: the rule YAML that
+ * carries their value onto the row. A typo in either `create` expression would
+ * deploy green and silently never stamp — and a `request.body.expiresAt` anywhere
+ * would let the caller choose its own retention.
+ */
+describe('the rules wire the stamp onto the row', () => {
+  const RUNS_POST = join(RULES, 'runs', 'post', 'rule.yaml')
+  const RUN_FORK = join(RULES, 'run', 'fork', 'post', 'rule.yaml')
+  type Step = { id: string; handler: string; code?: string; config?: { fields?: Record<string, string> } }
+  const stepsOf = (file: string): Step[] => parse(readFileSync(file, 'utf8')).pipeline.steps
+  const createOf = (file: string) => stepsOf(file).find((s) => s.id === 'create' && s.handler === 'data_create')!
+
+  it('runs/post: an `expiry` function step before `create`, whose output is the column', () => {
+    const steps = stepsOf(RUNS_POST)
+    const expiryAt = steps.findIndex((s) => s.id === 'expiry' && s.handler === 'function_handler' && s.code === './expiry.fn.js')
+    const createAt = steps.findIndex((s) => s.id === 'create')
+    expect(expiryAt).toBeGreaterThan(-1)
+    expect(createAt).toBeGreaterThan(expiryAt)
+    expect(createOf(RUNS_POST).config!.fields!.expiresAt).toBe('steps.expiry.expiresAt')
+  })
+
+  it('run/fork: the column comes off the gate’s one assembled row', () => {
+    expect(createOf(RUN_FORK).config!.fields!.expiresAt).toBe('steps.gate.run.expiresAt')
+  })
+
+  it.each([RUNS_POST, RUN_FORK])('%s never reads expiresAt off the request body', (file) => {
+    // The parsed document, not the text: a comment may well say "never `request.body.expiresAt`".
+    expect(JSON.stringify(parse(readFileSync(file, 'utf8')))).not.toMatch(/request\.body\.expiresAt/)
   })
 })
 
@@ -156,6 +200,14 @@ describe('the mock stamps the same value on both create paths', () => {
       const stored = db.runs.get(RUN_ID)!
       if (offset === null) expect(stored).not.toHaveProperty('expiresAt')
       else expect(stored.expiresAt).toBe(STARTED_AT + offset)
+    })
+
+    it('mock: no numeric startedAt in the body — no column, not a 1970-based one', async () => {
+      const { startedAt: _omitted, ...row } = { ...FINISHED_RUN.run, runId: RUN_ID, status: 'running', finishedAt: null, definition: withKeep('30d') }
+      void _omitted
+      const res = await post(row)
+      expect(res.status).toBe(200)
+      expect(db.runs.get(RUN_ID)!).not.toHaveProperty('expiresAt')
     })
 
     it('mock: an expiresAt in the body is never the one stored', async () => {
