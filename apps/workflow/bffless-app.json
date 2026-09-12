@@ -7,7 +7,7 @@
   "category": "automation",
   "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/workflow",
   "requires": {
-    "ceMin": "0.4.57"
+    "ceMin": "0.4.58"
   },
   "install": {
     "alias": "workflow",
@@ -26,7 +26,15 @@
       "isPublic": false,
       "isSpa": true
     },
-    "schedules": [],
+    "schedules": [
+      {
+        "name": "Workflow nightly sweep (retention)",
+        "cronExpression": "41 3 * * *",
+        "timezone": "UTC",
+        "targetRulePath": "/api/workflow/sweep",
+        "targetRuleMethod": "POST"
+      }
+    ],
     "manualSteps": [
       {
         "id": "public-origin-local-fs",
@@ -37,7 +45,7 @@
       {
         "id": "install-implementations",
         "title": "Publish an implementation",
-        "body": "The harness starts empty. Publish an implementation (e.g. hello) into project {projectPath} with bffless/publish-workflow — see the workflow-implementations repo.",
+        "body": "The harness starts empty. Publish an implementation (e.g. hello) into project {projectPath} with bffless/publish-workflow \u2014 see the workflow-implementations repo.",
         "externalLink": {
           "label": "workflow-implementations",
           "url": "https://github.com/bffless/workflow-implementations"
@@ -51,10 +59,12 @@
     "appPath": "apps/workflow",
     "deployWorkflow": ".github/workflows/deploy-workflow.yml",
     "variables": [
-      "BFFLESS_URL"
+      "BFFLESS_URL",
+      "BFFLESS_DEV_URL"
     ],
     "secrets": [
-      "BFFLESS_API_KEY"
+      "BFFLESS_API_KEY",
+      "BFFLESS_DEV_API_KEY"
     ]
   }
 }
