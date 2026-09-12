@@ -172,7 +172,7 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       expect(auth, `${file} is schedule-fired: a userless run fails auth_required`).toBeUndefined()
       expect(doc.pipeline.validators ?? []).toEqual([])
       const steps: Step[] = doc.pipeline.steps
-      expect(steps.map((s) => s.id)).toEqual(['cutoff', 'due', 'records', 'targets', 'files', 'recs', 'stepRows', 'rows', 'respond'])
+      expect(steps.map((s) => s.id)).toEqual(['cutoff', 'due', 'plan', 'records', 'targets', 'files', 'recs', 'stepRows', 'rows', 'respond'])
       expect(JSON.stringify(steps)).not.toMatch(/runGate|\buser\./)
       const purge = steps.find((s) => s.id === 'files')!
       expect(purge.handler).toBe('file_delete')

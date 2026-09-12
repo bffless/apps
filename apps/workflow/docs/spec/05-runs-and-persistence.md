@@ -164,13 +164,18 @@ terminal status — `succeeded`, `failed` or `cancelled`; a `running` run is nev
 long it has been parked on a form (07), so a `keep:` that elapses during the wait costs nothing —
 and deletes each the way a manual delete does: every object under its run prefix (one
 `file_delete` in `prefixes` mode, CE ≥ 0.4.58), the `workflow_files` records under it, its step
-rows, its run row. Kickoff `inputs/` are never touched. One pass is bounded (50 runs, oldest
-expiry first); what it does not reach tonight it reaches tomorrow. The `workflow_files` records
-are matched from a bounded scan rather than deleted by pattern (one `like` can anchor on one
-prefix, and a pass has many): when that scan comes back truncated, the pass still removes the
-bytes and the records it found but keeps the rows, so the next pass selects the same runs again —
-a deferred run is the retryable state a half-done manual delete leaves, never an orphan, and the
-pass reports it as `deferred`. The schedule itself is created per instance, out of band
+rows, its run row. Kickoff `inputs/` are never touched. One pass is bounded: 50 runs, oldest
+expiry first, and **one workflow** — the oldest due run's; due runs of other workflows wait a
+night (`waiting`), and what a pass does not reach tonight it reaches tomorrow. The
+`workflow_files` records are matched from a scan of that one workflow's run-scoped records
+rather than deleted by pattern (one `like` can anchor on one prefix, and a pass has many) — a scan
+that workflow's own `keep:` bounds. **Deferral is whole-run, all or nothing:** if that scan comes
+back truncated (its limit reached) or blind (rows, but no `sub_dir` on any), the pass cannot know
+which records belong to the due runs, so it deletes *nothing* — no bytes, no records, no rows —
+reports every due run of the pass as `deferred`, and the next pass selects them again. Bytes gone
+with rows kept is a state a manual delete reaches only by failing; the sweep never reaches it by
+design. A `deferred` that never drops to 0 means that workflow's live records have outgrown the
+scan — raise its limit. The schedule itself is created per instance, out of band
 (`bffless/README.md` §Background schedules).
 
 ## Not in v1

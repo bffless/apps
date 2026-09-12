@@ -1,14 +1,15 @@
 /**
  * Parity for the nightly retention sweep (spec 05 §Retention, apps#615) between
- * the rule's two functions — `cutoff.fn.js` and `targets.fn.js` under
- * `.bffless/proxy-rules/workflow/rules/api/workflow/sweep/post/` (the real
+ * the rule's three functions — `cutoff.fn.js`, `plan.fn.js` and `targets.fn.js`
+ * under `.bffless/proxy-rules/workflow/rules/api/workflow/sweep/post/` (the real
  * `function_handler` code — cannot import) — and the mock's twins in `sweep.ts`,
  * reached through `POST /api/workflow/sweep`. `new Function` is test-only
  * tooling to execute the authored `.fn.js` source in isolation; it is never
  * used by the app or the mock at runtime. Same shape as
  * `expiry.fn.parity.test.ts`.
  *
- * What is decided: which due rows a pass sweeps (terminal AND expired — never
+ * What is decided: which workflow a pass takes (the oldest due run's — the
+ * others wait), which of its due rows are swept (terminal AND expired — never
  * `running`, never a run without a numeric `expiresAt`, never a row whose
  * segments could not be a safe `file_delete` template), the prefixes the one
  * `file_delete` purges, the exact `sub_dir`s the `workflow_files` delete names,
@@ -24,18 +25,20 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 import { MOCK_OTHER, db, fileRecordsMatching, filesUnder, registerFileRecord, resetDb, seedFinishedRun, seedObject, seedWaitingRun, setMockUser, stepsOf } from './db'
-import { DUE_LIMIT, SCAN_LIKE, SCAN_LIMIT, TERMINAL, sweepCutoff, sweepTargets, type DueRow, type SweepTargets } from './sweep'
+import { DUE_LIMIT, NO_SCAN, SCAN_LIMIT, TERMINAL, scanLikeFor, sweepCutoff, sweepPlan, sweepTargets, type DueRow, type SweepPlan, type SweepTargets } from './sweep'
 import { FINISHED_RUN } from './fixtures/finishedRun'
 import { WAITING_RUN } from './fixtures/waitingRun'
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const RULE_DIR = join(appDir, '.bffless', 'proxy-rules', 'workflow', 'rules', 'api', 'workflow', 'sweep', 'post')
 const CUTOFF_FN_PATH = join(RULE_DIR, 'cutoff.fn.js')
+const PLAN_FN_PATH = join(RULE_DIR, 'plan.fn.js')
 const TARGETS_FN_PATH = join(RULE_DIR, 'targets.fn.js')
 const RULE_PATH = join(RULE_DIR, 'rule.yaml')
 
-type CutoffHandler = () => { now: number; terminal: string[]; scanLike: string }
-type TargetsHandler = (ctx?: { steps?: { cutoff?: unknown; due?: unknown; records?: unknown } }) => SweepTargets
+type CutoffHandler = () => { now: number; terminal: string[] }
+type PlanHandler = (ctx?: { steps?: { cutoff?: unknown; due?: unknown } }) => SweepPlan
+type TargetsHandler = (ctx?: { steps?: { cutoff?: unknown; due?: unknown; plan?: unknown; records?: unknown } }) => SweepTargets
 
 function loadFn<T>(path: string): T {
   const src = readFileSync(path, 'utf8')
@@ -50,7 +53,11 @@ const CUTOFF = { now: NOW, terminal: TERMINAL }
 /** `run_01A` is the boundary case for `run_01AB` below: one prefix must never match the other's rows. */
 const A = { id: 'rec_a', runId: 'run_01A', impl: 'hello', workflow: 'hello', status: 'succeeded', expiresAt: PAST }
 const B = { id: 'rec_b', runId: 'run_01B', impl: 'hello', workflow: 'hello', status: 'failed', expiresAt: PAST - 5 }
+/** Another workflow, also due: it WAITS — a pass takes one workflow, the first sweepable row's. */
 const C = { id: 'rec_c', runId: 'run_01C', impl: 'capture', workflow: 'capture', status: 'cancelled', expiresAt: PAST }
+const HELLO: SweepPlan = { any: true, impl: 'hello', workflow: 'hello', scanLike: 'workflows/hello/hello/runs/%' }
+const CAPTURE: SweepPlan = { any: true, impl: 'capture', workflow: 'capture', scanLike: 'workflows/capture/capture/runs/%' }
+const NONE: SweepPlan = { any: false, impl: '', workflow: '', scanLike: NO_SCAN }
 
 /** The `due` rows as CE's `data_query` hands them (flattened, `id` beside the fields) — one of each decision. */
 const DUE: (DueRow | null)[] = [
@@ -79,8 +86,9 @@ const RECORDS = [
   { sub_dir: 'workflows/hello/hello/runs/run_01AB/outputs' },
   { sub_dir: 'workflows/hello/hello/runs/run_01E/outputs' },
   { sub_dir: 'workflows/hello/hello/inputs' },
+  // The waiting workflow's rows (the real scan would not even return them): never matched.
   { sub_dir: 'workflows/capture/capture/runs/run_01C/per-video/0/audio' },
-  { sub_dir: 'workflows/capture/capture/runs/run_01C/per-video/0/audio' },
+  { sub_dir: 'workflows/hello/hello/runs/run_01A/outputs' },
   { sub_dir: 42 },
   // A row with no `sub_dir` at all beside rows that have one: ignored, not blinding.
   { filename: 'stray.bin' },
@@ -90,19 +98,15 @@ const EXPECTED: SweepTargets = {
   scanLimit: SCAN_LIMIT,
   scanTruncated: false,
   scanBlind: false,
-  runIds: ['run_01A', 'run_01B', 'run_01C'],
-  prefixes: ['workflows/hello/hello/runs/run_01A/', 'workflows/hello/hello/runs/run_01B/', 'workflows/capture/capture/runs/run_01C/'],
-  subDirs: [
-    'workflows/hello/hello/runs/run_01A/greet/0/say',
-    'workflows/hello/hello/runs/run_01A/outputs',
-    'workflows/hello/hello/runs/run_01A',
-    'workflows/capture/capture/runs/run_01C/per-video/0/audio',
-  ],
-  rowRunIds: ['run_01A', 'run_01B', 'run_01C'],
-  count: 3,
-  swept: 3,
+  runIds: ['run_01A', 'run_01B'],
+  prefixes: ['workflows/hello/hello/runs/run_01A/', 'workflows/hello/hello/runs/run_01B/'],
+  subDirs: ['workflows/hello/hello/runs/run_01A/greet/0/say', 'workflows/hello/hello/runs/run_01A/outputs', 'workflows/hello/hello/runs/run_01A'],
+  rowRunIds: ['run_01A', 'run_01B'],
+  count: 2,
+  swept: 2,
   deferred: 0,
   skipped: 4,
+  waiting: 1,
 }
 const EMPTY: SweepTargets = {
   scanLimit: SCAN_LIMIT,
@@ -116,6 +120,7 @@ const EMPTY: SweepTargets = {
   swept: 0,
   deferred: 0,
   skipped: 0,
+  waiting: 0,
 }
 const truncatedScan = (n: number) => Array.from({ length: n }, (_, i) => ({ sub_dir: `workflows/other/other/runs/run_x${i}/outputs` }))
 
@@ -125,7 +130,7 @@ describe('sweep cutoff.fn.js', () => {
     handler = loadFn<CutoffHandler>(CUTOFF_FN_PATH)
   })
 
-  it('fixes now, the terminal list and the scan pattern — the same three the mock fixes', () => {
+  it('fixes now and the terminal list — the same two the mock fixes', () => {
     const before = Date.now()
     const result = handler()
     const after = Date.now()
@@ -133,12 +138,45 @@ describe('sweep cutoff.fn.js', () => {
     expect(result.now).toBeLessThanOrEqual(after)
     expect(result.terminal).toEqual(['succeeded', 'failed', 'cancelled'])
     expect(result.terminal).toEqual([...TERMINAL])
-    expect(result.scanLike).toBe(SCAN_LIKE)
-    expect(sweepCutoff(NOW)).toEqual({ now: NOW, terminal: TERMINAL, scanLike: SCAN_LIKE })
+    expect(sweepCutoff(NOW)).toEqual({ now: NOW, terminal: TERMINAL })
   })
 
   it('never lists running — a parked driven run is protected by status alone (07)', () => {
     expect(handler().terminal).not.toContain('running')
+  })
+})
+
+describe('sweep plan.fn.js', () => {
+  let handler: PlanHandler
+  beforeAll(() => {
+    handler = loadFn<PlanHandler>(PLAN_FN_PATH)
+  })
+
+  it('takes the first sweepable, well-formed due row’s workflow — the same one the mock takes', () => {
+    expect(handler({ steps: { cutoff: CUTOFF, due: DUE } })).toEqual(HELLO)
+    expect(sweepPlan(DUE, CUTOFF)).toEqual(HELLO)
+    // Order decides (`due` is oldest expiry first): the other workflow first → the other workflow.
+    const reversed = [C, ...DUE.filter((r) => r !== C)]
+    expect(handler({ steps: { cutoff: CUTOFF, due: reversed } })).toEqual(CAPTURE)
+    expect(sweepPlan(reversed, CUTOFF)).toEqual(CAPTURE)
+    expect(scanLikeFor('hello', 'hello')).toBe(HELLO.scanLike)
+  })
+
+  it('skips rows the sweep would not act on, so a malformed row never picks the workflow', () => {
+    const unsweepable = DUE.filter((r) => r !== A && r !== B && r !== C && (r === null || r.id !== 'rec_a2'))
+    expect(handler({ steps: { cutoff: CUTOFF, due: unsweepable } })).toEqual(NONE)
+    expect(sweepPlan(unsweepable, CUTOFF)).toEqual(NONE)
+    // …and a malformed row ahead of a good one does not win.
+    const malformedFirst = [{ ...A, runId: 'run_01H', impl: '..' }, C]
+    expect(handler({ steps: { cutoff: CUTOFF, due: malformedFirst } })).toEqual(CAPTURE)
+  })
+
+  it('nothing due: no workflow, and a scan pattern no real sub_dir equals', () => {
+    expect(handler({ steps: { cutoff: CUTOFF, due: [] } })).toEqual(NONE)
+    expect(handler({ steps: { cutoff: CUTOFF, due: { records: [] } } })).toEqual(NONE)
+    expect(sweepPlan([], CUTOFF)).toEqual(NONE)
+    expect(() => handler()).not.toThrow()
+    expect(handler({})).toEqual(NONE)
   })
 })
 
@@ -148,50 +186,57 @@ describe('sweep targets.fn.js', () => {
     handler = loadFn<TargetsHandler>(TARGETS_FN_PATH)
   })
 
-  it('decides the same rows, prefixes, sub_dirs and ids as the mock', () => {
-    const result = handler({ steps: { cutoff: CUTOFF, due: DUE, records: RECORDS } })
+  it('decides the same rows, prefixes, sub_dirs and ids as the mock — and leaves the other workflow waiting', () => {
+    const result = handler({ steps: { cutoff: CUTOFF, due: DUE, plan: HELLO, records: RECORDS } })
     expect(result).toEqual(EXPECTED)
-    expect(sweepTargets(DUE, RECORDS, CUTOFF)).toEqual(EXPECTED)
+    expect(sweepTargets(DUE, RECORDS, CUTOFF, HELLO)).toEqual(EXPECTED)
   })
 
   it('reads the envelope forms older CE versions answer with', () => {
-    expect(handler({ steps: { cutoff: CUTOFF, due: { records: DUE }, records: { data: RECORDS } } })).toEqual(EXPECTED)
+    expect(handler({ steps: { cutoff: CUTOFF, due: { records: DUE }, plan: HELLO, records: { data: RECORDS } } })).toEqual(EXPECTED)
   })
 
   it('a quiet night: nothing due, nothing scanned — every list empty, every count zero', () => {
-    expect(handler({ steps: { cutoff: CUTOFF, due: [], records: [] } })).toEqual(EMPTY)
-    expect(sweepTargets([], [], CUTOFF)).toEqual(EMPTY)
+    expect(handler({ steps: { cutoff: CUTOFF, due: [], plan: NONE, records: [] } })).toEqual(EMPTY)
+    expect(sweepTargets([], [], CUTOFF, NONE)).toEqual(EMPTY)
   })
 
-  /** Whole-run deferral: the lists the deletes consume are ALL empty, and every due run is reported. */
-  const DEFERRED: SweepTargets = { ...EXPECTED, prefixes: [], subDirs: [], rowRunIds: [], swept: 0, deferred: 3 }
+  it('no workflow chosen (or a plan it cannot read): every sweepable row waits, nothing is deleted', () => {
+    const allWaiting = { ...EMPTY, skipped: 4, waiting: 3 }
+    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, plan: NONE, records: RECORDS } })).toEqual(allWaiting)
+    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, records: RECORDS } })).toEqual(allWaiting)
+    expect(sweepTargets(DUE, RECORDS, CUTOFF, NONE)).toEqual(allWaiting)
+  })
+
+  /** Whole-run deferral: the lists the deletes consume are ALL empty, and every due run of the pass is reported. */
+  const DEFERRED: SweepTargets = { ...EXPECTED, prefixes: [], subDirs: [], rowRunIds: [], swept: 0, deferred: 2 }
 
   it('a truncated scan defers every due run whole — no bytes, no records, no rows go', () => {
     const scan = [...RECORDS, ...truncatedScan(SCAN_LIMIT - RECORDS.length)]
     const deferred = { ...DEFERRED, scanTruncated: true }
-    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, records: scan } })).toEqual(deferred)
-    expect(sweepTargets(DUE, scan, CUTOFF)).toEqual(deferred)
+    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, plan: HELLO, records: scan } })).toEqual(deferred)
+    expect(sweepTargets(DUE, scan, CUTOFF, HELLO)).toEqual(deferred)
     // One row short of the limit is a complete scan.
     const complete = [...RECORDS, ...truncatedScan(SCAN_LIMIT - RECORDS.length - 1)]
-    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, records: complete } })).toEqual(EXPECTED)
+    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, plan: HELLO, records: complete } })).toEqual(EXPECTED)
   })
 
   it('a blind scan — rows, but no sub_dir on any — fails closed the same way', () => {
     const blind = [{ filename: 'a' }, { filename: 'b', sub_dir: 42 }, null]
     const deferred = { ...DEFERRED, scanBlind: true }
-    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, records: blind } })).toEqual(deferred)
-    expect(sweepTargets(DUE, blind, CUTOFF)).toEqual(deferred)
+    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, plan: HELLO, records: blind } })).toEqual(deferred)
+    expect(sweepTargets(DUE, blind, CUTOFF, HELLO)).toEqual(deferred)
     // An EMPTY scan is not blind: nothing was registered under any run, so the
     // deletes go ahead with `subDirs: []` and `records: 0` is the honest count.
-    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, records: [] } })).toEqual({ ...EXPECTED, subDirs: [] })
+    expect(handler({ steps: { cutoff: CUTOFF, due: DUE, plan: HELLO, records: [] } })).toEqual({ ...EXPECTED, subDirs: [] })
   })
 
   it('never throws on the empty call CE makes of a bundle, and falls back to its own now', () => {
     expect(() => handler()).not.toThrow()
     expect(handler({})).toEqual(EMPTY)
-    expect(handler({ steps: { cutoff: null, due: null, records: 'nope' } })).toEqual(EMPTY)
+    expect(handler({ steps: { cutoff: null, due: null, plan: null, records: 'nope' } })).toEqual(EMPTY)
     // No cutoff at all: `Date.now()` stands in, so an expired row still sweeps.
-    expect(handler({ steps: { due: [A], records: [] } }).runIds).toEqual(['run_01A'])
+    expect(handler({ steps: { due: [A], plan: HELLO, records: [] } }).runIds).toEqual(['run_01A'])
   })
 })
 
@@ -225,9 +270,10 @@ describe('the rule wires the lists onto the deletes', () => {
     for (const s of doc.pipeline.steps) expect(s.config?.condition, s.id).toBeUndefined()
   })
 
-  it('runs the steps in run/delete’s order: cutoff → due → records → targets → files → recs → stepRows → rows → respond', () => {
-    expect(doc.pipeline.steps.map((s) => s.id)).toEqual(['cutoff', 'due', 'records', 'targets', 'files', 'recs', 'stepRows', 'rows', 'respond'])
+  it('runs the steps in run/delete’s order: cutoff → due → plan → records → targets → files → recs → stepRows → rows → respond', () => {
+    expect(doc.pipeline.steps.map((s) => s.id)).toEqual(['cutoff', 'due', 'plan', 'records', 'targets', 'files', 'recs', 'stepRows', 'rows', 'respond'])
     expect(step('cutoff').code).toBe('./cutoff.fn.js')
+    expect(step('plan').code).toBe('./plan.fn.js')
     expect(step('targets').code).toBe('./targets.fn.js')
   })
 
@@ -242,10 +288,10 @@ describe('the rule wires the lists onto the deletes', () => {
     })
   })
 
-  it('records: the anchored scan, its limit equal to the function’s SCAN_LIMIT', () => {
+  it('records: the plan’s one-workflow scan, its limit equal to the function’s SCAN_LIMIT', () => {
     const records = step('records')
     expect(records.handler).toBe('data_query')
-    expect(records.config?.filters).toEqual({ sub_dir: { op: 'like', value: 'steps.cutoff.scanLike' } })
+    expect(records.config?.filters).toEqual({ sub_dir: { op: 'like', value: 'steps.plan.scanLike' } })
     expect(records.config?.limit).toBe(SCAN_LIMIT)
     expect(loadFn<TargetsHandler>(TARGETS_FN_PATH)({}).scanLimit).toBe(SCAN_LIMIT)
   })
@@ -269,12 +315,12 @@ describe('the rule wires the lists onto the deletes', () => {
 
   it('respond reports every count, numbers only', () => {
     const body = step('respond').config?.body ?? ''
-    for (const key of ['targets.swept', 'targets.deferred', 'targets.skipped', 'files.deleted', 'recs.count', 'stepRows.count', 'rows.count']) {
+    for (const key of ['targets.swept', 'targets.deferred', 'targets.waiting', 'targets.skipped', 'files.deleted', 'recs.count', 'stepRows.count', 'rows.count']) {
       expect(body).toContain(`{{steps.${key}}}`)
     }
     // Rendered with every count at 0, it is JSON.
     const rendered = body.replace(/\{\{steps\.[\w.]+\}\}/g, '0')
-    expect(JSON.parse(rendered)).toEqual({ ok: true, swept: 0, deferred: 0, skipped: 0, deleted: { files: 0, records: 0, steps: 0, runs: 0 } })
+    expect(JSON.parse(rendered)).toEqual({ ok: true, swept: 0, deferred: 0, waiting: 0, skipped: 0, deleted: { files: 0, records: 0, steps: 0, runs: 0 } })
   })
 })
 
@@ -283,6 +329,8 @@ describe('POST /api/workflow/sweep (mock)', () => {
   const PREFIX = `workflows/hello/hello/runs/${RUN_ID}/`
   const KEEP_ID = 'run_01keepforever000000000000'
   const KEEP_PREFIX = `workflows/hello/hello/runs/${KEEP_ID}/`
+  const OTHER_ID = 'run_01otherworkflow0000000000'
+  const OTHER_PREFIX = `workflows/capture/capture/runs/${OTHER_ID}/`
   const WAITING_PREFIX = `workflows/hello/hello/runs/${WAITING_RUN.run.runId}/`
   const INPUT_KEY = 'workflows/hello/hello/inputs/photo.png'
   const png = { bytes: new Uint8Array([1, 2, 3]), contentType: 'image/png' }
@@ -302,6 +350,10 @@ describe('POST /api/workflow/sweep (mock)', () => {
     // Finished, no keep — no expiresAt: kept.
     db.runs.set(KEEP_ID, { ...FINISHED_RUN.run, runId: KEEP_ID, _id: 'rec_keep' })
     seedObject(`${KEEP_PREFIX}outputs/summary.md`, png)
+    // Expired and finished, but ANOTHER workflow, expiring later than the hello
+    // run: waits for the next pass (one workflow per pass, oldest expiry first).
+    db.runs.set(OTHER_ID, { ...FINISHED_RUN.run, runId: OTHER_ID, impl: 'capture', workflow: 'capture', expiresAt: Date.now() - 1, _id: 'rec_other' })
+    seedObject(`${OTHER_PREFIX}outputs/sheet.png`, png)
     // Expired but still running (parked on its form): kept.
     seedWaitingRun()
     db.runs.set(WAITING_RUN.run.runId, { ...db.runs.get(WAITING_RUN.run.runId)!, expiresAt: Date.now() - 1 })
@@ -316,6 +368,7 @@ describe('POST /api/workflow/sweep (mock)', () => {
       ok: true,
       swept: 1,
       deferred: 0,
+      waiting: 1,
       skipped: 0,
       deleted: { files: 2, records: 2, steps: FINISHED_RUN.steps.length, runs: 1 },
     })
@@ -330,14 +383,28 @@ describe('POST /api/workflow/sweep (mock)', () => {
     expect(filesUnder(KEEP_PREFIX)).toHaveLength(1)
     expect(db.runs.get(WAITING_RUN.run.runId)?.status).toBe('running')
     expect(filesUnder(WAITING_PREFIX)).toHaveLength(1)
+    // The other workflow's due run waited, untouched.
+    expect(db.runs.has(OTHER_ID)).toBe(true)
+    expect(filesUnder(OTHER_PREFIX)).toHaveLength(1)
   })
 
-  it('is idempotent: the next pass reports zeros', async () => {
+  it('the next pass takes the workflow that waited; the one after reports zeros (idempotent)', async () => {
     await post()
+    expect(await (await post()).json()).toEqual({
+      ok: true,
+      swept: 1,
+      deferred: 0,
+      waiting: 0,
+      skipped: 0,
+      deleted: { files: 1, records: 1, steps: 0, runs: 1 },
+    })
+    expect(db.runs.has(OTHER_ID)).toBe(false)
+    expect(filesUnder(OTHER_PREFIX)).toEqual([])
     expect(await (await post()).json()).toEqual({
       ok: true,
       swept: 0,
       deferred: 0,
+      waiting: 0,
       skipped: 0,
       deleted: { files: 0, records: 0, steps: 0, runs: 0 },
     })
@@ -345,19 +412,21 @@ describe('POST /api/workflow/sweep (mock)', () => {
 
   it('a quiet night — nothing expired — deletes nothing', async () => {
     db.runs.set(RUN_ID, { ...db.runs.get(RUN_ID)!, expiresAt: Date.now() + 60_000 })
+    db.runs.set(OTHER_ID, { ...db.runs.get(OTHER_ID)!, expiresAt: Date.now() + 60_000 })
     expect((await (await post()).json()).deleted).toEqual({ files: 0, records: 0, steps: 0, runs: 0 })
     expect(filesUnder(PREFIX)).toHaveLength(2)
   })
 
-  it('a table the scan cannot cover defers the run whole: its objects, records and rows all stay', async () => {
-    // Enough run-scoped records elsewhere to fill the scan to SCAN_LIMIT (the
-    // `inputs/` record does not match the scan's pattern, so count what does).
-    const needed = SCAN_LIMIT - fileRecordsMatching(SCAN_LIKE).length
-    for (let i = 0; i < needed; i++) registerFileRecord(`workflows/other/other/runs/run_x${i}/outputs/${i}.bin`)
+  it('a workflow whose records the scan cannot cover is deferred whole: its objects, records and rows all stay', async () => {
+    // Enough run-scoped records of the SAME workflow to fill its scan to
+    // SCAN_LIMIT (records of other workflows, and `inputs/`, are outside it).
+    const needed = SCAN_LIMIT - fileRecordsMatching(scanLikeFor('hello', 'hello')).length
+    for (let i = 0; i < needed; i++) registerFileRecord(`workflows/hello/hello/runs/run_x${i}/outputs/${i}.bin`)
     expect(await (await post()).json()).toEqual({
       ok: true,
       swept: 0,
       deferred: 1,
+      waiting: 1,
       skipped: 0,
       deleted: { files: 0, records: 0, steps: 0, runs: 0 },
     })

@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 26
 pipeline:
   name: Sweep expired runs (retention)
-  description: "POST, no body — the nightly retention sweep (spec 05 §Retention, apps#615). Fired by a pipeline_schedule as a USERLESS system run, so it carries no auth_required validator (a userless run fails it — the reader's /api/prune precedent) and never consults runGate (there is no caller to judge); the private alias is its protection. Selects terminal runs whose expiresAt has passed — never a `running` one, however long it has been parked — and deletes each the way run/delete does, in the same order and with the same idempotency: every object under its run prefix (file_delete `prefixes`, CE >= 0.4.58), the workflow_files records under it, its step rows, its run row. Kickoff inputs/ are never touched (D18). One pass is bounded, and all-or-nothing per run: a records scan it cannot trust (truncated, or blind to sub_dir) defers every due run whole rather than deleting bytes it would then have to leave rows for. Any project member may fire it by hand — it deletes only what each workflow's own keep: already made due (11)."
+  description: "POST, no body — the nightly retention sweep (spec 05 §Retention, apps#615). Fired by a pipeline_schedule as a USERLESS system run, so it carries no auth_required validator (a userless run fails it — the reader's /api/prune precedent) and never consults runGate (there is no caller to judge); the private alias is its protection. Selects terminal runs whose expiresAt has passed — never a `running` one, however long it has been parked — and deletes each the way run/delete does, in the same order and with the same idempotency: every object under its run prefix (file_delete `prefixes`, CE >= 0.4.58), the workflow_files records under it, its step rows, its run row. Kickoff inputs/ are never touched (D18). One pass is bounded (50 runs, ONE workflow — the oldest due run's — so the file-record scan is bounded by that workflow's own keep:), and all-or-nothing per run: a records scan it cannot trust (truncated, or blind to sub_dir) defers every due run whole rather than deleting bytes it would then have to leave rows for. Any project member may fire it by hand — it deletes only what each workflow's own keep: already made due (11)."
   steps:
     # The instant, the statuses and the scan pattern the filters below compare
     # against — from a function, because every filter `value` is evaluated as
@@ -29,17 +29,28 @@ pipeline:
           expiresAt: { op: lt, value: steps.cutoff.now }
           status: { op: in, value: steps.cutoff.terminal }
         orderBy: { field: expiresAt, direction: asc }
-    # Every run-scoped `workflow_files` row (`sub_dir` is the key's uploads-
-    # relative directory, `workflows/<impl>/<wf>/runs/<id>/…` — apps#381), for
-    # `targets` to intersect with the due prefixes. One `like` can anchor on ONE
-    # prefix and this pass has many, which is why the rows are read and matched
-    # rather than deleted by pattern. `inputs/` rows never match the pattern.
-    # `limit` MUST equal SCAN_LIMIT in targets.fn.js (the parity test holds them
-    # equal): a scan that comes back this long is truncated, and the pass then
-    # deletes NOTHING — every due run is deferred whole to the next night (see
-    # targets.fn.js). `sub_dir` is read back off each record whether or not the
-    # live schema has adopted the column: data_query spreads every stored field
-    # (data-query.handler.ts "Return all fields", `...data`), no projection.
+    # ONE workflow per pass — the oldest due run's — so the scan below reads
+    # only that workflow's records, which its own `keep:` bounds, never every
+    # run-scoped record on the instance, which nothing bounds. Other workflows'
+    # due runs wait a night (`waiting` in the 200). Nothing due → `scanLike`
+    # is `-`, which no real `sub_dir` equals, so the scan is an empty read.
+    - id: plan
+      name: plan
+      handler: function_handler
+      code: ./plan.fn.js
+    # That workflow's run-scoped `workflow_files` rows (`sub_dir` is the key's
+    # uploads-relative directory, `workflows/<impl>/<wf>/runs/<id>/…` —
+    # apps#381), for `targets` to intersect with the due prefixes. One `like`
+    # can anchor on ONE prefix and this pass has up to 50, which is why the
+    # rows are read and matched rather than deleted by pattern. `inputs/` rows
+    # never match the pattern. `limit` MUST equal SCAN_LIMIT in targets.fn.js
+    # (the parity test holds them equal), and CE passes it through verbatim —
+    # data-query.handler.ts `.limit(resolveNumericExpression(config.limit, 100))`,
+    # no maximum — so a scan that comes back this long is truncated, and the
+    # pass then deletes NOTHING: every due run is deferred whole to the next
+    # night (see targets.fn.js). `sub_dir` is read back off each record whether
+    # or not the live schema has adopted the column: data_query spreads every
+    # stored field (data-query.handler.ts "Return all fields", `...data`).
     - id: records
       name: records
       handler: data_query
@@ -47,7 +58,7 @@ pipeline:
         schemaId: $schema:workflow_files
         limit: 5000
         filters:
-          sub_dir: { op: like, value: steps.cutoff.scanLike }
+          sub_dir: { op: like, value: steps.plan.scanLike }
     # The lists the deletes below consume. No `condition` on any of them: an
     # empty list is each handler's own no-op — `prefixes: []` → `deleted: 0`
     # (file-delete.handler.ts deleteManyPrefixes, ce#792); `in []` → the
@@ -109,14 +120,15 @@ pipeline:
     # prefixes mode answers with — deleteManyPrefixes `{ deleted, prefixes,
     # dryRun }`). `swept` counts runs deleted whole; `deferred` due runs this
     # pass left untouched because the records scan was truncated or blind;
-    # `skipped` due rows the sweep would not build a prefix for. `records: 0`
-    # beside a non-zero `files` is the same signature run/delete documents: the
-    # `sub_dir` shape stopped matching.
+    # `skipped` due rows the sweep would not build a prefix for; `waiting` due
+    # runs of another workflow than this pass's. `records: 0` beside a non-zero
+    # `files` is the same signature run/delete documents: the `sub_dir` shape
+    # stopped matching.
     - id: respond
       name: respond
       handler: response_handler
       config:
-        body: '{"ok":true,"swept":{{steps.targets.swept}},"deferred":{{steps.targets.deferred}},"skipped":{{steps.targets.skipped}},"deleted":{"files":{{steps.files.deleted}},"records":{{steps.recs.count}},"steps":{{steps.stepRows.count}},"runs":{{steps.rows.count}}}}'
+        body: '{"ok":true,"swept":{{steps.targets.swept}},"deferred":{{steps.targets.deferred}},"waiting":{{steps.targets.waiting}},"skipped":{{steps.targets.skipped}},"deleted":{"files":{{steps.files.deleted}},"records":{{steps.recs.count}},"steps":{{steps.stepRows.count}},"runs":{{steps.rows.count}}}}'
         status: 200
         headers: { Cache-Control: no-store }
         contentType: application/json

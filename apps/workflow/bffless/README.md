@@ -140,25 +140,30 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   apps#686). Fired by a `pipeline_schedule` as a **userless** system run (see **Background
   schedules** below), so the rule carries **no `auth_required`** and never consults `runGate` —
   there is no caller to judge; the private alias is its protection. `cutoff.fn.js` fixes `now`,
-  the terminal list (`succeeded`, `failed`, `cancelled` — a `running` run is never swept, however
-  long parked) and the scan pattern; `due` selects `expiresAt lt now AND status in terminal`
-  (50 per pass, oldest expiry first); `records` reads every run-scoped `workflow_files` row
-  (`sub_dir like 'workflows/%/runs/%'`, 5000 max); `targets.fn.js` builds the lists; then the
-  same four deletes in the same order as run/delete — `file_delete` in **`prefixes`** mode
+  and the terminal list (`succeeded`, `failed`, `cancelled` — a `running` run is never swept,
+  however long parked); `due` selects `expiresAt lt now AND status in terminal` (50 per pass,
+  oldest expiry first); `plan.fn.js` takes **one workflow per pass** — the oldest due run's — so
+  `records` reads only that workflow's run-scoped `workflow_files` rows
+  (`sub_dir like 'workflows/<impl>/<wf>/runs/%'`, 5000 max — bounded by what that workflow's own
+  `keep:` keeps live, never by the whole instance), and due runs of other workflows wait a night
+  (**`waiting`** in the 200); `targets.fn.js` builds the lists; then the same four deletes in the
+  same order as run/delete — `file_delete` in **`prefixes`** mode
   (CE ≥ 0.4.58, bffless/ce#792 — hence `requires.ceMin`), `workflow_files` by exact `sub_dir in`,
   step rows and run rows by `runId in`. Nothing is conditioned: an empty list is each handler's
   own no-op, so a quiet night runs every step and reports zeros. `inputs/` is never touched (D18).
-  The 200 is `{"ok":true,"swept":n,"deferred":n,"skipped":n,"deleted":{"files":n,"records":n,"steps":n,"runs":n}}`:
+  The 200 is `{"ok":true,"swept":n,"deferred":n,"waiting":n,"skipped":n,"deleted":{"files":n,"records":n,"steps":n,"runs":n}}`:
   **`deferred`** counts due runs the pass left **entirely** untouched because it could not trust
   the `records` scan — it came back truncated (5000 rows), or blind (rows, but no `sub_dir` on
   any) — so every list was emptied and nothing was deleted; deferral is whole-run on purpose
   (bytes gone with rows kept is the state run/delete only reaches by failing, and a sweep must
   not reach it by design). The next pass selects the same runs again; a `deferred` that never
-  drops to 0 means the live table has outgrown the scan, so raise the `records` limit **and**
-  `SCAN_LIMIT` in `targets.fn.js` together (the parity test holds them equal). What the rule
-  leans on in CE is cited in `targets.fn.js`: `data_query` spreads every stored column back
-  (`sub_dir` included, adopted or not), `data_delete` takes `in` since ce#675 (v0.3.3) and an
-  empty list is a match-nothing predicate, `file_delete` `prefixes` answers `deleted`. **`skipped`**
+  drops to 0 means that workflow's live records have outgrown the scan, so raise the `records`
+  limit **and** `SCAN_LIMIT` in `targets.fn.js` together (the parity test holds them equal). What
+  the rule leans on in CE is cited in `targets.fn.js`: `data_query` passes `limit` through
+  verbatim (no maximum — which is what makes a short scan a complete one) and spreads every
+  stored column back (`sub_dir` included, adopted or not), `data_delete` takes `in` since ce#675
+  (v0.3.3) and an empty list is a match-nothing predicate, `file_delete` `prefixes` answers
+  `deleted`. **`skipped`**
   counts due rows the sweep would not build a prefix for (an `impl`, `workflow` or `runId` with a
   `/`, `..`, `{` or whitespace — one bad `file_delete` entry aborts the whole step, so such a row
   is left for an operator rather than risked). `records: 0` beside a non-zero `files` is the same
@@ -356,7 +361,7 @@ reference project's):
 
 | Schedule | Cron (UTC) | Target rule | Effect |
 | --- | --- | --- | --- |
-| Workflow nightly sweep (retention) | `41 3 * * *` | `POST /api/workflow/sweep` | deletes expired terminal runs — bytes, file records, step rows, run rows |
+| Workflow nightly sweep (retention) | `41 3 * * *` | `POST /api/workflow/sweep` | deletes expired terminal runs — bytes, file records, step rows, run rows; one workflow per pass, 50 runs |
 
 **Claude / MCP:** ask Claude (BFFless MCP connected) to `create_pipeline_schedule`, pointing
 `targetProxyRuleId` at that instance's `/api/workflow/sweep` rule ID. The `install-app` skill does
@@ -383,7 +388,8 @@ panel's *Run now*) is the same pass the schedule makes — any member can, and i
 members' due runs; spec 11 §Neither records why that is accepted.
 
 **Read the first pass on each instance** (the admin panel's pipeline log, or the 200 of a by-hand
-`POST`): `deferred` should be `0`, and `records` non-zero whenever `files` is. `install.schedules`
+`POST`): `deferred` should be `0`, and `records` non-zero whenever `files` is (`waiting` just
+means another workflow's turn is tomorrow). `install.schedules`
 ships in the next catalog bundle, so a fresh catalog install sweeps unattended from its first
 night — which is why the rule's CE assumptions are cited in `targets.fn.js` rather than left to
 that first pass.

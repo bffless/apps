@@ -2,9 +2,11 @@
  * What this pass of the nightly sweep deletes (spec 05 §Retention, apps#615).
  *
  * Reads the expired terminal runs `due` selected (`expiresAt lt now AND status
- * in terminal`, capped by that query's `limit`) and the `workflow_files` rows
- * the `records` scan returned, and answers the lists the four delete steps
- * consume — in `run/delete`'s order, bytes first:
+ * in terminal`, capped by that query's `limit`), the workflow `plan` chose for
+ * this pass, and the `workflow_files` rows the `records` scan returned for
+ * that workflow, and answers the lists the four delete steps consume — in
+ * `run/delete`'s order, bytes first. Due runs of any OTHER workflow are left
+ * for a later pass and counted as `waiting`.
  *
  *   prefixes  — one `workflows/<impl>/<workflow>/runs/<runId>/` per run, for
  *               `file_delete` in `prefixes` mode (CE >= 0.4.58, ce#792): every
@@ -29,10 +31,16 @@
  * has outgrown the scan: raise the `records` limit and SCAN_LIMIT together.
  *
  * What CE guarantees, cited because a mock twin cannot prove it: `data_query`
- * spreads every stored column into each record (`data-query.handler.ts`
- * "Return all fields": `{ id, alias, version, ...data, createdAt, updatedAt }`
- * — no projection through the declared schema, so `sub_dir` comes back
- * whether or not the live schema has adopted it); `data_delete` accepts `in`
+ * passes `limit` through verbatim — `data-query.handler.ts` builds its own
+ * query and calls `.limit(this.resolveNumericExpression(config.limit, 100, …))`,
+ * which returns a numeric config value as-is; there is no maximum anywhere in
+ * the handler — so a scan shorter than SCAN_LIMIT really is the whole table
+ * for that pattern, which is what makes `scanTruncated` a detector and not a
+ * guess; `data_query` also spreads every stored column into each record
+ * (`data-query.handler.ts` "Return all fields": `{ id, alias, version,
+ * ...data, createdAt, updatedAt }` — no projection through the declared
+ * schema, so `sub_dir` comes back whether or not the live schema has adopted
+ * it); `data_delete` accepts `in`
  * through the shared `filter-where.util.ts` since bffless/ce#675 (2026-08-16,
  * first in v0.3.3, far below this app's `ceMin`), and an empty list compiles
  * to a match-nothing predicate (`in-filter.util.spec.ts` "compiles an empty
@@ -63,8 +71,10 @@ function handler(data) {
   const ctx = data || {}
   const steps = ctx.steps || {}
   const cutoff = steps.cutoff || {}
+  const plan = steps.plan || {}
   const now = typeof cutoff.now === 'number' ? cutoff.now : Date.now()
   const terminal = Array.isArray(cutoff.terminal) ? cutoff.terminal : ['succeeded', 'failed', 'cancelled']
+  const chosen = plan.any === true && typeof plan.impl === 'string' && typeof plan.workflow === 'string'
 
   // data_query answers a bare array (or one record with returnSingle) — CE's
   // data-query.handler.ts; the envelope forms are kept for older CE versions.
@@ -78,6 +88,7 @@ function handler(data) {
   const prefixes = []
   const seen = {}
   let skipped = 0
+  let waiting = 0
   for (const row of rows(steps.due)) {
     const r = row || {}
     if (terminal.indexOf(r.status) === -1) continue
@@ -88,6 +99,10 @@ function handler(data) {
     }
     if (seen[r.runId]) continue
     seen[r.runId] = true
+    if (!chosen || r.impl !== plan.impl || r.workflow !== plan.workflow) {
+      waiting += 1
+      continue
+    }
     runIds.push(r.runId)
     prefixes.push('workflows/' + r.impl + '/' + r.workflow + '/runs/' + r.runId + '/')
   }
@@ -129,5 +144,6 @@ function handler(data) {
     swept: swept.length,
     deferred: defer ? runIds.length : 0,
     skipped,
+    waiting,
   }
 }
