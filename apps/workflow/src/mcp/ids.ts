@@ -47,3 +47,17 @@ export function runIdTime(runId: string): number | null {
   for (const ch of runId.slice(4, 14)) t = t * 32 + CROCKFORD.indexOf(ch)
   return t
 }
+
+/**
+ * How long a dispatched run id stays *promised*: `workflow.status` reads an
+ * absent row inside this window as `pending` rather than as no run at all
+ * (ADR-0006 — the job writes its first row in about a minute), and `run/drive`
+ * holds the id against other members for the same span (apps#672).
+ *
+ * It lives here, beside `runIdTime`, because it is only meaningful against the
+ * clock that reads it, and because BOTH readers must use one number: a window
+ * that hands the id away while its sibling still answers "pending" loses a run
+ * (the original claimant's `runs/post` then 409s with a dead nonce). `reply.ts`
+ * and `driveGate.ts` therefore import it rather than each naming a figure.
+ */
+export const PENDING_WINDOW_MS = 10 * 60_000

@@ -23,7 +23,7 @@ import { toDefinition } from '@bffless/workflow-lint/definition'
 import { parse } from 'yaml'
 import { describeText, describeWorkflow } from '../lib/describe'
 import { RESOURCE_MIME, isHostTool } from './hostTools'
-import { runIdTime, workflowId } from './ids'
+import { PENDING_WINDOW_MS, runIdTime, workflowId } from './ids'
 import type { Plan } from './plan'
 import { NEED_IMPL_WORKFLOW, NEED_RUN_ID, NOT_CONFINED, REFUSALS } from './refusals'
 import { fieldsOf, rows, runsWithWaiting, stepUpdated, withoutDriveKey, type Row } from './rows'
@@ -81,8 +81,6 @@ export interface Reply {
  * (ADR-0006), which is why they left this set.
  */
 const NOT_SERVED = new Set(['workflow.cancel'])
-/** How long after a run id was minted its absent row still reads as `pending` rather than as no run at all (ADR-0006: the job writes its first row in about a minute). */
-export const PENDING_WINDOW_MS = 10 * 60_000
 const WRITE_TOOLS = new Set(['workflow.submit', 'workflow.annotate', 'workflow.submitStep'])
 const RUNS_DEFAULT = 20
 const RUNS_MAX = 50

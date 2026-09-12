@@ -12,8 +12,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import { HELLO_INDEX, runRow } from './fixtures/index'
-import { handler as driveGate, type DriveGateSteps } from './driveGate'
+import { CLAIM_STALE_MS, handler as driveGate, type DriveGateSteps } from './driveGate'
 import { handler as drivePlan } from './drivePlan'
+import { PENDING_WINDOW_MS } from './ids'
 import { handler as runGate, type FnUser } from './runGate'
 import type { FnRequest, FnUtils } from './route'
 
@@ -244,6 +245,16 @@ describe('the claim', () => {
     expect(g.claim).toMatchObject({ startedBy: MEMBER.id, driveKey: 'a'.repeat(48) })
   })
 
+  it('holds the id for exactly as long as workflow.status promises it — one constant, not two', () => {
+    // The review finding on apps#672: a takeover window SHORTER than the
+    // pending window hands an id away while `pendingOr` is still answering
+    // `pending` for it, and the first claimant's `runs/post` then 409s with a
+    // nonce `claimReplace` overwrote. They are the same import, so there is no
+    // band between them to drift into.
+    expect(CLAIM_STALE_MS).toBe(PENDING_WINDOW_MS)
+    expect(CLAIM_STALE_MS).toBe(10 * 60_000)
+  })
+
   it('refuses a run id another member has just claimed', () => {
     const theirs = { startedBy: OTHER.id, startedByEmail: OTHER.email, createdAt: Date.now() }
     const g = drive(RUN, { claim: found(claimRow(theirs)), index: idx() })
@@ -251,9 +262,9 @@ describe('the claim', () => {
     expect(g).toMatchObject({ dispatch: false, refused: true, code: 'RUN_EXISTS', status: 400, writeClaim: false, driveKey: '' })
     expect(g.message).toContain('another member')
     expect(g.payload).toEqual({})
-    // Seven minutes and fifty-nine seconds in — still inside the window, so the
+    // Nine minutes and fifty-nine seconds in — still inside the window, so the
     // refusal holds; only a claim that has OUTLIVED it is taken over.
-    expect(drive(RUN, { claim: found(claimRow({ ...theirs, createdAt: Date.now() - (8 * 60_000 - 1_000) })), index: idx() }).code).toBe('RUN_EXISTS')
+    expect(drive(RUN, { claim: found(claimRow({ ...theirs, createdAt: Date.now() - (10 * 60_000 - 1_000) })), index: idx() }).code).toBe('RUN_EXISTS')
   })
 
   it('takes over another member’s stale claim in place rather than holding the id forever', () => {
@@ -261,7 +272,7 @@ describe('the claim', () => {
     // never picked the event up — and the claim has outlived the window
     // (apps#672). `found()` ids the record `rec`, which is what `claimReplace`
     // overwrites.
-    const stale = claimRow({ startedBy: OTHER.id, startedByEmail: OTHER.email, createdAt: Date.now() - (8 * 60_000 + 1_000) })
+    const stale = claimRow({ startedBy: OTHER.id, startedByEmail: OTHER.email, createdAt: Date.now() - (10 * 60_000 + 1_000) })
     const g = drive(RUN, { claim: found(stale), index: idx() })
 
     expect(g).toMatchObject({ dispatch: true, refused: false, code: '', staleReplace: true, writeClaim: false, claimRecordId: 'rec' })
@@ -274,7 +285,7 @@ describe('the claim', () => {
   })
 
   it('still refuses a stale claim this CE gave no record id for — `claimReplace` would have nothing to key', () => {
-    const aged = { startedBy: OTHER.id, createdAt: Date.now() - (8 * 60_000 + 1_000) }
+    const aged = { startedBy: OTHER.id, createdAt: Date.now() - (10 * 60_000 + 1_000) }
     // The same row without the `id` `found()` wraps it in, and one whose
     // `createdAt` is not a number at all: neither is a row to take over on a guess.
     expect(drive(RUN, { claim: [{ fields: claimRow(aged) }], index: idx() }).code).toBe('RUN_EXISTS')

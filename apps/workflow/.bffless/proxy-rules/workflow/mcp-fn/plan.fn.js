@@ -183,6 +183,7 @@ var __mcp = (() => {
     for (let i = 0; i < 16; i++) rand += CROCKFORD[Math.floor(random() * 32)];
     return `run_${time}${rand}`;
   }
+  var PENDING_WINDOW_MS = 10 * 6e4;
 
   // src/mcp/refusals.ts
   var REFUSALS = {

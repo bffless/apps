@@ -49,6 +49,7 @@
  * and softening it would be wrong anyway: an undispatched run is not a run.
  */
 import { fieldsOf, recordIdOf, rows } from './rows'
+import { PENDING_WINDOW_MS } from './ids'
 import { IMPL_PATTERN, type DrivePlan } from './drivePlan'
 import { admittedRun, type FnUser } from './runGate'
 import type { FnRequest, FnUtils } from './route'
@@ -66,15 +67,24 @@ const TERMINAL = ['succeeded', 'failed', 'cancelled']
  * How long another member's claim holds a run id (apps#672). A claim is written
  * BEFORE the dispatch, so a dispatch that never lands leaves one standing with
  * no run behind it; without a window, that row refuses the id to everyone else
- * forever. Eight minutes is not a new number: it is the driven walk's
- * `POLL_TIMEOUT_MS` (`packages/workflow-live/src/walks/driven.ts`), the
- * harness's own estimate of how long a dispatch may reasonably take to start
- * producing writes — *"an Actions cold start is ~1–2 minutes; two of them plus
- * the run itself fit well inside this"*. Past it, a claim with no run is not
- * pending, it is abandoned. (`workflow-headless`'s 60-minute `--timeout` bounds
- * a whole RUN, not a dispatch's pickup, and is the wrong figure here.)
+ * forever.
+ *
+ * It is `PENDING_WINDOW_MS` itself, by import and not by restatement, because
+ * this harness must not give two answers to *how long may a dispatch take*.
+ * `workflow.status` publishes one of them on the wire (`pendingUntil`,
+ * `reply.ts`): inside it an absent run row reads as `pending`, and the caller
+ * is told to poll. A shorter window here would hand the id to someone else
+ * while that promise still stood — the first claimant's job would then start,
+ * post its run with a nonce `claimReplace` had already overwritten, and take a
+ * 409 for a run it was still being told to wait for.
+ *
+ * The two clocks are not the same clock, and their order is the safe one: the
+ * pending window runs from the id's MINT time (`runIdTime`), the claim's age
+ * from when its row was written, which is always later — the mint precedes the
+ * `run/drive` call that claims it. So with one constant the status flips to
+ * "no such run" a moment BEFORE the id becomes takeable, never after.
  */
-const CLAIM_STALE_MS = 8 * 60_000
+export const CLAIM_STALE_MS = PENDING_WINDOW_MS
 
 /** The `repository_dispatch` event type `workflow-drive.yml` listens for. */
 export const EVENT_TYPE = 'workflow-drive'

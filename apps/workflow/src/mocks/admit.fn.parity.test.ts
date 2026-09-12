@@ -347,7 +347,7 @@ describe('the mock run/drive endpoint', () => {
     // Their dispatch never produced a run, and the window has passed — the real
     // rule's `claimReplace` overwrites the row, which here is `set` on the same
     // `runId` key.
-    db.claims.get(RUN_ID_2)!.createdAt = Date.now() - (8 * 60_000 + 1_000)
+    db.claims.get(RUN_ID_2)!.createdAt = Date.now() - (10 * 60_000 + 1_000)
 
     // The claimant's OWN aged claim is still reused, nonce and all: that reuse
     // is what makes a retry after a dispatch that never landed safe.

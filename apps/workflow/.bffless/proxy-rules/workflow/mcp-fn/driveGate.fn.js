@@ -22,6 +22,7 @@ var __mcp = (() => {
   // src/mcp/driveGate.ts
   var driveGate_exports = {};
   __export(driveGate_exports, {
+    CLAIM_STALE_MS: () => CLAIM_STALE_MS,
     EVENT_TYPE: () => EVENT_TYPE,
     handler: () => handler
   });
@@ -44,6 +45,9 @@ var __mcp = (() => {
     const id = row.id ?? fieldsOf(row).id;
     return typeof id === "string" ? id : null;
   }
+
+  // src/mcp/ids.ts
+  var PENDING_WINDOW_MS = 10 * 6e4;
 
   // ../../packages/workflow-agent-tools/dist/schemas.js
   var RUN_ID = {
@@ -251,7 +255,7 @@ var __mcp = (() => {
   var RUN_ID_PATTERN = /^run_[0-9A-HJKMNP-TV-Z]{26}$/;
   var DRIVER_REPO_PATTERN = /^([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)$/;
   var TERMINAL = ["succeeded", "failed", "cancelled"];
-  var CLAIM_STALE_MS = 8 * 6e4;
+  var CLAIM_STALE_MS = PENDING_WINDOW_MS;
   var EVENT_TYPE = "workflow-drive";
   function isPlainObject3(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);

@@ -290,8 +290,9 @@ bffless rules push --adopt-fields
 
 **New schema `workflow_run_claims`** — `{ runId, impl, workflow, startedBy, startedByEmail?,
 driveKey, createdAt }`, one row per dispatch from the MCP endpoint, consumed (deleted) by
-`runs/post`. A row nobody consumes holds its `runId` against other members for eight minutes
-(`driveGate.ts`'s `CLAIM_STALE_MS`), after which the next caller of `run/drive` overwrites it in
+`runs/post`. A row nobody consumes holds its `runId` against other members for ten minutes
+(`CLAIM_STALE_MS` = `PENDING_WINDOW_MS`, the same span `workflow.status` reports as
+`pendingUntil`), after which the next caller of `run/drive` overwrites it in
 place — so a dispatch that never produced a run does not retire its id (apps#672). It is a
 brand-new schema, so it syncs on an ordinary rules-as-code push with no `--adopt-fields` needed.
 

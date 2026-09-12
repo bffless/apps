@@ -28,6 +28,7 @@ import {
   waitingKeysOf,
 } from './db'
 import type { MockRunRow } from './db'
+import { PENDING_WINDOW_MS } from '../mcp/ids'
 import { analyzeLines } from './analyze'
 import { forkGate } from './forkGate'
 import { DRIVE_KEY_HEADER, mockGate } from './runGate'
@@ -235,11 +236,15 @@ const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled']
 
 /**
  * How long another member's claim holds a run id before this one may take it
- * over (apps#672) — `driveGate.ts`'s `CLAIM_STALE_MS`, re-stated here the way
- * the patterns above are. There is no parity test over `driveGate.fn.js`, so
- * this number and that one only stay equal by hand.
+ * over (apps#672) — `driveGate.ts`'s `CLAIM_STALE_MS`, which is
+ * `PENDING_WINDOW_MS`: the harness gives ONE answer to how long a dispatch may
+ * take, on the wire as `workflow.status`'s `pendingUntil`. Imported rather than
+ * restated (the regexes above are restated because the bundle cannot import the
+ * page; `mcp/ids.ts` is bundle-safe and has no such excuse), so the mock cannot
+ * refuse what production admits — there is no parity test over
+ * `driveGate.fn.js` to catch it if it did.
  */
-const CLAIM_STALE_MS = 8 * 60_000
+const CLAIM_STALE_MS = PENDING_WINDOW_MS
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)

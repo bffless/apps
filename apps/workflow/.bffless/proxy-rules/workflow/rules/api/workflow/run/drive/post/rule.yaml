@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 22
 pipeline:
   name: Drive a run
-  description: "POST { id, mode: run|resume, impl?, workflow?, inputs? } — dispatch the implementation's workflow-drive.yml (repository_dispatch, event workflow-drive) through the project's GitHub integration (ADR-0006). Writes the run's ownership claim for the requester (spec 11 D28) before dispatching. Refuses on a live lease, a terminal run, a missing driver, a run this caller cannot reach, or an id another member claimed less than eight minutes ago — an older claim whose dispatch never produced a run is taken over in place."
+  description: "POST { id, mode: run|resume, impl?, workflow?, inputs? } — dispatch the implementation's workflow-drive.yml (repository_dispatch, event workflow-drive) through the project's GitHub integration (ADR-0006). Writes the run's ownership claim for the requester (spec 11 D28) before dispatching. Refuses on a live lease, a terminal run, a missing driver, a run this caller cannot reach, or an id another member claimed less than ten minutes ago (the span workflow.status reports as pendingUntil) — an older claim whose dispatch never produced a run is taken over in place."
   steps:
     # The run row `id` names, if there is one: `resume` needs it (it carries the
     # implementation, the lease and the status), `run` needs its ABSENCE — an id
