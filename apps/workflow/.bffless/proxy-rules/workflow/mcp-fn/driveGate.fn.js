@@ -22,6 +22,7 @@ var __mcp = (() => {
   // src/mcp/driveGate.ts
   var driveGate_exports = {};
   __export(driveGate_exports, {
+    CLAIM_STALE_MS: () => CLAIM_STALE_MS,
     EVENT_TYPE: () => EVENT_TYPE,
     handler: () => handler
   });
@@ -40,6 +41,13 @@ var __mcp = (() => {
     const fields = row.fields;
     return isPlainObject(fields) && Object.keys(fields).length > 0 ? fields : row;
   }
+  function recordIdOf(row) {
+    const id = row.id ?? fieldsOf(row).id;
+    return typeof id === "string" ? id : null;
+  }
+
+  // src/mcp/ids.ts
+  var PENDING_WINDOW_MS = 10 * 6e4;
 
   // ../../packages/workflow-agent-tools/dist/schemas.js
   var RUN_ID = {
@@ -247,6 +255,7 @@ var __mcp = (() => {
   var RUN_ID_PATTERN = /^run_[0-9A-HJKMNP-TV-Z]{26}$/;
   var DRIVER_REPO_PATTERN = /^([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)$/;
   var TERMINAL = ["succeeded", "failed", "cancelled"];
+  var CLAIM_STALE_MS = PENDING_WINDOW_MS;
   var EVENT_TYPE = "workflow-drive";
   function isPlainObject3(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -285,8 +294,10 @@ var __mcp = (() => {
       payload: {},
       response: JSON.stringify({ code, message }),
       writeClaim: false,
+      staleReplace: false,
       rekey: false,
       recordId: "",
+      claimRecordId: "",
       driveKey: "",
       claim: null
     };
@@ -335,8 +346,10 @@ var __mcp = (() => {
     }
     const [full, owner, repo] = parts;
     let writeClaim = false;
+    let staleReplace = false;
     let rekey = false;
     let recordId = "";
+    let claimRecordId = "";
     let driveKey;
     let claim = null;
     if (mode === "resume") {
@@ -349,9 +362,15 @@ var __mcp = (() => {
       const held = rows(steps.claim);
       const existing = held.length > 0 ? fieldsOf(held[0]) : null;
       if (existing !== null && str(existing.startedBy) !== callerId) {
-        return refuse("RUN_EXISTS", "this run id is already claimed by another member");
+        const claimedAt = typeof existing.createdAt === "number" ? existing.createdAt : Date.now();
+        const claimId = recordIdOf(held[0]);
+        if (Date.now() - claimedAt <= CLAIM_STALE_MS || claimId === null) {
+          return refuse("RUN_EXISTS", "this run id is already claimed by another member");
+        }
+        staleReplace = true;
+        claimRecordId = claimId;
       }
-      if (existing !== null) {
+      if (existing !== null && !staleReplace) {
         driveKey = str(existing.driveKey);
         claim = {
           runId,
@@ -364,7 +383,7 @@ var __mcp = (() => {
         };
       } else {
         driveKey = mint(24);
-        writeClaim = true;
+        writeClaim = !staleReplace;
         claim = {
           runId,
           impl,
@@ -391,8 +410,10 @@ var __mcp = (() => {
       // driver through `client_payload` and nowhere else.
       response: JSON.stringify({ dispatched: true, runId, repo: full, eventType: EVENT_TYPE }),
       writeClaim,
+      staleReplace,
       rekey,
       recordId,
+      claimRecordId,
       driveKey,
       claim
     };

@@ -226,6 +226,19 @@ while `runs/post` is issued by the SPA running *inside* the page; the driver ins
 nonce with a Playwright route on `/api/workflow/**` + `/api/uploads/**`, so every in-page request
 the harness itself makes carries it too.
 
+A claim is evidence of a **dispatch**, not of a run: it is written before `github_api` runs, so a
+dispatch that fails — or one whose driver never picks the event up — leaves a claim standing with
+no run behind it. So a claim holds its run id against other members for **ten minutes** — one
+constant, `PENDING_WINDOW_MS` (`mcp/ids.ts`), which `driveGate.ts` imports as `CLAIM_STALE_MS`:
+the harness must not answer *how long may a dispatch take* twice, because the same span is
+already on the wire as `workflow.status`'s `pendingUntil`, and a shorter one here would hand the
+id away while the first claimant was still being told to poll for it. Past the window the next
+caller of `run/drive` takes the id over, overwriting the abandoned row in place rather than
+adding a second claim beside it. (The two clocks differ — the pending window runs from the id's
+mint, the claim's age from its row's write, which is later — so the status stops promising the id
+just BEFORE it becomes takeable, which is the safe order.) The claimant's *own* standing
+claim is reused whatever its age — that reuse is what makes a retry after a failed dispatch safe.
+
 **Since apps#671:** an unconsumed claim *is* surfaced in the list as a `queued` run. It was
 deferred out of the boundary here — the window between dispatch and pickup was blind — and
 `runs/get` now runs a third pair of scoped queries over `workflow_run_claims` and stands each

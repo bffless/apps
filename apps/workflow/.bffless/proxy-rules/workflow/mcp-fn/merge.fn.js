@@ -2969,6 +2969,9 @@ ${indent}${end}`;
   ]);
   var HOST_TOOL_NAMES = new Set(HOST_TOOLS.map((tool) => tool.name));
 
+  // src/mcp/ids.ts
+  var PENDING_WINDOW_MS = 10 * 6e4;
+
   // src/mcp/rows.ts
   function isPlainObject3(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -3000,7 +3003,6 @@ ${indent}${end}`;
   }
 
   // src/mcp/reply.ts
-  var PENDING_WINDOW_MS = 10 * 6e4;
   function snapshotOf(run, stepRows) {
     return snapshotFromRows(run, stepRows);
   }

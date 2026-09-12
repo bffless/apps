@@ -22,7 +22,6 @@ var __mcp = (() => {
   // src/mcp/reply.ts
   var reply_exports = {};
   __export(reply_exports, {
-    PENDING_WINDOW_MS: () => PENDING_WINDOW_MS,
     agentHostHint: () => agentHostHint,
     driveErrorKey: () => driveErrorKey,
     handler: () => handler,
@@ -6884,6 +6883,7 @@ ${end.comment}` : end.comment;
     for (const ch of runId.slice(4, 14)) t = t * 32 + CROCKFORD.indexOf(ch);
     return t;
   }
+  var PENDING_WINDOW_MS = 10 * 6e4;
 
   // src/mcp/refusals.ts
   var REFUSALS = {
@@ -6969,7 +6969,6 @@ ${end.comment}` : end.comment;
 
   // src/mcp/reply.ts
   var NOT_SERVED = /* @__PURE__ */ new Set(["workflow.cancel"]);
-  var PENDING_WINDOW_MS = 10 * 6e4;
   var WRITE_TOOLS = /* @__PURE__ */ new Set(["workflow.submit", "workflow.annotate", "workflow.submitStep"]);
   var RUNS_DEFAULT = 20;
   var RUNS_MAX = 50;

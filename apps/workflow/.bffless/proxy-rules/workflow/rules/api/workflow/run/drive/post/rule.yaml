@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 22
 pipeline:
   name: Drive a run
-  description: "POST { id, mode: run|resume, impl?, workflow?, inputs? } — dispatch the implementation's workflow-drive.yml (repository_dispatch, event workflow-drive) through the project's GitHub integration (ADR-0006). Writes the run's ownership claim for the requester (spec 11 D28) before dispatching. Refuses on a live lease, a terminal run, a missing driver, a run this caller cannot reach, or an id another member has claimed."
+  description: "POST { id, mode: run|resume, impl?, workflow?, inputs? } — dispatch the implementation's workflow-drive.yml (repository_dispatch, event workflow-drive) through the project's GitHub integration (ADR-0006). Writes the run's ownership claim for the requester (spec 11 D28) before dispatching. Refuses on a live lease, a terminal run, a missing driver, a run this caller cannot reach, or an id another member claimed less than ten minutes ago (the span workflow.status reports as pendingUntil) — an older claim whose dispatch never produced a run is taken over in place."
   steps:
     # The run row `id` names, if there is one: `resume` needs it (it carries the
     # implementation, the lease and the status), `run` needs its ABSENCE — an id
@@ -19,7 +19,9 @@ pipeline:
     # Any claim already standing for this id (spec 11 §Attribution, D28). A
     # claim of the caller's OWN is reused — a retry after a dispatch that never
     # landed must not mint a second key — and one of someone else's is
-    # RUN_EXISTS: an id that is spoken for is spoken for.
+    # RUN_EXISTS: an id that is spoken for is spoken for, until it goes stale
+    # (`claimReplace` below), because a claim is evidence of a dispatch and not
+    # of a run.
     - id: claim
       name: claim
       handler: data_query
@@ -76,6 +78,29 @@ pipeline:
       config:
         condition: steps.gate.writeClaim
         schemaId: $schema:workflow_run_claims
+        fields:
+          runId: steps.gate.claim.runId
+          impl: steps.gate.claim.impl
+          workflow: steps.gate.claim.workflow
+          startedBy: steps.gate.claim.startedBy
+          startedByEmail: steps.gate.claim.startedByEmail
+          driveKey: steps.gate.claim.driveKey
+          createdAt: steps.gate.claim.createdAt
+    # The same claim, over a row that has gone stale (apps#672): another
+    # member's claim whose dispatch never produced a run still holds this id,
+    # and past the gate's CLAIM_STALE_MS it holds it for nothing. Written as a
+    # data_update on THEIR record id — the `rekey` step below is the same move
+    # on a run row — so the id keeps one claim rather than gaining a second
+    # beside it, which `runs/post` (its `claim` query takes limit 1) could then
+    # redeem the wrong way round. Every column is rewritten, because the new
+    # claimant's nonce, name and clock are all different.
+    - id: claimReplace
+      name: claimReplace
+      handler: data_update
+      config:
+        condition: steps.gate.staleReplace
+        schemaId: $schema:workflow_run_claims
+        recordId: steps.gate.claimRecordId
         fields:
           runId: steps.gate.claim.runId
           impl: steps.gate.claim.impl
