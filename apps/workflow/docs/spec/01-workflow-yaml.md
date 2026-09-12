@@ -137,8 +137,11 @@ GitHub's grammar, as a subset, evaluated by one parser shared by the harness and
   `${{ floor(inputs.recording.duration / inputs.interval) }}` stills" needs one. Arithmetic
   binds tighter than comparison (`a / b > 240` is `(a / b) > 240`), coerces operands as
   comparison does, and yields `null` (never throws) for a non-numeric operand or a
-  non-finite result such as `x / 0`. There is **no** binary `-`: identifiers may contain it
-  (`needs.per-video`) and a number literal carries its own sign (`-1`). All three are pure and tiny.
+  non-finite result such as `x / 0`; `floor(null)` is `null`, so the hole propagates into an
+  interpolation as `''` rather than as `0`. There is **no** binary `-`: identifiers may contain
+  it (`needs.per-video`) and a number literal carries its own sign (`-1`). Mind the spelling
+  without spaces — `inputs.count-1` is a property literally named `count-1` (so `null`), not
+  a subtraction; `a - 1` and `a -1` are syntax errors. All three are pure and tiny.
 - A value that is **exactly** one expression keeps its type (object/list/number); anything
   else is string interpolation.
 - Any YAML scalar may contain expressions; keys may not. **YAML gotcha (same as GitHub):**

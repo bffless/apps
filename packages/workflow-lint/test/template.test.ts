@@ -51,3 +51,10 @@ test('bare if with syntax error captured', () => {
   const r = parseIfExpression('a &&')
   expect(r.error).toBeDefined()
 })
+
+test('bare if spelling parses arithmetic whole (01 deviation)', () => {
+  const r = parseIfExpression('inputs.recording.duration / inputs.interval > 240')
+  expect(r.error).toBeUndefined()
+  expect(r.expr).toMatchObject({ kind: 'binary', op: '>', left: { kind: 'binary', op: '/' } })
+  expect(parseIfExpression('${{ floor(inputs.a / 2) * 3 + 1 > 10 }}').error).toBeUndefined()
+})

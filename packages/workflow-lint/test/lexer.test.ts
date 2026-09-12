@@ -51,4 +51,6 @@ test('arithmetic punctuation: + * / are tokens, - is not', () => {
   expect(flat('inputs.per-video')).toEqual(['inputs', '.', 'per-video', '<eof>'])
   expect(flat('a -1')).toEqual(['a', -1, '<eof>'])
   expect(() => tokenize('a - 1')).toThrow(ExprSyntaxError)
+  // …and without spaces it is one identifier — `count-1` is a property name, not a subtraction (01).
+  expect(flat('inputs.count-1')).toEqual(['inputs', '.', 'count-1', '<eof>'])
 })

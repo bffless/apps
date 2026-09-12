@@ -95,7 +95,10 @@ export const FUNCTIONS: Record<string, (...args: unknown[]) => unknown> = {
     return pluckValue(list, str(key))
   },
   floor(v) {
-    // Deviation (01): rounds a number down; a non-numeric or non-finite argument is null.
+    // Deviation (01): rounds a number down. `null` propagates (a missing
+    // property, or `x / 0`, stays the hole it is rather than becoming 0), and a
+    // non-numeric argument is null too.
+    if (v === null || v === undefined) return null
     const n = toNum(v)
     return Number.isFinite(n) ? Math.floor(n) : null
   },

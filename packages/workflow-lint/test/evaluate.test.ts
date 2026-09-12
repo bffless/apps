@@ -116,13 +116,22 @@ test('arithmetic: + * / coerce like comparison and never throw', () => {
   expect(ev('missing.duration / 5', {})).toBe(0)
 })
 
-test('floor', () => {
+test('floor: rounds down, and null propagates rather than becoming 0', () => {
   expect(ev('floor(3.9)')).toBe(3)
   expect(ev('floor(a / b)', { a: 1201, b: 5 })).toBe(240)
   expect(ev("floor('2.5')")).toBe(2)
-  expect(ev('floor(null)')).toBe(0)
+  expect(ev('floor(null)')).toBe(null)
+  expect(ev('floor(a / 0)', { a: 1 })).toBe(null)
+  expect(ev('floor(missing.x / missing.y)', {})).toBe(null)
   expect(ev("floor('abc')")).toBe(null)
   expect(ev('floor(a)', { a: [1] })).toBe(null)
+  // `inputs.count-1` is a member named `count-1`: null, and a null hole interpolates as ''.
+  expect(ev('inputs.count-1', { inputs: { count: 5 } })).toBe(null)
+  expect(
+    renderTemplate('About ${{ floor(inputs.recording.duration / inputs.interval) }} stills', {
+      contexts: { inputs: { recording: { duration: 1234.5 }, interval: 0 } },
+    }),
+  ).toBe('About  stills')
 })
 
 test('arithmetic interpolates in templates', () => {
