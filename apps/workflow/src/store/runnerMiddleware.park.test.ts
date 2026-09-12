@@ -21,6 +21,8 @@ import { newRunId } from '../lib/runner/ids'
 import type { Definition, StepKey } from '../lib/runner/types'
 import { stepKey } from '../lib/runner/types'
 import { flush, pumpUntil, resetHelloHarness, trackedHelloStore } from '../test/helloHarness'
+import type { AppStore } from '.'
+import { workflowApi } from './workflowApi'
 import { runEvent, runOpened } from './runSlice'
 
 afterEach(() => resetHelloHarness())
@@ -64,11 +66,19 @@ const longPoll = {
 /**
  * Start a headless run of `def`, with `park` on the meta the way the kickoff
  * page sets it from `?wait=park` — page state, so it never rides on
- * `run.started`.
+ * `run.started`. `from` lets a caller bring its own store and run id — what a
+ * driver does with `?runId=`, minting the id itself and starting the run under
+ * that very one (`docs/spec/07-headless.md:68`).
  */
-async function start(def: Definition, park: boolean) {
-  const { store, advance } = trackedHelloStore()
-  const runId = newRunId()
+async function start(
+  def: Definition,
+  park: boolean,
+  from: { store: AppStore; advance: (ms: number) => Promise<void>; runId: string } = {
+    ...trackedHelloStore(),
+    runId: newRunId(),
+  },
+) {
+  const { store, advance, runId } = from
   store.dispatch(runOpened({ meta: { def, yaml: '# park\n', workflowName: 'Park', park } }))
   store.dispatch(runEvent({ type: 'run.started', runId, impl: 'hello', workflow: 'park', inputs: {}, headless: true, unattended: false, at: Date.now() }))
   await flush()
@@ -87,6 +97,43 @@ describe('wait=park (spec 07 additions; DR2/DR3)', () => {
     expect(row.status).toBe('running')
     expect(row.leaseOwner).toBeNull()
     expect(row.leaseUntil).toBeNull()
+  })
+
+  /**
+   * apps#669 — the park is also when the page starts *reading* the run again,
+   * and a driven kickoff has already put a lie in that cache: `?auto=1&runId=`
+   * makes `KickoffPage` ask `getRun(runId)` whether the pre-minted id is a
+   * duplicate, and for a fresh id the answer — `{ run: null, steps: [] }` — is
+   * cached under the id the run is about to be started with. `RunShell` reads
+   * that entry the moment `mode` flips to `parked` (`skipToken` until then), so
+   * unless `run.started` invalidates the run's own tag alongside the list, the
+   * parked run renders as the `No such run` empty state.
+   */
+  it('leaves no “no such run” cached under the id the driver minted', async () => {
+    const harness = { ...trackedHelloStore(), runId: newRunId() }
+    const { store, runId } = harness
+
+    // The duplicate-id pre-check, and its miss.
+    const precheck = store.dispatch(workflowApi.endpoints.getRun.initiate(runId))
+    expect((await precheck).data).toEqual({ run: null, steps: [] })
+    // Kickoff navigates to the run page the moment it has started the run, so
+    // nothing is subscribed to that entry while the run drives — it is only
+    // retained (no `keepUnusedDataFor` on `getRun`, so RTK's 60 s default).
+    precheck.unsubscribe()
+
+    const { advance } = await start(withSteps([undeclaredForm, echo]), true, harness)
+    await pumpUntil(advance, () => store.getState().run.mode === 'parked', { maxSteps: 200 })
+
+    // Whatever the run page finds under that key when parking re-subscribes it,
+    // it is not the miss: the entry was dropped by the invalidation, leaving a
+    // read to go to the server.
+    expect(workflowApi.endpoints.getRun.select(runId)(store.getState()).data?.run).not.toBeNull()
+
+    const reread = store.dispatch(workflowApi.endpoints.getRun.initiate(runId))
+    const { data } = await reread
+    reread.unsubscribe()
+    expect(data?.run?.runId).toBe(runId)
+    expect(data?.run?.status).toBe('running')
   })
 
   it('still fails fast without the flag', async () => {
