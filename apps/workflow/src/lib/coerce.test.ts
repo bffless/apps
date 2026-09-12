@@ -12,11 +12,13 @@ import {
   toFileRef,
   toImplementation,
   toRunRow,
+  toRunsPageRow,
   toStepRow,
   toWhoami,
   unwrapRows,
   workflowId,
 } from './coerce'
+import { isQueuedRun } from './coerce'
 
 describe('workflowId', () => {
   it('strips the workflow file suffix (R1)', () => {
@@ -237,6 +239,61 @@ describe('toRunRow — annotationCounts (Task 20)', () => {
   it('leaves it absent on a row written before the column existed', () => {
     expect(toRunRow({ runId: 'r' })).not.toHaveProperty('annotationCounts')
     expect(toRunRow({ runId: 'r', annotationCounts: null })).not.toHaveProperty('annotationCounts')
+  })
+})
+
+/**
+ * A dispatched run, before anything has picked it up (apps#671). The claim row
+ * is not a run row, and the page has to tell them apart BEFORE coercion: a
+ * status outside `RUN_STATUSES` becomes `'running'`, so a queued entry sent
+ * through `toRunRow` would arrive claiming to be under way.
+ */
+describe('toRunsPageRow — the queued half (apps#671)', () => {
+  const claim = {
+    runId: 'run_q',
+    impl: 'hello',
+    workflow: 'hello',
+    status: 'queued',
+    startedBy: 'user_1',
+    startedByEmail: 'member@example.test',
+    startedAt: 1_700_000_000_000,
+    waitingOn: [],
+  }
+
+  it('keeps a queued entry queued instead of coercing it to running', () => {
+    const row = toRunsPageRow(claim)
+    expect(row.status).toBe('queued')
+    expect(isQueuedRun(row)).toBe(true)
+    expect(row).toEqual({
+      runId: 'run_q',
+      impl: 'hello',
+      workflow: 'hello',
+      status: 'queued',
+      startedBy: 'user_1',
+      startedByEmail: 'member@example.test',
+      startedAt: 1_700_000_000_000,
+    })
+    // What it is NOT: the run-row fields have no meaning until the run exists.
+    expect(row).not.toHaveProperty('definition')
+    expect(row).not.toHaveProperty('outputs')
+  })
+
+  it('never carries the driver nonce, however a response smuggled it in', () => {
+    expect(toRunsPageRow({ ...claim, driveKey: 'nonce-abc' })).not.toHaveProperty('driveKey')
+    expect(toRunsPageRow({ fields: { ...claim, driveKey: 'nonce-abc' } })).not.toHaveProperty('driveKey')
+  })
+
+  it('reads a queued entry kept under `fields`, and a run row as a run row', () => {
+    expect(toRunsPageRow({ id: 'rec_1', fields: claim }).status).toBe('queued')
+    const run = toRunsPageRow({ runId: 'run_1', status: 'succeeded' })
+    expect(isQueuedRun(run)).toBe(false)
+    expect(run.status).toBe('succeeded')
+  })
+
+  it('reads an unknown status as a run that is under way, exactly as before', () => {
+    const row = toRunsPageRow({ runId: 'run_1', status: 'pending' })
+    expect(isQueuedRun(row)).toBe(false)
+    expect(row.status).toBe('running')
   })
 })
 

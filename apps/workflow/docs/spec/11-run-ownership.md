@@ -226,8 +226,12 @@ while `runs/post` is issued by the SPA running *inside* the page; the driver ins
 nonce with a Playwright route on `/api/workflow/**` + `/api/uploads/**`, so every in-page request
 the harness itself makes carries it too.
 
-**Deferred:** surfacing an unconsumed claim in the list as a `queued` run — a real improvement
-(the window between dispatch and pickup is blind today) but not part of the boundary.
+**Since apps#671:** an unconsumed claim *is* surfaced in the list as a `queued` run. It was
+deferred out of the boundary here — the window between dispatch and pickup was blind — and
+`runs/get` now runs a third pair of scoped queries over `workflow_run_claims` and stands each
+claim with no run row of its own up as a synthetic `status: 'queued'` entry. It is a listing
+only: `RunStatus` is unchanged, nothing that switches on a run's status is ever handed one, and
+the claim's `driveKey` stays off the wire (D28) because the entry is built from an allow-list.
 
 ## Files follow the run (D29)
 
@@ -276,5 +280,5 @@ per request is fine.
 ## Not in this document
 
 Sharing/grants (the gate is shaped for it; the table is not built) · a cross-workflow "my runs"
-page · queued claims in the list · guest/public runs (already backlog in 06) · per-user
-partitioning of the `inputs/` area.
+page · ageing out a claim nobody consumed (apps#672 — listing one is apps#671, above) ·
+guest/public runs (already backlog in 06) · per-user partitioning of the `inputs/` area.

@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import App from '../App'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import { loadWorkflow } from '../lib/runner/definition'
-import { seedFinishedRun } from '../mocks/db'
+import { db, MOCK_MEMBER, seedFinishedRun } from '../mocks/db'
 import { FIXTURE_RUN_ID } from '../mocks/fixtures/finishedRun'
 import { server } from '../mocks/server'
 import { makeStore } from '../store'
@@ -113,6 +113,35 @@ describe('WorkflowPage', () => {
     const link = await within(page).findByRole('link', { name: new RegExp(FIXTURE_RUN_ID) })
     expect(link).toHaveAttribute('href', `/hello/hello/runs/${FIXTURE_RUN_ID}`)
     expect(within(page).getByText('Succeeded')).toHaveAttribute('data-state', 'succeeded')
+  })
+
+  /**
+   * "Recent runs" reads the same list query Past runs does, so it sees the
+   * dispatched runs nobody has picked up yet too (apps#671). It shows only a
+   * pill, an id and a time — all three of which a queued entry has — so it
+   * needs no branch of its own: what it must not do is drop the newest thing
+   * that happened to this workflow on the floor.
+   */
+  it('shows a dispatched run among them, as Queued (apps#671)', async () => {
+    const QUEUED_RUN_ID = 'run_dispatched'
+    seedFinishedRun()
+    db.claims.set(QUEUED_RUN_ID, {
+      runId: QUEUED_RUN_ID,
+      impl: 'hello',
+      workflow: 'hello',
+      startedBy: MOCK_MEMBER.id,
+      startedByEmail: MOCK_MEMBER.email,
+      driveKey: 'nonce-abc',
+      createdAt: Date.parse('2026-09-11T10:00:00Z'),
+    })
+    renderApp()
+
+    const page = screen.getByRole('main')
+    const link = await within(page).findByRole('link', { name: new RegExp(QUEUED_RUN_ID) })
+    expect(link).toHaveAttribute('href', `/hello/hello/runs/${QUEUED_RUN_ID}`)
+    expect(within(page).getByText('Queued')).toHaveAttribute('data-state', 'queued')
+    // And the runs themselves are still there, newest first.
+    expect(within(page).getByRole('link', { name: new RegExp(FIXTURE_RUN_ID) })).toBeInTheDocument()
   })
 
   it('reports the lint errors and offers no Start when the workflow does not validate', async () => {

@@ -14,7 +14,7 @@ prototype's "Workflow Graph A" artboard.
 | `/<impl>` | **Workflows** of one implementation — list with description, inputs count, jobs count, headless-safe, last run status |
 | `/<impl>/<workflow>` | **Workflow** — the graph (below) in *definition* mode, a picked job's **declared rows** under it + "Start a run" + recent runs |
 | `/<impl>/<workflow>/run` | **Kickoff** — the form from `on.manual.inputs`; Start creates the run and navigates to it. `?from=<runId>` prefills it for Re-run; `?auto=1&inputs=<base64url(JSON)>` is the headless entry (07) — no form at all, a `kickoff-auto` notice while the run starts, or a `kickoff-invalid` list of the values it refused |
-| `/<impl>/<workflow>/runs` | **Past runs** — table: status (a running run parked on a step says "waiting on <step>" beside its pill, linked to that step), started by/at, duration, annotations count, outputs summary; filter by status; Re-run |
+| `/<impl>/<workflow>/runs` | **Past runs** — table: status (a running run parked on a step says "waiting on <step>" beside its pill, linked to that step; a dispatched run nobody has picked up yet reads **Queued**), started by/at, duration, annotations count, outputs summary; filter by status, Queued included; Re-run |
 | `/<impl>/<workflow>/runs/<runId>` | **Summary** — the jobs-only graph in *run* mode + the run card: its inputs, then its results (folded into rows, unlike the kickoff inputs beside them, which stay open), its annotations and a summary section per job. An old `?step=` here redirects (replace) to the step's job page |
 | `/<impl>/<workflow>/runs/<runId>/job/<job>` | **Job page** — the job head, the job's inputs disclosure, the step rows, then the **Job output** section; `?step=<key>` names the row that is open. A matrix job with no index is the **collect view**: the collected outputs and one link per item |
 | `/<impl>/<workflow>/runs/<runId>/job/<job>/<index>` | **Matrix item** — the same page for one leg of a matrix job |
@@ -270,7 +270,18 @@ Table with status, started by, started at, duration, outputs (count + first file
 annotations; row click → run; "Re-run" per row; filters: status, started by, date.
 
 Every cell comes from the run row alone — the list endpoint returns no step rows — with one
-join: a **running** run whose steps include one in `waiting` says **"waiting on \<step\>"** in
+join and one exception.
+
+The exception is a row that has no run behind it yet (apps#671, spec 11 §Attribution): a run
+that was **dispatched and not picked up**, which the list endpoint stands up from its
+unconsumed `workflow_run_claims` row as a synthetic `status: 'queued'` entry. It knows only
+who asked and when, so duration, annotations and outputs read `—` (not known, not empty) and
+**Re-run is hidden** — it prefills a kickoff from a run row that does not exist yet. The run
+id still links: it resolves the moment the row lands, and until then reads as the not-found
+state an unreachable run already shows. `RunStatus` is untouched; `Queued` joins the status
+filter, second, in lifecycle order.
+
+The join is that a **running** run whose steps include one in `waiting` says **"waiting on \<step\>"** in
 its Status cell, under the pill (`run-waiting`). The list endpoint attaches the keys of the
 run's `waiting` step rows to each run record (`waitingOn`, joined at list time, never
 persisted); the step's name is the one the run page gives it (`name`, else its id), resolved
