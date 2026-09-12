@@ -149,11 +149,16 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   step rows and run rows by `runId in`. Nothing is conditioned: an empty list is each handler's
   own no-op, so a quiet night runs every step and reports zeros. `inputs/` is never touched (D18).
   The 200 is `{"ok":true,"swept":n,"deferred":n,"skipped":n,"deleted":{"files":n,"records":n,"steps":n,"runs":n}}`:
-  **`deferred`** counts runs whose bytes and found records went but whose rows were kept because
-  the `records` scan came back truncated (5000 rows) — the next pass selects them again and sees
-  the rest, the same retryable state a half-done run/delete leaves; a `deferred` that never drops
-  to 0 means the live table has outgrown the scan, so raise the `records` limit **and**
-  `SCAN_LIMIT` in `targets.fn.js` together (the parity test holds them equal). **`skipped`**
+  **`deferred`** counts due runs the pass left **entirely** untouched because it could not trust
+  the `records` scan — it came back truncated (5000 rows), or blind (rows, but no `sub_dir` on
+  any) — so every list was emptied and nothing was deleted; deferral is whole-run on purpose
+  (bytes gone with rows kept is the state run/delete only reaches by failing, and a sweep must
+  not reach it by design). The next pass selects the same runs again; a `deferred` that never
+  drops to 0 means the live table has outgrown the scan, so raise the `records` limit **and**
+  `SCAN_LIMIT` in `targets.fn.js` together (the parity test holds them equal). What the rule
+  leans on in CE is cited in `targets.fn.js`: `data_query` spreads every stored column back
+  (`sub_dir` included, adopted or not), `data_delete` takes `in` since ce#675 (v0.3.3) and an
+  empty list is a match-nothing predicate, `file_delete` `prefixes` answers `deleted`. **`skipped`**
   counts due rows the sweep would not build a prefix for (an `impl`, `workflow` or `runId` with a
   `/`, `..`, `{` or whitespace — one bad `file_delete` entry aborts the whole step, so such a row
   is left for an operator rather than risked). `records: 0` beside a non-zero `files` is the same
@@ -374,7 +379,14 @@ never consults `runGate` either — `rules.fence.test.ts` places it as NEITHER a
 validator, no gate, and list-only deletes. The sweep's `file_delete` runs in `prefixes` mode, which
 is why `requires.ceMin` is `0.4.58` (bffless/ce#792): on an older CE the step fails config
 validation and nothing is deleted. Running it by hand (a keyed `POST` from a member, or the admin
-panel's *Run now*) is the same pass the schedule makes.
+panel's *Run now*) is the same pass the schedule makes — any member can, and it deletes other
+members' due runs; spec 11 §Neither records why that is accepted.
+
+**Read the first pass on each instance** (the admin panel's pipeline log, or the 200 of a by-hand
+`POST`): `deferred` should be `0`, and `records` non-zero whenever `files` is. `install.schedules`
+ships in the next catalog bundle, so a fresh catalog install sweeps unattended from its first
+night — which is why the rule's CE assumptions are cited in `targets.fn.js` rather than left to
+that first pass.
 
 ## First-success checkpoint
 

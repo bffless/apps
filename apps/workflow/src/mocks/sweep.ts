@@ -43,6 +43,7 @@ export interface DueRow {
 export interface SweepTargets {
   scanLimit: number
   scanTruncated: boolean
+  scanBlind: boolean
   runIds: string[]
   prefixes: string[]
   subDirs: string[]
@@ -59,8 +60,10 @@ const segment = (s: unknown): s is string => typeof s === 'string' && SEGMENT.te
 /**
  * `targets.fn.js`, in TypeScript: which of the due rows are swept (terminal,
  * expired, every segment safe for a `file_delete` template), their prefixes,
- * the exact `sub_dir`s the scan found under them, and — unless the scan was
- * truncated — the ids whose rows go this pass.
+ * the exact `sub_dir`s the scan found under them, and the ids whose rows go
+ * this pass. Deferral is whole-run: a scan that is truncated (`SCAN_LIMIT`
+ * rows) or blind (rows, but no `sub_dir` on any) empties every list, so the
+ * pass deletes nothing and reports every due run as `deferred`.
  */
 export function sweepTargets(
   due: readonly (DueRow | null | undefined)[],
@@ -88,26 +91,32 @@ export function sweepTargets(
   const scanTruncated = records.length >= SCAN_LIMIT
   const subDirs: string[] = []
   const seenDir = new Set<string>()
+  let dirsSeen = 0
   for (const rec of records) {
     const dir = rec?.sub_dir
-    if (typeof dir !== 'string' || seenDir.has(dir)) continue
+    if (typeof dir !== 'string') continue
+    dirsSeen += 1
+    if (seenDir.has(dir)) continue
     if (prefixes.some((prefix) => `${dir}/`.startsWith(prefix))) {
       seenDir.add(dir)
       subDirs.push(dir)
     }
   }
 
-  const rowRunIds = scanTruncated ? [] : runIds
+  const scanBlind = records.length > 0 && dirsSeen === 0
+  const defer = scanTruncated || scanBlind
+  const swept = defer ? [] : runIds
   return {
     scanLimit: SCAN_LIMIT,
     scanTruncated,
+    scanBlind,
     runIds,
-    prefixes,
-    subDirs,
-    rowRunIds,
+    prefixes: defer ? [] : prefixes,
+    subDirs: defer ? [] : subDirs,
+    rowRunIds: swept,
     count: runIds.length,
-    swept: rowRunIds.length,
-    deferred: scanTruncated ? runIds.length : 0,
+    swept: swept.length,
+    deferred: defer ? runIds.length : 0,
     skipped,
   }
 }

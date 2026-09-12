@@ -215,7 +215,12 @@ file's bytes read storage by path (Replicate/ffmpeg handlers already do).
 
 - Harness pipelines are `auth_required`; the user is a **project member** (any project role)
   signed in through the admin login relay. Wiring: reverse-proxy `/auth` → backend `/auth` as
-  the other apps do; `/_bffless/auth/*` only for custom-domain installs.
+  the other apps do; `/_bffless/auth/*` only for custom-domain installs. **One exception (05
+  §Retention, apps#615):** the nightly sweep, `POST /api/workflow/sweep`, carries no validator —
+  a `pipeline_schedule` fires it as a userless system run, which `auth_required` refuses — and is
+  protected by the private alias instead (anonymous HTTP is edge-bounced before it reaches the
+  pipeline; the scheduler bypasses the edge). It is the only rule of the set without one, and
+  `rules.fence.test.ts` holds it to that shape.
 - ~~All members see all runs~~ — **superseded by D26 (11)**: a run belongs to `started_by`, and
   every surface defaults to the caller's own runs; a project owner/admin sees all runs only by
   asking (`scope=all`). Delete stays owner-or-admin, now on the shared gate. The file rules

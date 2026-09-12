@@ -16,15 +16,30 @@
  *               can anchor on ONE prefix; N runs need the exact directories —
  *               and `sub_dir` carries the runId, so an exact match can never
  *               reach another run's rows (the `run_1` / `run_10` case below).
- *   rowRunIds — the runs whose step rows and run row go this pass: all of
- *               them, unless the scan was TRUNCATED (it came back `scanLimit`
- *               rows long), in which case none. Their bytes and the records
- *               found still go; the rows stay, so the next pass selects the
- *               same runs again and finds the records this one could not see.
- *               A deferred run is the state a `run/delete` that failed after
- *               `files` leaves — retryable, never orphaned — and `deferred` in
- *               the 200 makes it visible. A `deferred` that never drops to 0
- *               means the live table has outgrown the scan: raise its `limit`.
+ *   rowRunIds — the runs whose step rows and run row go this pass.
+ *
+ * Deferral is WHOLE-RUN. When the scan is TRUNCATED (it came back `scanLimit`
+ * rows long) or BLIND (it returned rows but not one carries a string
+ * `sub_dir` — the shape a schema projection would leave), this pass cannot
+ * know which records belong to the due runs, so it deletes NOTHING: every
+ * list is empty, every due run is reported as `deferred`, and the next pass
+ * selects the same runs again. Never bytes without rows — that is the state a
+ * `run/delete` only reaches by FAILING after `files`, and a sweep must not
+ * reach it by design. A `deferred` that never drops to 0 means the live table
+ * has outgrown the scan: raise the `records` limit and SCAN_LIMIT together.
+ *
+ * What CE guarantees, cited because a mock twin cannot prove it: `data_query`
+ * spreads every stored column into each record (`data-query.handler.ts`
+ * "Return all fields": `{ id, alias, version, ...data, createdAt, updatedAt }`
+ * — no projection through the declared schema, so `sub_dir` comes back
+ * whether or not the live schema has adopted it); `data_delete` accepts `in`
+ * through the shared `filter-where.util.ts` since bffless/ce#675 (2026-08-16,
+ * first in v0.3.3, far below this app's `ceMin`), and an empty list compiles
+ * to a match-nothing predicate (`in-filter.util.spec.ts` "compiles an empty
+ * array to a match-nothing predicate"), never to no predicate; `file_delete`
+ * in `prefixes` mode answers `{ deleted, prefixes, dryRun }` and treats an
+ * empty list as `deleted: 0` (`file-delete.handler.ts` deleteManyPrefixes,
+ * ce#792 / v0.4.58 — the `ceMin`).
  *
  * Every entry of `prefixes` is a `file_delete` TEMPLATE, resolved and guarded
  * before any storage call, and ONE bad entry aborts the WHOLE step
@@ -81,9 +96,12 @@ function handler(data) {
   const scanTruncated = scan.length >= SCAN_LIMIT
   const subDirs = []
   const seenDir = {}
+  let dirsSeen = 0
   for (const rec of scan) {
     const dir = rec && rec.sub_dir
-    if (typeof dir !== 'string' || seenDir[dir]) continue
+    if (typeof dir !== 'string') continue
+    dirsSeen += 1
+    if (seenDir[dir]) continue
     // `dir + '/'`, so a record AT the run root (no segment past the prefix)
     // matches too, and `…/runs/run_1/` can never match `…/runs/run_10/x`.
     for (const prefix of prefixes) {
@@ -95,17 +113,21 @@ function handler(data) {
     }
   }
 
-  const rowRunIds = scanTruncated ? [] : runIds
+  // Blind: rows came back but none shows a `sub_dir` — fail closed.
+  const scanBlind = scan.length > 0 && dirsSeen === 0
+  const defer = scanTruncated || scanBlind
+  const swept = defer ? [] : runIds
   return {
     scanLimit: SCAN_LIMIT,
     scanTruncated,
+    scanBlind,
     runIds,
-    prefixes,
-    subDirs,
-    rowRunIds,
+    prefixes: defer ? [] : prefixes,
+    subDirs: defer ? [] : subDirs,
+    rowRunIds: swept,
     count: runIds.length,
-    swept: rowRunIds.length,
-    deferred: scanTruncated ? runIds.length : 0,
+    swept: swept.length,
+    deferred: defer ? runIds.length : 0,
     skipped,
   }
 }

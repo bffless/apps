@@ -143,7 +143,13 @@ tool arguments rather than the query string, and is otherwise the same two-query
 its `resume` mode), `_custom/well-known`, `api/auth/*`, `api/workflow/mcp` — and `sweep/post`, the
 nightly retention sweep (05), which names many runs but has no caller: a `pipeline_schedule`
 fires it with no user at all, so there is nothing to judge — it carries no validator, never
-consults the gate, and the private alias is its protection.
+consults the gate, and the private alias is its protection. The corollary is recorded here rather
+than left implicit: **any project member, of any role, can fire the sweep by hand** (a keyed
+`POST`, or *Run now* in the admin panel), and it will delete other members' runs. That widens
+D26 by exactly the amount each workflow's own `keep:` already conceded — the sweep deletes only
+runs that are due by their declared retention and finished, never a running one, and a member
+who could fire it early gains at most a few hours over the schedule. Accepted; a gate here would
+have to admit a caller that does not exist.
 
 > The MCP tool rules are **generated** (`scripts/build-mcp.mjs` from `src/mcp/mcpConfig.ts` —
 > "do not edit"). The gate goes in the generator; `bundle.test.ts` keeps the committed files

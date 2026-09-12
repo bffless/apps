@@ -2,7 +2,7 @@ targetUrl: pipeline
 order: 26
 pipeline:
   name: Sweep expired runs (retention)
-  description: "POST, no body — the nightly retention sweep (spec 05 §Retention, apps#615). Fired by a pipeline_schedule as a USERLESS system run, so it carries no auth_required validator (a userless run fails it — the reader's /api/prune precedent) and never consults runGate (there is no caller to judge); the private alias is its protection. Selects terminal runs whose expiresAt has passed — never a `running` one, however long it has been parked — and deletes each the way run/delete does, in the same order and with the same idempotency: every object under its run prefix (file_delete `prefixes`, CE >= 0.4.58), the workflow_files records under it, its step rows, its run row. Kickoff inputs/ are never touched (D18). One pass is bounded; what it does not reach tonight it reaches tomorrow."
+  description: "POST, no body — the nightly retention sweep (spec 05 §Retention, apps#615). Fired by a pipeline_schedule as a USERLESS system run, so it carries no auth_required validator (a userless run fails it — the reader's /api/prune precedent) and never consults runGate (there is no caller to judge); the private alias is its protection. Selects terminal runs whose expiresAt has passed — never a `running` one, however long it has been parked — and deletes each the way run/delete does, in the same order and with the same idempotency: every object under its run prefix (file_delete `prefixes`, CE >= 0.4.58), the workflow_files records under it, its step rows, its run row. Kickoff inputs/ are never touched (D18). One pass is bounded, and all-or-nothing per run: a records scan it cannot trust (truncated, or blind to sub_dir) defers every due run whole rather than deleting bytes it would then have to leave rows for. Any project member may fire it by hand — it deletes only what each workflow's own keep: already made due (11)."
   steps:
     # The instant, the statuses and the scan pattern the filters below compare
     # against — from a function, because every filter `value` is evaluated as
@@ -35,8 +35,11 @@ pipeline:
     # prefix and this pass has many, which is why the rows are read and matched
     # rather than deleted by pattern. `inputs/` rows never match the pattern.
     # `limit` MUST equal SCAN_LIMIT in targets.fn.js (the parity test holds them
-    # equal): a scan that comes back this long is treated as truncated, and the
-    # pass then keeps every run's rows for the next night (see targets.fn.js).
+    # equal): a scan that comes back this long is truncated, and the pass then
+    # deletes NOTHING — every due run is deferred whole to the next night (see
+    # targets.fn.js). `sub_dir` is read back off each record whether or not the
+    # live schema has adopted the column: data_query spreads every stored field
+    # (data-query.handler.ts "Return all fields", `...data`), no projection.
     - id: records
       name: records
       handler: data_query
@@ -45,11 +48,15 @@ pipeline:
         limit: 5000
         filters:
           sub_dir: { op: like, value: steps.cutoff.scanLike }
-    # The four lists the deletes below consume. No `condition` on any of them:
-    # an empty list is each handler's own no-op (`prefixes: []` → `deleted: 0`;
-    # `in []` → a match-nothing predicate, `count: 0`), so a night with nothing
-    # due runs every step and reports zeros — and `respond` can name every
-    # count without a skipped step leaving a hole in its JSON.
+    # The lists the deletes below consume. No `condition` on any of them: an
+    # empty list is each handler's own no-op — `prefixes: []` → `deleted: 0`
+    # (file-delete.handler.ts deleteManyPrefixes, ce#792); `in []` → the
+    # match-nothing predicate `false`, never NO predicate (in-filter.util.ts,
+    # pinned by in-filter.util.spec.ts "compiles an empty array to a
+    # match-nothing predicate"; data_delete takes `in` through the shared
+    # filter-where.util.ts since ce#675, v0.3.3) — so a night with nothing due
+    # runs every step and reports zeros, and `respond` can name every count
+    # without a skipped step leaving a hole in its JSON.
     - id: targets
       name: targets
       handler: function_handler
@@ -98,11 +105,13 @@ pipeline:
           runId: { op: in, value: steps.targets.rowRunIds }
           status: { op: in, value: steps.cutoff.terminal }
           expiresAt: { op: lt, value: steps.cutoff.now }
-    # Numbers only, each rendered bare by `{{…}}`. `swept` counts runs whose
-    # rows went; `deferred` runs whose bytes went but whose rows wait for a
-    # pass that can see all their records; `skipped` due rows the sweep would
-    # not build a prefix for. `records: 0` beside a non-zero `files` is the
-    # same signature run/delete documents: the `sub_dir` shape stopped matching.
+    # Numbers only, each rendered bare by `{{…}}` (`files.deleted` is the key
+    # prefixes mode answers with — deleteManyPrefixes `{ deleted, prefixes,
+    # dryRun }`). `swept` counts runs deleted whole; `deferred` due runs this
+    # pass left untouched because the records scan was truncated or blind;
+    # `skipped` due rows the sweep would not build a prefix for. `records: 0`
+    # beside a non-zero `files` is the same signature run/delete documents: the
+    # `sub_dir` shape stopped matching.
     - id: respond
       name: respond
       handler: response_handler
