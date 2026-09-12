@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/bffless/apps/compare/studio-v1.15.0...studio-v1.15.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **studio:** the dashboard orders projects by creation time, not last edit ([#691](https://github.com/bffless/apps/issues/691)) ([f8b55e8](https://github.com/bffless/apps/commit/f8b55e89e39e4e57d5277bc5d53d6b9864080411))
+
 ## [1.15.0](https://github.com/bffless/apps/compare/studio-v1.14.0...studio-v1.15.0) (2026-09-05)
 
 

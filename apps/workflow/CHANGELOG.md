@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.13.0](https://github.com/bffless/apps/compare/workflow-v1.12.1...workflow-v1.13.0) (2026-09-12)
+
+
+### Features
+
+* **workflow-lint:** expressions grow `+ * /` and `floor()` as a third documented deviation ([#687](https://github.com/bffless/apps/issues/687)) ([54dfe52](https://github.com/bffless/apps/commit/54dfe527ff630db9e25345aa23ca76cfb50e7194))
+* **workflow:** `on.manual.warnings` — live cautions on the kickoff form, with a media file's measured duration ([#689](https://github.com/bffless/apps/issues/689)) ([21c6a5d](https://github.com/bffless/apps/commit/21c6a5de78d4d9a900c75c6d73053d473f2ed4ce))
+* **workflow:** top-level `keep:` stamps `expiresAt` on every run (part A of [#615](https://github.com/bffless/apps/issues/615)) ([#688](https://github.com/bffless/apps/issues/688)) ([a6371b2](https://github.com/bffless/apps/commit/a6371b24f39e12528de541905aaba538b13f5f07))
+
 ## [1.12.1](https://github.com/bffless/apps/compare/workflow-v1.12.0...workflow-v1.12.1) (2026-09-12)
 
 
