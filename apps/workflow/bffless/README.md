@@ -41,7 +41,15 @@ dev/CI in `apps/workflow/hello.ref` and no longer owns hello's sources.
   `workflow` by this repo's deploy; rule set `hello` is attached to BOTH the `hello` alias and
   the `workflow` (harness) alias by `bffless/publish-workflow@v1` running in
   workflow-implementations' own CI (ADR-0001 single origin) — nothing in this repo's deploy
-  touches it. The harness domain is
+  touches it (`upload-artifact`'s `proxy-rule-set-names` appends idempotently, so sibling
+  attachments such as `capture` and `workflow-studio` survive every deploy). **Two instances
+  since apps#695:** `deploy-workflow.yml` deploys the same build to `workflow.j5s.dev`
+  (`vars.BFFLESS_URL` + `secrets.BFFLESS_WORKFLOW_API_KEY`) and then, on `push: main` only, to
+  `workflow.bffless.dev` (`vars.BFFLESS_DEV_URL` + `secrets.BFFLESS_DEV_API_KEY`); a branch
+  `workflow_dispatch` stops at j5s unless its `production` input is ticked. Both instances
+  host the project under the same name `bffless/workflow`, which is what lets one artefact
+  (with `VITE_BFFLESS_PROJECT` baked) serve both — rename the project on one and drop the
+  bake. The harness domain is
   the manual half: `workflow.<domain>` → alias `workflow`, path `/apps/workflow/dist`, **SPA
   fallback on**, `unauthorizedBehavior: redirect_login` + `requiredRole: authenticated` (a
   signed-out member lands on the login page instead of a 404). An implementation domain is
@@ -291,7 +299,7 @@ the pre-merge rule bodies over the deploy's (it happened on j5s, 2026-09-12):
 
 ```bash
 git pull --ff-only origin main
-npx --yes bffless@0.3.6 rules push .bffless/proxy-rules/workflow --api-url <instance admin url> --api-key "$KEY" --project bffless/workflow --adopt-fields
+npx --yes bffless rules push .bffless/proxy-rules/workflow --api-url <instance admin url> --api-key "$KEY" --project bffless/workflow --adopt-fields
 ```
 
 **New schema `workflow_run_claims`** — `{ runId, impl, workflow, startedBy, startedByEmail?,

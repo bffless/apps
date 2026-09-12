@@ -2,10 +2,19 @@ name: Deploy Workflow harness to BFFless
 # One build, two instances, in order: workflow.j5s.dev (the test harness) first,
 # then workflow.bffless.dev (production, the one the Claude Desktop connector
 # talks to). A failed j5s deploy stops before production. Each target is a
-# `vars.<X>_URL` + `secrets.<X>_API_KEY` pair on this repo; the production job
-# is skipped (not failed) while `BFFLESS_DEV_URL` is unset.
+# `vars.<X>_URL` + `secrets.<X>_API_KEY` pair on this repo. Production deploys
+# on `push: main` only — a `workflow_dispatch` on a branch (the documented way
+# to put an unmerged build on the j5s gate host) stops at j5s unless the
+# `production` input is ticked — and is skipped (not failed) while either
+# `vars.BFFLESS_DEV_URL` or `secrets.BFFLESS_DEV_API_KEY` is unset (the secret
+# is probed in `build`, since `secrets` is unavailable in a job-level `if`).
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      production:
+        description: 'Also deploy to workflow.bffless.dev (default: j5s only)'
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths: ['apps/workflow/**']
@@ -13,7 +22,11 @@ concurrency: { group: deploy-workflow, cancel-in-progress: false }
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      has-dev-key: ${{ steps.probe.outputs.has-dev-key }}
     steps:
+      - id: probe
+        run: echo "has-dev-key=${{ secrets.BFFLESS_DEV_API_KEY != '' }}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -79,9 +92,9 @@ jobs:
           proxy-rule-set-names: workflow
 
   deploy-bffless-dev:
-    needs: deploy-j5s
+    needs: [build, deploy-j5s]
     runs-on: ubuntu-latest
-    if: vars.BFFLESS_DEV_URL != ''
+    if: needs.build.outputs.has-dev-key == 'true' && vars.BFFLESS_DEV_URL != '' && (github.event_name == 'push' || inputs.production == true)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
