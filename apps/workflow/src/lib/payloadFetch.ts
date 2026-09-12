@@ -47,7 +47,16 @@ export async function fetchPayload(ref: FileRef): Promise<unknown> {
     // and this is a sink like any other. The header is what CE actually reads
     // here — the query string is belt to its braces, and costs nothing.
     const res = await fetch(viewUrl(ref.url), { credentials: 'same-origin', headers: scopeHeaders() })
-    if (!res.ok) return unavailable(ref, `the payload request answered ${res.status}`)
+    if (!res.ok) {
+      // Read and drop the body rather than abandon it: a `Response` left
+      // unread keeps the request in flight as far as the browser's network
+      // stack is concerned, and a page that answers one 404 here then never
+      // reaches network-idle (the 2026-09-12 `hello` walk: Playwright's
+      // `networkidle` held open for the full 30 s on a gated `big.json`). The
+      // bytes are an error envelope, never large.
+      await res.text().catch(() => undefined)
+      return unavailable(ref, `the payload request answered ${res.status}`)
+    }
     return await res.json()
   } catch (err) {
     return unavailable(ref, messageOf(err))
