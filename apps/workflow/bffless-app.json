@@ -3,7 +3,7 @@
   "id": "workflow",
   "name": "Workflow",
   "version": "1.13.0",
-  "summary": "Run reviewable, resumable AI workflows — interactive or headless — against your own BFFless project.",
+  "summary": "Run reviewable, resumable AI workflows \u2014 interactive or headless \u2014 against your own BFFless project.",
   "category": "automation",
   "sourceUrl": "https://github.com/bffless/apps/tree/main/apps/workflow",
   "requires": {
@@ -37,7 +37,7 @@
       {
         "id": "install-implementations",
         "title": "Publish an implementation",
-        "body": "The harness starts empty. Publish an implementation (e.g. hello) into project {projectPath} with bffless/publish-workflow — see the workflow-implementations repo.",
+        "body": "The harness starts empty. Publish an implementation (e.g. hello) into project {projectPath} with bffless/publish-workflow \u2014 see the workflow-implementations repo.",
         "externalLink": {
           "label": "workflow-implementations",
           "url": "https://github.com/bffless/workflow-implementations"
@@ -51,10 +51,12 @@
     "appPath": "apps/workflow",
     "deployWorkflow": ".github/workflows/deploy-workflow.yml",
     "variables": [
-      "BFFLESS_URL"
+      "BFFLESS_URL",
+      "BFFLESS_DEV_URL"
     ],
     "secrets": [
-      "BFFLESS_API_KEY"
+      "BFFLESS_API_KEY",
+      "BFFLESS_DEV_API_KEY"
     ]
   }
 }
