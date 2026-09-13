@@ -105,7 +105,7 @@ export function cellGeometry(sheet: ContactSheet): {
   cellHeight: number
   gap: number
 } {
-  // Gap has always been 2px in `composeContactSheet`; trust a stored value if set.
+  // Gap has always been 2px in the server-composed sheets; trust a stored value if set.
   const gap = sheet.gap || 2
   if (sheet.cellWidth && sheet.cellHeight) {
     return { cellWidth: sheet.cellWidth, cellHeight: sheet.cellHeight, gap }

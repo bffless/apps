@@ -37,7 +37,7 @@ their own project (attach BOTH to the app's alias) — see
 rules, edit the source under `.bffless/proxy-rules/<set>/` and commit — CI syncs it to the project on
 deploy; check for drift with `npx bffless rules diff`.
 
-Server-side video ops (`/api/video/{capabilities,slice,concat,extract-audio}`, CE's `ffmpeg_handler`) unlock on CE ≥ 0.4.25; the client probes once per session and falls back to `ffmpeg.wasm` on older CE. On CE ≥ 0.4.31 the probe also lists `executors` (`local` = ffmpeg in the backend, `remote` = the Cloud Run Worker) and the picker on the Auto Build board / prep card chooses **Browser | Server (auto) | Local server | Remote** (`src/lib/videoBackend.ts`; `?videoBackend=wasm|server|local|remote` override, persisted). Explicit choices send `executor` on the job body (the video rules pass it through); Auto Build's ffmpeg lane widens to `min(8, scenes)` when the *effective* executor is Remote (Remote chosen, or Server (auto) on an instance whose default executor is Remote) (`src/lib/autoBuild.ts`), and `FFMPEG_BUSY` job errors are retried (`src/lib/videoJobRetry.ts`; needs ce#662 for the code to reach the job row).
+Server-side video ops (`/api/video/{capabilities,slice,concat,extract-audio,contact-sheet,frames}`, CE's `ffmpeg_handler`) unlock on CE ≥ 0.4.25; the client probes once per session and falls back to `ffmpeg.wasm` on older CE. Contact sheets, scene card thumbs and blog frames are server-only (no browser fallback; CE ≥ 0.4.35 for the `frames` op). On CE ≥ 0.4.31 the probe also lists `executors` (`local` = ffmpeg in the backend, `remote` = the Cloud Run Worker) and the picker on the Auto Build board / prep card chooses **Browser | Server (auto) | Local server | Remote** (`src/lib/videoBackend.ts`; `?videoBackend=wasm|server|local|remote` override, persisted). Explicit choices send `executor` on the job body (the video rules pass it through); Auto Build's ffmpeg lane widens to `min(8, scenes)` when the *effective* executor is Remote (Remote chosen, or Server (auto) on an instance whose default executor is Remote) (`src/lib/autoBuild.ts`), and `FFMPEG_BUSY` job errors are retried (`src/lib/videoJobRetry.ts`; needs ce#662 for the code to reach the job row).
 
 ## The locked pipeline
 
@@ -47,7 +47,8 @@ Import → Prep → Build → Export):
 1. **Upload source** → bucket (presigned, story 01)
 2. **Extract + upload audio** (16 kHz mono WAV → bucket, story 01b)
 3. **Transcribe** with word timestamps (WhisperX, story 02)
-4. **Contact sheet** — interval-sampled frames composed into one timestamped image (browser-side)
+4. **Contact sheet** — interval-sampled frames tiled into timestamped sheets **on the server**
+   (`/api/video/contact-sheet`, CE's ffmpeg `frames` op with draw + tile, CE ≥ 0.4.35)
 5. **Master director** — `/api/scenes`: transcript + contact sheets → `google/gemini-3.1-pro` →
    `{ synopsis, scenes[] }`, each scene `{ title, start, end, transcript, refinePrompt, cuts[] }` (story 03)
 

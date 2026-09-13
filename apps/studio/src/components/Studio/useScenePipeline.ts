@@ -377,15 +377,8 @@ export function useScenePipeline() {
   // Per-source processing (story 09b): which source id is currently running its
   // upload → extract → transcribe pipeline. Transient — fine to lose on reload.
   const [processingId, setProcessingId] = useState<string | null>(null)
-  // The just-captured contact sheets, shown immediately while they upload. They
-  // carry the heavy base64 `dataUrl`, so they live here (transient) and NEVER in
-  // Redux/localStorage — only the uploaded sheets (bucket URL, empty dataUrl) are
-  // committed to the persisted slice.
-  const [pendingSheets, setPendingSheets] = useState<ContactSheet[]>([])
 
-  // Once uploaded, the persisted bucket-URL sheets win; until then show the
-  // local previews. Never both — the upload swap clears the pending set.
-  const contactSheets = persistedSheets.length ? persistedSheets : pendingSheets
+  const contactSheets = persistedSheets
 
   const patch = useCallback(
     (id: StageId, p: Parameters<typeof patchStage>[0]['patch']) =>
@@ -410,7 +403,6 @@ export function useScenePipeline() {
   )
 
   const reset = useCallback(() => {
-    setPendingSheets([])
     dispatch(resetProject())
   }, [dispatch])
 

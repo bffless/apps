@@ -3,7 +3,7 @@ import { buildFilmstrip, frameAt, frameForRow, spriteStyle, type FilmFrame } fro
 import type { ContactSheet } from './frames'
 
 /** A minimal contact sheet: a `cols`×N grid of `cellW`×`cellH` cells with a 2px
- *  gap, sampled at the given times. Geometry mirrors `composeContactSheet`. */
+ *  gap, sampled at the given times. Geometry mirrors the server-composed sheets. */
 function sheet(times: number[], opts: Partial<ContactSheet> = {}): ContactSheet {
   const cols = opts.cols ?? 3
   const rows = Math.ceil(times.length / cols)
