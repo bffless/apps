@@ -11,7 +11,6 @@ import {
   rewriteFrameTokens,
   blogImageRefs,
   planBlogSiblings,
-  blogReframeFileName,
   type BlogImageRef,
 } from '../../lib/blog'
 import { buildThumbnailDraftRequest, toThumbnailPrompt, toThumbnailImage } from '../../lib/thumbnail'
@@ -38,10 +37,7 @@ import { STALE_RENDER_PATCH } from '../../lib/autoBuild'
 import { createSemaphore } from '../../lib/semaphore'
 import { buildSliceCommand } from '../../lib/export/slice'
 import { slice as ffmpegSlice, sliceSourcePath } from '../../lib/export/ffmpeg'
-import {
-  captureFramesAt,
-  type ContactSheet,
-} from '../../lib/frames'
+import { type ContactSheet } from '../../lib/frames'
 import { planGlobalSheetCaptures } from '../../lib/globalSheet'
 import { planSceneContactSheet } from '../../lib/contactSheet'
 import {
@@ -130,6 +126,14 @@ const POLL_TIMEOUT_MS = 5 * 60 * 1000 // give up on a wedged job rather than pol
 // anything (apps#339). 20m leaves CE room to report first while still failing
 // fast; Studio's real assembles run 15-30s.
 const VIDEO_POLL_TIMEOUT_MS = 20 * 60 * 1000
+
+/** Scene card art height (px). Card thumbs render small; 180 stays crisp on retina. */
+const SCENE_THUMB_HEIGHT = 180
+/** Blog hero frames (px). CE scales to this height and does not cap at the source,
+ *  so 1080 never upscales a 1080p recording. */
+const BLOG_FRAME_HEIGHT = 1080
+/** Blog re-frame candidates (px): shown small in the strip, and large as the preview. */
+const BLOG_PREVIEW_HEIGHT = 720
 
 /**
  * Job ids currently being polled, shared across hook instances (same rationale as
@@ -513,8 +517,7 @@ export function useScenePipeline() {
     [runVideoJob, videoContactSheetStartReq, activeProjectId],
   )
 
-  // @ts-expect-error -- unused until Task 7 wires it into blog + scene thumb frame grabs
-  const grabFrames = useCallback( // eslint-disable-line @typescript-eslint/no-unused-vars
+  const grabFrames = useCallback(
     (sourceUrl: string, times: number[], height: number): Promise<ServerFrame[]> =>
       runVideoJob(
         'frames',
@@ -543,14 +546,13 @@ export function useScenePipeline() {
 
   /**
    * Drive a master-director job to completion, then commit it — shared by the
-   * live action (`runDirector`) and resume-on-reload. `videoSrc` is the in-memory
-   * object URL when we have it (live) or the persisted source serve URL (resume);
-   * the per-scene card thumbs are captured off it best-effort, so a cold reload
-   * with no seekable source still commits the scenes (just without card art).
+   * live action (`runDirector`) and resume-on-reload. The per-scene card thumbs
+   * are grabbed on the server, best-effort, from each scene's own source, so a
+   * cold reload still commits the scenes even if a source's thumb grab fails.
    * The `pollsInFlight` guard makes the live path and the resume effect idempotent.
    */
   const completeDirectorJob = useCallback(
-    async (jobId: string, videoSrc: string | null) => {
+    async (jobId: string) => {
       if (pollsInFlight.has(jobId)) return
       pollsInFlight.add(jobId)
       setRunning(true)
@@ -579,15 +581,21 @@ export function useScenePipeline() {
         dispatch(setDirectorPromptJobId(jobId))
         dispatch(setScenesJobId(null))
 
-        // Scene-card art, best-effort and AFTER the commit: one midpoint frame
-        // per scene if we can seek the source, patched onto each scene once
-        // captured. captureFramesAt never hangs (stall watchdog) and never
-        // rejects, but stay defensive — a failed capture just means no art.
-        if (videoSrc && built.length) {
+        // Scene-card art, best-effort and AFTER the commit: one midpoint frame per
+        // scene, grabbed on the server from that scene's own source.
+        const bySource = new Map<string, { sceneId: string; time: number }[]>()
+        for (const s of built) {
+          const src = sourceForScene(sources, s)
+          if (!src?.sourceUrl) continue
+          const arr = bySource.get(src.sourceUrl) ?? []
+          arr.push({ sceneId: s.id, time: (s.start + s.end) / 2 })
+          bySource.set(src.sourceUrl, arr)
+        }
+        for (const [sourceUrl, wants] of bySource) {
           try {
-            const thumbs = await captureFramesAt(videoSrc, built.map((s) => (s.start + s.end) / 2), 64)
-            built.forEach((s, i) => {
-              if (thumbs[i]) patchScene(s.id, { thumb: thumbs[i] })
+            const frames = await grabFrames(sourceUrl, wants.map((w) => w.time), SCENE_THUMB_HEIGHT)
+            wants.forEach((w, i) => {
+              if (frames[i]) patchScene(w.sceneId, { thumb: frames[i].url })
             })
           } catch {
             // card art is optional
@@ -603,7 +611,7 @@ export function useScenePipeline() {
         setRunning(false)
       }
     },
-    [pollJob, dispatch, patch, patchScene, sources],
+    [pollJob, dispatch, patch, patchScene, sources, grabFrames],
   )
 
   /**
@@ -679,17 +687,16 @@ export function useScenePipeline() {
   )
 
   /**
-   * Turn the post's inline `frame:<t>` tokens into real, uploaded images (issue
-   * #70). The model emits timestamps it read off the Contact sheets; per ADR-0002
-   * we re-capture a clean, full-resolution, label-free frame from the SOURCE video
-   * (never crop the contact sheet) and upload it as a `blog` asset. Pure planning
-   * (`planBlogCaptures`) dedups the timestamps and routes each global time to its
-   * owning `(sourceId, localTime)` — multi-source projects capture from the right
-   * video. Captures are grouped per source so each clip is signed + fetched once
-   * (a `<video crossOrigin>` read of the signed GCS URL fails CORS, so we go via a
-   * same-origin blob URL — the same path the director/refiner use). Returns the
-   * Markdown with every resolvable token rewritten to its bucket serve URL; a
-   * frame that fails to capture or upload is left out, never a broken image.
+   * Turn the post's inline `frame:<t>` tokens into real images (issue #70). The
+   * model emits timestamps it read off the Contact sheets; per ADR-0002 we
+   * re-capture a clean, full-resolution, label-free frame from the SOURCE video
+   * (never crop the contact sheet). Pure planning (`planBlogCaptures`) dedups the
+   * timestamps and routes each global time to its owning `(sourceId, localTime)`
+   * — multi-source projects capture from the right video. Frames come from the
+   * server (one job per source) and are served straight from the bucket — nothing
+   * uploads here. Returns the Markdown with every resolvable token rewritten to
+   * its bucket serve URL; a frame that fails to grab is left out, never a broken
+   * image.
    */
   const materializeBlogImages = useCallback(
     async (markdown: string): Promise<{ markdown: string; frames: BlogImageRef[] }> => {
@@ -710,79 +717,33 @@ export function useScenePipeline() {
       for (const [sourceId, caps] of bySource) {
         const src = sources.find((s) => s.id === sourceId)
         if (!src?.sourceUrl) continue
-        const objectUrl = URL.createObjectURL(await sourceBlobs.get(src.sourceUrl))
         try {
-          // A high cap height: `captureFramesAt` never upscales past the source, so
-          // this yields a clean full-resolution frame. JPEG q0.9 — a hero image, not
-          // a thumbnail.
-          const frames = await captureFramesAt(
-            objectUrl,
-            caps.map((c) => c.localTime),
-            4320,
-            { type: 'image/jpeg', quality: 0.9 },
-          )
-          for (let i = 0; i < caps.length; i++) {
-            const dataUrl = frames[i]
-            if (!dataUrl) continue // capture failed for this frame — skip it
-            try {
-              const blob = await (await fetch(dataUrl)).blob()
-              const file = new File([blob], caps[i].fileName, { type: blob.type })
-              const { url } = await uploadReq({ file, kind: 'blog' }).unwrap()
-              urlByTime.set(caps[i].time, url)
-            } catch {
-              // upload failed — leave this token unresolved (it gets dropped below)
-            }
-          }
-        } finally {
-          URL.revokeObjectURL(objectUrl)
+          // Clean, label-free frames grabbed on the server (ADR-0002: re-capture from
+          // the source, never crop a sheet). Served straight from the bucket, no re-upload.
+          const frames = await grabFrames(src.sourceUrl, caps.map((c) => c.localTime), BLOG_FRAME_HEIGHT)
+          caps.forEach((c, i) => {
+            if (frames[i]) urlByTime.set(c.time, frames[i].url)
+          })
+        } catch {
+          // this source's frames are left out, never a broken image
         }
       }
       // The sidecar mirrors exactly what survives into the Markdown (a token that
-      // failed to upload is dropped by both), so each stored image knows the second
-      // it came from and can be re-framed later (issue #91).
+      // failed to resolve is dropped by both), so each stored image knows the
+      // second it came from and can be re-framed later (issue #91).
       return { markdown: rewriteFrameTokens(markdown, urlByTime), frames: blogImageRefs(captures, urlByTime) }
     },
-    [sources, sourceBlobs, uploadReq],
+    [sources, grabFrames],
   )
 
   // ---- Re-framing a blog image to a nearby moment (issue #91) --------------
   //
-  // The producer can nudge a bad AI-picked frame (mid-blink, a weird face) to a
-  // sibling timestamp: a filmstrip of nearby frames, then a one-click swap. The
-  // source clip is decoded to a same-origin blob (a `<video crossOrigin>` read of
-  // the signed GCS URL fails CORS). The bytes come from the session blob cache;
-  // this ref only holds the one live object URL (which needs explicit revoking).
-  const blogClipRef = useRef<{ sourceId: string; objectUrl: string } | null>(null)
-  const blogClipUrl = useCallback(
-    async (sourceId: string): Promise<string | null> => {
-      const cached = blogClipRef.current
-      if (cached?.sourceId === sourceId) return cached.objectUrl
-      const src = sources.find((s) => s.id === sourceId)
-      if (!src?.sourceUrl) return null
-      const objectUrl = URL.createObjectURL(await sourceBlobs.get(src.sourceUrl))
-      if (cached) URL.revokeObjectURL(cached.objectUrl)
-      blogClipRef.current = { sourceId, objectUrl }
-      return objectUrl
-    },
-    [sources, sourceBlobs],
-  )
-  // Free the cached clip blob when the pipeline unmounts (project close / reload).
-  useEffect(
-    () => () => {
-      if (blogClipRef.current) URL.revokeObjectURL(blogClipRef.current.objectUrl)
-      blogClipRef.current = null
-    },
-    [],
-  )
+  // The producer can nudge a bad AI-picked frame to a sibling timestamp. The
+  // candidate strip is ONE server frame job at preview size; each candidate's URL
+  // is both its strip thumb and its large preview, so previews are instant.
+  const blogPreviewCache = useRef(new Map<number, string>())
 
-  /**
-   * Capture the filmstrip of nearby frames offered when re-framing a blog image:
-   * plan a ±window/step window around the image's global timestamp, route each
-   * sibling to its owning source + local time (multi-source aware), and capture a
-   * small in-browser JPEG thumbnail for each. Nothing uploads — thumbnails are
-   * throwaway previews until the producer picks one. Ordered ascending by time;
-   * a sibling whose frame fails to capture is dropped.
-   */
+  /** Candidate frames around a blog image's global time, grabbed on the server. */
   const captureBlogSiblings = useCallback(
     async (time: number): Promise<{ time: number; thumb: string }[]> => {
       const lite = sources.map((s) => ({ id: s.id, duration: s.duration }))
@@ -797,82 +758,62 @@ export function useScenePipeline() {
         arr.push(t)
         bySource.set(loc.sourceId, arr)
       }
-      const thumbByTime = new Map<number, string>()
+      blogPreviewCache.current = new Map()
       for (const [sourceId, ts] of bySource) {
-        const objectUrl = await blogClipUrl(sourceId)
-        if (!objectUrl) continue
-        const frames = await captureFramesAt(
-          objectUrl,
-          ts.map((t) => localByGlobal.get(t) ?? 0),
-          108, // a small filmstrip thumb, not the hero frame
-          { type: 'image/jpeg', quality: 0.7 },
-        )
-        ts.forEach((t, i) => {
-          if (frames[i]) thumbByTime.set(t, frames[i])
-        })
+        const src = sources.find((s) => s.id === sourceId)
+        if (!src?.sourceUrl) continue
+        try {
+          const frames = await grabFrames(src.sourceUrl, ts.map((t) => localByGlobal.get(t) ?? 0), BLOG_PREVIEW_HEIGHT)
+          ts.forEach((t, i) => {
+            if (frames[i]) blogPreviewCache.current.set(t, frames[i].url)
+          })
+        } catch {
+          // a source whose frames fail is left out of the strip
+        }
       }
       return times
-        .map((t) => ({ time: t, thumb: thumbByTime.get(t) ?? '' }))
+        .map((t) => ({ time: t, thumb: blogPreviewCache.current.get(t) ?? '' }))
         .filter((s) => s.thumb)
     },
-    [sources, blogClipUrl],
+    [sources, grabFrames],
   )
 
-  /**
-   * Capture a single medium-resolution preview frame at a global timestamp — the
-   * large in-place preview the producer scrubs through before committing (issue
-   * #91). Same cached-clip path as the filmstrip, one seek, NO upload: it's a
-   * throwaway "what would this look like" frame, big enough to read a face at
-   * figure size but not the full 4K hero the pick eventually recaptures. Empty
-   * string if the moment can't be routed or the frame fails to capture.
-   */
+  /** The large preview for a candidate: its cached strip frame, or one server grab. '' on failure. */
   const captureBlogPreview = useCallback(
     async (time: number): Promise<string> => {
+      const cached = blogPreviewCache.current.get(time)
+      if (cached) return cached
       const lite = sources.map((s) => ({ id: s.id, duration: s.duration }))
       const loc = globalToLocal(lite, time)
-      if (!loc) return ''
-      const objectUrl = await blogClipUrl(loc.sourceId)
-      if (!objectUrl) return ''
-      const [dataUrl] = await captureFramesAt(objectUrl, [loc.localTime], 720, {
-        type: 'image/jpeg',
-        quality: 0.82,
-      })
-      return dataUrl ?? ''
+      const src = loc && sources.find((s) => s.id === loc.sourceId)
+      if (!loc || !src?.sourceUrl) return ''
+      try {
+        const [frame] = await grabFrames(src.sourceUrl, [loc.localTime], BLOG_PREVIEW_HEIGHT)
+        return frame?.url ?? ''
+      } catch {
+        return ''
+      }
     },
-    [sources, blogClipUrl],
+    [sources, grabFrames],
   )
 
-  /**
-   * Re-capture a blog image at a producer-picked nearby timestamp and swap it into
-   * the post: route the global time to its source, capture ONE clean full-res
-   * frame (same path + encoding as the initial materialise — ADR-0002 re-captures
-   * from the source, never crops the sheet), upload it as a `blog` asset, and
-   * commit the new URL + timestamp to the stored post. Resolves true on success;
-   * a capture/upload failure leaves the post untouched and resolves false.
-   */
+  /** Re-grab a clean full-height frame at the picked second and swap it into the post. */
   const reframeBlogImage = useCallback(
     async (oldUrl: string, time: number): Promise<boolean> => {
       const lite = sources.map((s) => ({ id: s.id, duration: s.duration }))
       const loc = globalToLocal(lite, time)
-      if (!loc) return false
-      const objectUrl = await blogClipUrl(loc.sourceId)
-      if (!objectUrl) return false
-      const [dataUrl] = await captureFramesAt(objectUrl, [loc.localTime], 4320, {
-        type: 'image/jpeg',
-        quality: 0.9,
-      })
-      if (!dataUrl) return false
+      const src = loc && sources.find((s) => s.id === loc.sourceId)
+      if (!loc || !src?.sourceUrl) return false
       try {
-        const blob = await (await fetch(dataUrl)).blob()
-        const file = new File([blob], blogReframeFileName(time), { type: blob.type })
-        const { url } = await uploadReq({ file, kind: 'blog' }).unwrap()
-        dispatch(reframeBlogImageAction({ oldUrl, newUrl: url, time }))
+        const [frame] = await grabFrames(src.sourceUrl, [loc.localTime], BLOG_FRAME_HEIGHT)
+        if (!frame) return false
+        dispatch(reframeBlogImageAction({ oldUrl, newUrl: frame.url, time }))
         return true
       } catch {
         return false
       }
     },
-    [sources, blogClipUrl, uploadReq, dispatch],
+    [sources, grabFrames, dispatch],
   )
 
   /**
@@ -911,7 +852,7 @@ export function useScenePipeline() {
     // spinner state synchronously (fine in the live event-handler path), so we
     // defer them out of the effect body to avoid a synchronous setState-in-effect.
     queueMicrotask(() => {
-      if (scenesJobId) void completeDirectorJob(scenesJobId, sourceUrl)
+      if (scenesJobId) void completeDirectorJob(scenesJobId)
       for (const scene of scenes) {
         if (scene.refineJobId) void completeRefineJob(scene.id, scene.refineJobId)
       }
@@ -1055,7 +996,7 @@ export function useScenePipeline() {
   // the shorten and segment notes done (one call does both), then captures a
   // midpoint thumb per scene for the scene-card art.
   const runDirector = useCallback(
-    async ({ src }: StepContext) => {
+    async () => {
       patch('director', { status: 'active' })
       const ordered = [...sources].sort((a, b) => a.order - b.order)
       const transcript = combinedTimedTranscript(
@@ -1068,7 +1009,7 @@ export function useScenePipeline() {
       // the id so a hard reload resumes polling, then drive it to completion.
       const { jobId } = await scenesReq({ transcript, sheetUrls, direction, duration }).unwrap()
       dispatch(setScenesJobId(jobId))
-      await completeDirectorJob(jobId, src)
+      await completeDirectorJob(jobId)
     },
     [patch, sources, persistedSheets, direction, scenesReq, dispatch, completeDirectorJob],
   )
@@ -1080,9 +1021,13 @@ export function useScenePipeline() {
   // resets the selection). Same enqueue+poll as a first run, so `scenesJobId`
   // persists and a mid-redo reload resumes polling.
   const rerunDirector = useCallback(
+    // `ctx` is no longer needed (the director's card thumbs are grabbed on the
+    // server, not off an in-memory object URL) but stays in the signature —
+    // Studio.tsx's callers already pass one.
     async (ctx: StepContext) => {
+      void ctx
       try {
-        await runDirector(ctx)
+        await runDirector()
       } catch (e) {
         patch('director', { status: 'error', detail: stageError(e) })
       }
@@ -1225,7 +1170,7 @@ export function useScenePipeline() {
         else if (id === 'extract') await extractAndUploadAudio(ctx)
         else if (id === 'transcribe') await transcribe()
         else if (id === 'thumbnails') await generateThumbnails()
-        else if (id === 'director') await runDirector(ctx) // scene split + briefs, one Gemini call
+        else if (id === 'director') await runDirector() // scene split + briefs, one Gemini call
       } catch (e) {
         dispatch(failActiveStage(stageError(e)))
       } finally {

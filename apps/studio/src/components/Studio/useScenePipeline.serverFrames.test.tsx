@@ -154,3 +154,54 @@ describe('per-scene sheets on the server', () => {
     expect(active(store).scenes[0].sheets!.every((s) => s.url?.includes('/thumbnails/server/'))).toBe(true)
   }, 15000)
 })
+
+function BlogHarness({ onReady }: { onReady: (p: ReturnType<typeof useScenePipeline>) => void }) {
+  const pipe = useScenePipeline()
+  onReady(pipe)
+  return null
+}
+
+describe('blog re-frame on the server', () => {
+  it('fetches the candidate strip as server frames and reuses them as previews', async () => {
+    const heights: number[] = []
+    server.events.on('request:start', async ({ request }) => {
+      if (new URL(request.url).pathname === '/api/video/frames') heights.push((await request.clone().json()).height)
+    })
+    const store = makeStore()
+    let pipe!: ReturnType<typeof useScenePipeline>
+    render(
+      <Provider store={store}>
+        <BlogHarness onReady={(p) => (pipe = p)} />
+      </Provider>,
+    )
+    let strip: { time: number; thumb: string }[] = []
+    await act(async () => {
+      strip = await pipe.captureBlogSiblings(300)
+    })
+    expect(strip.length).toBeGreaterThan(0)
+    expect(strip.every((s) => s.thumb.startsWith('/api/uploads/projects/p1/frames/server/'))).toBe(true)
+    expect(heights).toEqual([720])
+
+    let preview = ''
+    await act(async () => {
+      preview = await pipe.captureBlogPreview(strip[1].time)
+    })
+    expect(preview).toBe(strip[1].thumb)
+    expect(heights).toEqual([720]) // cached: no second job
+  }, 15000)
+
+  it('re-frames at full height and swaps the served url into the post', async () => {
+    const store = makeStore()
+    let pipe!: ReturnType<typeof useScenePipeline>
+    render(
+      <Provider store={store}>
+        <BlogHarness onReady={(p) => (pipe = p)} />
+      </Provider>,
+    )
+    let ok = false
+    await act(async () => {
+      ok = await pipe.reframeBlogImage('/api/uploads/blog/old.jpg', 42)
+    })
+    expect(ok).toBe(true)
+  }, 15000)
+})
