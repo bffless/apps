@@ -26,8 +26,18 @@ function parse(raw: unknown): Record<string, unknown> | null {
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
+/** `toServerSheetsResult(raw).sheets`. */
 export function toServerSheets(raw: unknown): ServerSheet[] {
-  const list = parse(raw)?.sheets
+  return toServerSheetsResult(raw).sheets
+}
+
+/**
+ * The sheets plus `drawn`: false when CE could not burn the timestamps (its
+ * ffmpeg lacks drawtext). A missing field counts as drawn.
+ */
+export function toServerSheetsResult(raw: unknown): { sheets: ServerSheet[]; drawn: boolean } {
+  const obj = parse(raw)
+  const list = obj?.sheets
   const out: ServerSheet[] = []
   for (const item of Array.isArray(list) ? list : []) {
     const r = (item ?? {}) as Record<string, unknown>
@@ -38,7 +48,7 @@ export function toServerSheets(raw: unknown): ServerSheet[] {
     out.push({ url: r.url, times, cols, rows, bytes: finite(r.bytes) ? r.bytes : 0 })
   }
   if (out.length === 0) throw new Error('The contact-sheet job finished without any sheets.')
-  return out
+  return { sheets: out, drawn: obj?.drawn !== false }
 }
 
 export function toServerFrames(raw: unknown): ServerFrame[] {

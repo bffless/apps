@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   SERVER_SHEET_GAP,
   toServerSheets,
+  toServerSheetsResult,
   toServerFrames,
   sheetLabels,
   toContactSheets,
@@ -29,6 +30,18 @@ describe('toServerSheets', () => {
   it('throws when the job came back without sheets', () => {
     expect(() => toServerSheets({ sheets: [] })).toThrow('The contact-sheet job finished without any sheets.')
     expect(() => toServerSheets(null)).toThrow('The contact-sheet job finished without any sheets.')
+  })
+})
+
+describe('toServerSheetsResult', () => {
+  it('reports drawn: false when CE could not burn the timestamps', () => {
+    const got = toServerSheetsResult({ ...rawSheets, drawn: false })
+    expect(got.drawn).toBe(false)
+    expect(got.sheets).toEqual(toServerSheets(rawSheets))
+  })
+  it('counts a missing drawn field as drawn', () => {
+    expect(toServerSheetsResult({ sheets: rawSheets.sheets }).drawn).toBe(true)
+    expect(toServerSheetsResult(JSON.stringify(rawSheets)).drawn).toBe(true)
   })
 })
 

@@ -134,7 +134,7 @@ export const studioApi = createApi({
     }),
 
     // Contact sheets on the server (CE ffmpeg `frames` op with draw + tile): the
-    // browser never downloads the source. Result coerced by `toServerSheets`.
+    // browser never downloads the source. Result coerced by `toServerSheetsResult`.
     videoContactSheetStart: builder.mutation<
       StartJobResponse,
       { sourceUrl: string; projectId: string; times: number[]; labels: string[]; executor?: 'local' | 'remote' }

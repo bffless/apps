@@ -111,9 +111,12 @@ describe('prep contact sheets on the server', () => {
   it('re-measures a sheet whose image size failed to load, once', async () => {
     const real = { width: 3 * 1280 + 8, height: 4 * 720 + 10 }
     const calls = new Map<string, number>()
+    const firstAt = new Map<string, number>()
+    const secondAt = new Map<string, number>()
     imageSizeMock.mockImplementation(async (url: string) => {
       const n = (calls.get(url) ?? 0) + 1
       calls.set(url, n)
+      ;(n === 1 ? firstAt : secondAt).set(url, Date.now())
       return n === 1 ? { width: 0, height: 0 } : real
     })
     const store = makeStore()
@@ -122,6 +125,8 @@ describe('prep contact sheets on the server', () => {
     const sheets = active(store).contactSheets
     expect(sheets[0]).toMatchObject({ width: real.width, height: real.height, cellWidth: 1280, cellHeight: 720 })
     expect(calls.get(sheets[0].url!)).toBe(2)
+    // waits a beat before the re-measure, instead of re-reading a URL that just failed
+    expect(secondAt.get(sheets[0].url!)! - firstAt.get(sheets[0].url!)!).toBeGreaterThanOrEqual(950)
   }, 15000)
 
   it('retries a failed sheet job once without the last minute of the recording', async () => {
@@ -228,6 +233,25 @@ describe('prep contact sheets on the server', () => {
     await waitFor(() => expect(active(store).stageProgress.thumbnails?.status).toBe('done'), { timeout: 12000 })
     expect(asked.length).toBeGreaterThan(0)
     expect(active(store).contactSheets.flatMap((s) => s.times)).toEqual(asked)
+  }, 15000)
+
+  it('says so in the detail when CE could not draw the sheet timestamps', async () => {
+    let asked: number[] = []
+    server.use(
+      http.post('/api/video/contact-sheet', async ({ request }) => {
+        asked = ((await request.clone().json()) as { times: number[] }).times
+        return HttpResponse.json({ jobId: 'sheets-undrawn', status: 'pending' })
+      }),
+      http.get('/api/studio/job', ({ request }) => {
+        if (new URL(request.url).searchParams.get('id') !== 'sheets-undrawn') return undefined
+        const sheets = [{ url: '/api/uploads/projects/p1/thumbnails/server/n/sheet-01.jpg', times: asked.slice(0, 12), cols: 3, rows: 4, bytes: 1 }]
+        return HttpResponse.json({ status: 'done', kind: 'video-contact-sheet', result: { sheets, drawn: false } })
+      }),
+    )
+    const store = makeStore()
+    await runNext(store)
+    await waitFor(() => expect(active(store).stageProgress.thumbnails?.status).toBe('done'), { timeout: 12000 })
+    expect(active(store).stageProgress.thumbnails?.detail).toContain('timestamps not drawn')
   }, 15000)
 
   it('fails the stage, instead of passing it, when the job returns no sheets', async () => {

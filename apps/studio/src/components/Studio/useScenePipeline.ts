@@ -42,7 +42,7 @@ import { planGlobalSheetCaptures } from '../../lib/globalSheet'
 import { planSceneContactSheet } from '../../lib/contactSheet'
 import {
   SERVER_SHEET_CELLS,
-  toServerSheets,
+  toServerSheetsResult,
   toServerFrames,
   sheetLabels,
   toContactSheets,
@@ -522,7 +522,12 @@ export function useScenePipeline() {
   // backend picker, like slice/concat/extract. `duration` (the source's) enables
   // one tail-trimmed retry when a job fails (`withTailRetry`).
   const grabSheets = useCallback(
-    (sourceUrl: string, times: number[], labels: string[], duration?: number): Promise<ServerSheet[]> =>
+    (
+      sourceUrl: string,
+      times: number[],
+      labels: string[],
+      duration?: number,
+    ): Promise<{ sheets: ServerSheet[]; drawn: boolean }> =>
       withTailRetry(times, duration, (idx) =>
         runVideoJob(
           'contact sheets',
@@ -534,7 +539,7 @@ export function useScenePipeline() {
               labels: idx.map((i) => labels[i]),
               executor: stepExecutor(await getVideoBackend()),
             }).unwrap(),
-          toServerSheets,
+          toServerSheetsResult,
         ),
       ),
     [runVideoJob, videoContactSheetStartReq, activeProjectId],
@@ -607,7 +612,10 @@ export function useScenePipeline() {
       const sizes = await Promise.all(
         got.map(async (s) => {
           const size = await imageSize(s.url)
-          return size.width > 0 && size.height > 0 ? size : imageSize(s.url)
+          if (size.width > 0 && size.height > 0) return size
+          // A fresh object can lag the serve path; give it a beat before the one re-read.
+          await delay(1000)
+          return imageSize(s.url)
         }),
       )
       return toContactSheets(got, sizes, displayTimeOf, interval)
@@ -1000,13 +1008,20 @@ export function useScenePipeline() {
       // A recording whose job fails is skipped (and named in the detail), so one
       // bad recording never throws away the sheets the others made.
       const failed: { fileName: string; message: string }[] = []
+      let undrawn = false
       for (const src of ordered) {
         const mine = captures.filter((c) => c.sourceId === src.id)
         if (mine.length === 0 || !src.sourceUrl) continue
         const globalTimes = mine.map((c) => c.globalTime)
         const globalOf = new Map(mine.map((c) => [c.localTime, c.globalTime]))
         try {
-          const got = await grabSheets(src.sourceUrl, mine.map((c) => c.localTime), sheetLabels(globalTimes), src.duration)
+          const { sheets: got, drawn } = await grabSheets(
+            src.sourceUrl,
+            mine.map((c) => c.localTime),
+            sheetLabels(globalTimes),
+            src.duration,
+          )
+          if (!drawn) undrawn = true
           // Matched by time. If EVERY time CE echoed for this recording misses, map
           // the sheets positionally onto the planned global times instead, so a
           // total mismatch never leaves local times on a global timeline.
@@ -1030,9 +1045,10 @@ export function useScenePipeline() {
       dispatch(setContactSheets(stamped))
       const frameCount = stamped.reduce((n, s) => n + s.count, 0)
       const skipped = failed.map((f) => ` · skipped ${f.fileName}: ${f.message}`).join('')
+      const noStamps = undrawn ? ' · timestamps not drawn (CE ffmpeg lacks drawtext)' : ''
       patch('thumbnails', {
         status: 'done',
-        detail: `${frameCount} frames · ${stamped.length} sheet${stamped.length === 1 ? '' : 's'} (server)${skipped}`,
+        detail: `${frameCount} frames · ${stamped.length} sheet${stamped.length === 1 ? '' : 's'} (server)${skipped}${noStamps}`,
       })
     },
     [patch, dispatch, sources, grabSheets, sheetsFor],
@@ -1255,7 +1271,7 @@ export function useScenePipeline() {
       try {
         const plan = planSceneContactSheet(scene.start, scene.end)
         if (plan.times.length === 0) throw new Error('This scene is too short for a contact sheet.')
-        const got = await grabSheets(src.sourceUrl, plan.times, sheetLabels(plan.times), src.duration)
+        const { sheets: got } = await grabSheets(src.sourceUrl, plan.times, sheetLabels(plan.times), src.duration)
         patchScene(id, { sheets: await sheetsFor(got, (t) => t, plan.interval) })
       } catch (e) {
         setSceneErrorFor(id, stageError(e))
