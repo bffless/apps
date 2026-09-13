@@ -255,6 +255,40 @@ describe('prep contact sheets on the server', () => {
   }, 15000)
 
   it('names an 11th recording the per-recording budget left with no sheet, instead of silently dropping it', async () => {
+    // The default mock resolves each job over 3 polls, 2s apart (pending → running
+    // → done), and generateThumbnails runs its 11 recordings one after another —
+    // far too slow (and flake-prone under CI load) for a unit test. Override both
+    // endpoints so each job is `done` on its very first poll, still returning a
+    // valid tiled result (12 stills per sheet) for whatever times it was sent —
+    // the same shape the real mock returns.
+    const sentTimes = new Map<string, number[]>()
+    let jobCounter = 0
+    server.use(
+      http.post('/api/video/contact-sheet', async ({ request }) => {
+        const body = (await request.json()) as { times: number[] }
+        const jobId = `fast-sheet-${++jobCounter}`
+        sentTimes.set(jobId, body.times)
+        return HttpResponse.json({ jobId, status: 'pending' })
+      }),
+      http.get('/api/studio/job', ({ request }) => {
+        const id = new URL(request.url).searchParams.get('id') ?? ''
+        const times = sentTimes.get(id)
+        if (!times) return undefined
+        const total = Math.ceil(times.length / 12)
+        const sheets = Array.from({ length: total }, (_, i) => {
+          const chunk = times.slice(i * 12, i * 12 + 12)
+          const cols = Math.min(chunk.length, 3)
+          return {
+            url: `/api/uploads/projects/p1/thumbnails/server/fast/${id}-${i}.jpg`,
+            times: chunk,
+            cols,
+            rows: Math.ceil(chunk.length / cols),
+            bytes: 1,
+          }
+        })
+        return HttpResponse.json({ status: 'done', kind: 'video-contact-sheet', result: { sheets, drawn: true } })
+      }),
+    )
     const store = makeStore()
     store.dispatch(patchSource({ id: 'src1', patch: { duration: 600 } }))
     let lastId = 'src1'
@@ -270,11 +304,8 @@ describe('prep contact sheets on the server', () => {
       }
     }
     await runNext(store)
-    // 11 recordings each round-trip their own /api/video/contact-sheet job
-    // sequentially (pending → running → done, POLL_INTERVAL_MS apart), so this
-    // takes noticeably longer than the 1-2 recording tests above.
     await waitFor(() => expect(['done', 'error']).toContain(active(store).stageProgress.thumbnails?.status), {
-      timeout: 90000,
+      timeout: 12000,
     })
 
     expect(active(store).stageProgress.thumbnails?.status).toBe('done')
@@ -283,7 +314,7 @@ describe('prep contact sheets on the server', () => {
     // The 11th (last-added, equal-length) recording is the one the per-recording
     // budget gives no sheet to (ties go to the earlier recording).
     expect(active(store).stageProgress.thumbnails?.detail).toContain(`no sheet left for rec${lastId.slice(3)}.mov`)
-  }, 95000)
+  }, 15000)
 
   it('drops sheets past the director\'s image limit as defense in depth', async () => {
     server.use(
