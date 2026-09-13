@@ -34,7 +34,7 @@ ffmpeg `frames` operation.
 | 4 | Blog inline `frame:<t>` images | `materializeBlogImages`, capture then upload as `blog` | `POST /api/video/frames` (full resolution) |
 | 5 | Blog re-frame candidate strip | `captureBlogSiblings`, 108px data URLs | `POST /api/video/frames` (small height) |
 | 6 | Blog re-frame commit | `reframeBlogImage`, capture then upload | `POST /api/video/frames` (full resolution) |
-| 7 | Blog re-frame preview | `captureBlogPreview`, one 720px data URL | No capture: a `<video>` element seeked on the signed source URL (range requests, nothing downloaded whole, no canvas) |
+| 7 | Blog re-frame preview | `captureBlogPreview`, one 720px data URL | Reuses #5: the candidate strip is fetched at 720px in one frames job, so a candidate's own URL is its large preview. `captureBlogPreview` returns the cached URL, falling back to a one-frame job. `BlogFigure` is unchanged, since it already renders an image URL. |
 
 **Loses its browser fallback** (the server path already exists): scene slice, scene
 assemble (manual and Auto Build), final-cut stitch (manual and Auto Build), extract audio.
@@ -94,6 +94,12 @@ the existing `GET /api/studio/job`.
 - The MSW mocks in `src/mocks/handlers.ts` return the same shapes through the same
   coercers.
 - Call-site changes, one per row above:
+  - **Sheet budget with several recordings.** The director and blog rules read only the
+    first 10 sheet URLs (`rules/api/scenes/post/prep.fn.js:8`). Each recording's job tiles
+    its own frames 12 to a sheet, so every boundary between recordings can cost one extra
+    sheet. `planGlobalSheetCaptures` therefore caps the global frame count at
+    `12 × (10 − (recordings − 1))`. With one recording that is 120, the same as today. For
+    `k` recordings, `Σ ceil(nᵢ/12) ≤ ceil(Σnᵢ/12) + (k − 1) ≤ 10`.
   - **#1** `generateThumbnails` plans the global captures as today, groups them by source,
     starts one contact-sheet job per source (sequentially, through the existing upload/ffmpeg
     lane), then orders the sheets globally and dispatches `setContactSheets`. No browser
@@ -114,8 +120,9 @@ the existing `GET /api/studio/job`.
     `currentTime`.
 - Deleted in PR 1:
   - from `src/lib/frames.ts`: `captureFramesAt`, `captureFrames`, `composeContactSheet`,
-    `captureContactSheet`, `captureSceneContactSheet`; the `ContactSheet` type stays,
-    minus `dataUrl`/`bytes`;
+    `captureContactSheet`, `captureSceneContactSheet`. The `ContactSheet` type stays
+    unchanged: server sheets set `dataUrl: ''` and take `bytes` from CE's reported size,
+    so no consumer or test fixture of sheets changes;
   - the unused `src/components/Studio/Filmstrip.tsx`;
   - the `pendingSheets` data-URL preview.
 
