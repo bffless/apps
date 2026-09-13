@@ -42,13 +42,13 @@ These are load-bearing; parallelism must respect all of them.
 | Step | Resource | Typical cost |
 | --- | --- | --- |
 | cut | ffmpeg (short re-encode) + 2 uploads | tens of seconds |
-| sheets | `<video>` seek + canvas + uploads (no ffmpeg) | seconds–tens of seconds |
+| sheets | server ffmpeg `frames` job (enqueue + poll, no browser upload) | seconds–tens of seconds |
 | refine | server job (enqueue + poll) | ~1–5 min, near-zero client cost |
 | assemble | ffmpeg render (minutes) + 1 upload | minutes |
 
-The ffmpeg lane (cuts + assembles) is irreducible local CPU work. Everything
+The ffmpeg lane (cuts, sheets + assembles) is irreducible ffmpeg work. Everything
 else can hide underneath it. Done right, a run's wall clock collapses from
-`Σ(all steps)` to roughly `Σ(cuts + assembles) + one refine tail`.
+`Σ(all steps)` to roughly `Σ(cuts + sheets + assembles) + one refine tail`.
 
 ## Approaches considered
 
@@ -93,8 +93,8 @@ same guard/error/state surgery as B while utilizing resources worse.
 - `nextActions(scenes, inFlight): Action[]` — walks scenes in order, derives
   each scene's next not-done step exactly as today (`nextStep`), then filters by
   lane capacity:
-  - `LANES: Record<AutoStepId, 'ffmpeg' | 'refine' | 'sheets'>` = cut→ffmpeg,
-    assemble→ffmpeg, refine→refine, sheets→sheets.
+  - `STEP_LANE: Record<AutoStepId, 'ffmpeg' | 'refine'>` = cut→ffmpeg,
+    assemble→ffmpeg, refine→refine, sheets→ffmpeg.
   - a lane admits a step only if nothing in `inFlight` occupies it;
   - **refine ordering rule:** scene N's refine is runnable only when every
     earlier scene has its `refined` set (or is built) — the seam-context
@@ -130,9 +130,9 @@ same guard/error/state surgery as B while utilizing resources worse.
   error, which also fixes a latent sequential-mode bug (any stale `sceneError`
   from an unrelated scene can currently halt the wrong attempt).
 - Upload semaphore: a tiny module-level `withUploadSlot(fn)` queue (capacity 1)
-  wrapped around the upload calls in `sliceScene`, `generateSceneSheets`,
-  `saveSceneCut`, `saveFinalCut`. Manual single-action flows behave identically
-  (they're alone in the queue).
+  wrapped around the upload calls in `sliceScene`, `saveSceneCut`,
+  `saveFinalCut` (server sheets upload nothing from the browser). Manual
+  single-action flows behave identically (they're alone in the queue).
 - Defensive ffmpeg mutex inside `lib/export/ffmpeg.ts` (`slice`/`assemble`/
   `concat` serialize on a module promise-chain) so a scheduler bug can't
   interleave wasm FS staging. The scheduler's ffmpeg lane means it never
@@ -163,8 +163,8 @@ structured error) instead of the global pointer.
 ### 6. Tests
 
 - `autoBuild.test.ts`: `nextActions` table tests — lane exclusivity (never two
-  ffmpeg steps), refine ordering rule, overlap cases (assemble N + refine N+1 +
-  sheets N+2 simultaneously runnable), stitch gating on empty in-flight,
+  ffmpeg steps, sheets included), refine ordering rule, overlap cases (assemble N +
+  refine N+1 simultaneously runnable), stitch gating on empty in-flight,
   mark-built passthrough.
 - `studioSlice.autoBuild.test.ts`: started/finished set arithmetic, structured
   halt, rehydration normalization.

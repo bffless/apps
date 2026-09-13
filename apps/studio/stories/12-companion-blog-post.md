@@ -103,10 +103,11 @@ Flow (a new `BlogCard` + orchestration in `useScenePipeline.ts`):
 - **Mock-first**: add an MSW handler for `/api/blog` returning the same `{ markdown }` shape;
   coerce both routes through one pure `toBlog()`/parse fn. Pure logic (token parsing, slug,
   bundle assembly, global→local mapping) in `src/lib/*` with `*.test.ts`.
-- **No base64 in Redux/localStorage** — blog frames persist **url-only** (they're real bucket
-  assets); the captured bytes never enter the slice.
-- **Presigned direct-to-bucket** for the frame uploads; never stream image bodies through the
-  pipeline (1 MB nginx cap).
+- **No base64 in Redux/localStorage** — blog frames persist **url-only**: the post stores only
+  their `/api/uploads/...` serve URLs (they're real bucket objects); no image bytes enter the slice.
+- **No image bytes through the browser or a pipeline body** — frames are grabbed on the server
+  (`POST /api/video/frames`) and written straight to the bucket; the request carries only the
+  source URL and times, never an image body (1 MB nginx cap).
 - After changing rules, edit the source under `.bffless/proxy-rules/studio/` and commit — CI syncs it
   to the project on deploy.
 - One stage per PR; `build`, `lint`, `test:run` pass.
