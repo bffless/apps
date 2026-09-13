@@ -1,4 +1,4 @@
-import { planContactSheet } from './contactSheet'
+import { planContactSheet, sampleTimes, MAX_SHEETS } from './contactSheet'
 import { globalToLocal, totalDuration, type SourceLike } from './sources'
 
 export type GlobalCapture = { globalTime: number; sourceId: string; localTime: number }
@@ -18,12 +18,23 @@ const GLOBAL_MIN_INTERVAL_SECONDS = 1
  * fills the ≤10-image budget), then each global timestamp is routed to the
  * source + local time it should be captured from. The burned-in label uses the
  * GLOBAL time so the director reads one continuous timeline.
+ *
+ * `perSheet`: when sheets are tiled per recording on the server (12 stills each),
+ * every boundary between recordings can cost one extra sheet, and the director
+ * reads only the first `MAX_SHEETS`. Passing it caps the frame count at
+ * `perSheet × (MAX_SHEETS − (recordings − 1))`, which keeps
+ * Σ ceil(nᵢ / perSheet) ≤ MAX_SHEETS.
  */
-export function planGlobalSheetCaptures(sources: SourceLike[]): GlobalCapture[] {
+export function planGlobalSheetCaptures(sources: SourceLike[], perSheet?: number): GlobalCapture[] {
   const total = totalDuration(sources)
-  const plan = planContactSheet(total, GLOBAL_MIN_INTERVAL_SECONDS)
+  let times = planContactSheet(total, GLOBAL_MIN_INTERVAL_SECONDS).times
+  if (perSheet && perSheet > 0) {
+    const recordings = sources.filter((s) => s.duration > 0).length
+    const cap = perSheet * Math.max(1, MAX_SHEETS - Math.max(0, recordings - 1))
+    if (times.length > cap) times = sampleTimes(total, cap)
+  }
   const out: GlobalCapture[] = []
-  for (const globalTime of plan.times) {
+  for (const globalTime of times) {
     const local = globalToLocal(sources, globalTime)
     if (local) out.push({ globalTime, sourceId: local.sourceId, localTime: local.localTime })
   }

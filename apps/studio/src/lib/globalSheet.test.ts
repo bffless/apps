@@ -25,3 +25,23 @@ describe('planGlobalSheetCaptures', () => {
     expect(caps.length).toBe(66) // 1s apart across the 66s total, well under the 120 cap
   })
 })
+
+describe('planGlobalSheetCaptures sheet budget', () => {
+  it('keeps the full 120-frame budget for one long recording', () => {
+    expect(planGlobalSheetCaptures([{ id: 'a', duration: 3600 }], 12)).toHaveLength(120)
+  })
+  it('reserves one sheet per extra recording so server tiling stays within 10 sheets', () => {
+    const got = planGlobalSheetCaptures(
+      [{ id: 'a', duration: 1800 }, { id: 'b', duration: 1800 }, { id: 'c', duration: 1800 }],
+      12,
+    )
+    expect(got).toHaveLength(12 * 8)
+    const perSource = ['a', 'b', 'c'].map((id) => got.filter((c) => c.sourceId === id).length)
+    const sheets = perSource.reduce((n, count) => n + Math.ceil(count / 12), 0)
+    expect(sheets).toBeLessThanOrEqual(10)
+  })
+  it('is unchanged when no budget is passed', () => {
+    const sources = [{ id: 'a', duration: 1800 }, { id: 'b', duration: 1800 }]
+    expect(planGlobalSheetCaptures(sources)).toHaveLength(120)
+  })
+})
