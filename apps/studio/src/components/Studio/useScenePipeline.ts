@@ -534,6 +534,33 @@ export function useScenePipeline() {
     [runVideoJob, videoFramesStartReq, activeProjectId],
   )
 
+  // One server frame job per source; returns key → frame url. A source whose job
+  // fails is left out (callers treat a missing key as "no frame"). Results map back
+  // by index — the frames rule returns frames in request order.
+  const grabFramesBySource = useCallback(
+    async <K,>(wants: { sourceUrl: string; time: number; key: K }[], height: number): Promise<Map<K, string>> => {
+      const bySource = new Map<string, { time: number; key: K }[]>()
+      for (const w of wants) {
+        const arr = bySource.get(w.sourceUrl) ?? []
+        arr.push({ time: w.time, key: w.key })
+        bySource.set(w.sourceUrl, arr)
+      }
+      const out = new Map<K, string>()
+      for (const [sourceUrl, items] of bySource) {
+        try {
+          const frames = await grabFrames(sourceUrl, items.map((i) => i.time), height)
+          items.forEach((it, i) => {
+            if (frames[i]) out.set(it.key, frames[i].url)
+          })
+        } catch {
+          // this source's frames are left out, never a broken image
+        }
+      }
+      return out
+    },
+    [grabFrames],
+  )
+
   // Read each sheet JPEG's natural size once, so the cut editor's sprite crop has
   // cell geometry, then map onto ContactSheet.
   const sheetsFor = useCallback(
@@ -583,24 +610,14 @@ export function useScenePipeline() {
 
         // Scene-card art, best-effort and AFTER the commit: one midpoint frame per
         // scene, grabbed on the server from that scene's own source.
-        const bySource = new Map<string, { sceneId: string; time: number }[]>()
-        for (const s of built) {
+        const wants = built.flatMap((s) => {
           const src = sourceForScene(sources, s)
-          if (!src?.sourceUrl) continue
-          const arr = bySource.get(src.sourceUrl) ?? []
-          arr.push({ sceneId: s.id, time: (s.start + s.end) / 2 })
-          bySource.set(src.sourceUrl, arr)
-        }
-        for (const [sourceUrl, wants] of bySource) {
-          try {
-            const frames = await grabFrames(sourceUrl, wants.map((w) => w.time), SCENE_THUMB_HEIGHT)
-            wants.forEach((w, i) => {
-              if (frames[i]) patchScene(w.sceneId, { thumb: frames[i].url })
-            })
-          } catch {
-            // card art is optional
-          }
-        }
+          return src?.sourceUrl
+            ? [{ sourceUrl: src.sourceUrl, time: (s.start + s.end) / 2, key: s.id }]
+            : []
+        })
+        const thumbById = await grabFramesBySource(wants, SCENE_THUMB_HEIGHT)
+        for (const [id, url] of thumbById) patchScene(id, { thumb: url })
       } catch (e) {
         // Terminal: drop the persisted job id (so we don't resume a dead job) and
         // surface the failure on the director stage's existing error UI.
@@ -611,7 +628,7 @@ export function useScenePipeline() {
         setRunning(false)
       }
     },
-    [pollJob, dispatch, patch, patchScene, sources, grabFrames],
+    [pollJob, dispatch, patch, patchScene, sources, grabFramesBySource],
   )
 
   /**
@@ -706,34 +723,19 @@ export function useScenePipeline() {
       )
       if (captures.length === 0) return { markdown, frames: [] }
 
-      const bySource = new Map<string, typeof captures>()
-      for (const c of captures) {
-        const arr = bySource.get(c.sourceId) ?? []
-        arr.push(c)
-        bySource.set(c.sourceId, arr)
-      }
-
-      const urlByTime = new Map<number, string>()
-      for (const [sourceId, caps] of bySource) {
-        const src = sources.find((s) => s.id === sourceId)
-        if (!src?.sourceUrl) continue
-        try {
-          // Clean, label-free frames grabbed on the server (ADR-0002: re-capture from
-          // the source, never crop a sheet). Served straight from the bucket, no re-upload.
-          const frames = await grabFrames(src.sourceUrl, caps.map((c) => c.localTime), BLOG_FRAME_HEIGHT)
-          caps.forEach((c, i) => {
-            if (frames[i]) urlByTime.set(c.time, frames[i].url)
-          })
-        } catch {
-          // this source's frames are left out, never a broken image
-        }
-      }
+      // Clean, label-free frames grabbed on the server (ADR-0002: re-capture from
+      // the source, never crop a sheet). Served straight from the bucket, no re-upload.
+      const wants = captures.flatMap((c) => {
+        const src = sources.find((s) => s.id === c.sourceId)
+        return src?.sourceUrl ? [{ sourceUrl: src.sourceUrl, time: c.localTime, key: c.time }] : []
+      })
+      const urlByTime = await grabFramesBySource(wants, BLOG_FRAME_HEIGHT)
       // The sidecar mirrors exactly what survives into the Markdown (a token that
       // failed to resolve is dropped by both), so each stored image knows the
       // second it came from and can be re-framed later (issue #91).
       return { markdown: rewriteFrameTokens(markdown, urlByTime), frames: blogImageRefs(captures, urlByTime) }
     },
-    [sources, grabFrames],
+    [sources, grabFramesBySource],
   )
 
   // ---- Re-framing a blog image to a nearby moment (issue #91) --------------
@@ -748,34 +750,17 @@ export function useScenePipeline() {
     async (time: number): Promise<{ time: number; thumb: string }[]> => {
       const lite = sources.map((s) => ({ id: s.id, duration: s.duration }))
       const times = planBlogSiblings(time, totalDuration(lite))
-      const bySource = new Map<string, number[]>()
-      const localByGlobal = new Map<number, number>()
-      for (const t of times) {
+      const wants = times.flatMap((t) => {
         const loc = globalToLocal(lite, t)
-        if (!loc) continue
-        localByGlobal.set(t, loc.localTime)
-        const arr = bySource.get(loc.sourceId) ?? []
-        arr.push(t)
-        bySource.set(loc.sourceId, arr)
-      }
-      blogPreviewCache.current = new Map()
-      for (const [sourceId, ts] of bySource) {
-        const src = sources.find((s) => s.id === sourceId)
-        if (!src?.sourceUrl) continue
-        try {
-          const frames = await grabFrames(src.sourceUrl, ts.map((t) => localByGlobal.get(t) ?? 0), BLOG_PREVIEW_HEIGHT)
-          ts.forEach((t, i) => {
-            if (frames[i]) blogPreviewCache.current.set(t, frames[i].url)
-          })
-        } catch {
-          // a source whose frames fail is left out of the strip
-        }
-      }
+        const src = loc && sources.find((s) => s.id === loc.sourceId)
+        return loc && src?.sourceUrl ? [{ sourceUrl: src.sourceUrl, time: loc.localTime, key: t }] : []
+      })
+      blogPreviewCache.current = await grabFramesBySource(wants, BLOG_PREVIEW_HEIGHT)
       return times
         .map((t) => ({ time: t, thumb: blogPreviewCache.current.get(t) ?? '' }))
         .filter((s) => s.thumb)
     },
-    [sources, grabFrames],
+    [sources, grabFramesBySource],
   )
 
   /** The large preview for a candidate: its cached strip frame, or one server grab. '' on failure. */
@@ -845,8 +830,8 @@ export function useScenePipeline() {
   // Resume any in-flight job after a hard reload (redux-persist brings back the
   // persisted job ids). The `pollsInFlight` guard inside the `complete*` helpers
   // makes this safe to re-run and safe to race with a live action — only one poll
-  // loop runs per job id. Cold reloads have no in-memory clip, so the director
-  // resume captures thumbs off the persisted source serve URL.
+  // loop runs per job id. Scene-card thumbs are grabbed on the server per scene
+  // (`completeDirectorJob`), so a cold reload behaves exactly like the live path.
   useEffect(() => {
     // Kick the resume off in a microtask: the `complete*` helpers flip transient
     // spinner state synchronously (fine in the live event-handler path), so we
@@ -861,7 +846,7 @@ export function useScenePipeline() {
       }
       if (blog?.status === 'running' && blog.jobId) void completeBlogJob(blog.jobId)
     })
-  }, [scenesJobId, sourceUrl, scenes, sources, blog, completeDirectorJob, completeRefineJob, completeTranscribeJob, completeBlogJob])
+  }, [scenesJobId, scenes, sources, blog, completeDirectorJob, completeRefineJob, completeTranscribeJob, completeBlogJob])
 
   // Backfill measured dead space for projects whose audio was extracted before
   // 13c (extract never re-runs, so `deadSpace` would stay null forever): pull
