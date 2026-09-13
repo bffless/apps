@@ -17,7 +17,7 @@ type Props = {
   /** Capture a large preview frame at a scrubbed second (no upload) — what the
    *  producer sees at figure size before committing. Empty string on failure. */
   preview: (time: number) => Promise<string>
-  /** Re-capture at the chosen second, upload, and swap it into the post. Resolves
+  /** Grab a frame at the chosen second on the server and swap its URL into the post. Resolves
    *  true on success (the post's `src`/`time` then update from the store). */
   reframe: (oldUrl: string, time: number) => Promise<boolean>
 }
@@ -29,8 +29,8 @@ type Props = {
  * nearby frames (±30s); clicking a thumbnail PREVIEWS it large in place of the
  * image (nothing committed yet), so the producer can scrub through options — the
  * strip thumbnails are too small to judge a face by. "Use this frame" then
- * recaptures a clean full-res frame at that second, uploads it, and swaps it into
- * the post. Read-only until opened, so the preview stays calm.
+ * grabs a clean frame at that second on the server and swaps the server frame's
+ * URL into the post. Read-only until opened, so the preview stays calm.
  */
 export function BlogFigure({ src, alt, time, capture, preview, reframe }: Props) {
   const [open, setOpen] = useState(false)
@@ -86,9 +86,9 @@ export function BlogFigure({ src, alt, time, capture, preview, reframe }: Props)
     }
     setPreviewLoading(true)
     try {
-      const dataUrl = await preview(t)
-      if (dataUrl) {
-        setPreviews((m) => new Map(m).set(t, dataUrl))
+      const url = await preview(t)
+      if (url) {
+        setPreviews((m) => new Map(m).set(t, url))
       } else if (wantRef.current === t) {
         setError('Couldn’t load that frame — try another.')
       }
@@ -99,7 +99,7 @@ export function BlogFigure({ src, alt, time, capture, preview, reframe }: Props)
     }
   }
 
-  // Commit the selected frame: recapture full-res, upload, swap into the post.
+  // Commit the selected frame: grab it on the server, swap its URL into the post.
   async function save() {
     if (selected === time || saving) return
     setSaving(true)

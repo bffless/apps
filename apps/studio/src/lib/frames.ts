@@ -6,7 +6,8 @@
 
 /** A composed contact sheet plus the metadata the director call needs. */
 export type ContactSheet = {
-  /** The composed grid as a data URL — PNG (lossless) unless size forced JPEG. */
+  /** Always '' for server sheets (the JPEG lives in the bucket at `url`); kept
+   *  so sheets persisted before the server move still load. Never base64 in the store. */
   dataUrl: string
   width: number
   height: number
@@ -25,12 +26,12 @@ export type ContactSheet = {
   times: number[]
   /** Clip-wide sampling spacing (seconds) — same on every sheet. */
   interval: number
-  /** Encoded byte size of `dataUrl` — kept ≤ `MAX_SHEET_BYTES`. */
+  /** The server JPEG sheet's size in bytes, as CE reports it. */
   bytes: number
   /** Position in the set, for "Sheet 2 of 7". */
   index: number
   total: number
-  /** Bucket URL once uploaded (story 03 feeds these to the director); the
-   * `dataUrl` is the local preview, this is the persisted object. */
+  /** The server JPEG sheet's bucket serve URL (story 03 feeds these to the
+   *  director) — the persisted object. */
   url?: string
 }

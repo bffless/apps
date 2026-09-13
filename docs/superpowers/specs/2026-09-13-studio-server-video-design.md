@@ -31,9 +31,9 @@ ffmpeg `frames` operation.
 | 1 | Prep contact sheets | `generateThumbnails`: fetch each source whole, capture, compose, upload as `thumbnails` | `POST /api/video/contact-sheet`, once per source |
 | 2 | Per-scene dense sheets (refiner + cut-editor filmstrip) | `generateSceneSheets` → `captureSceneContactSheet` | `POST /api/video/contact-sheet` with the scene's times |
 | 3 | Scene card midpoint thumb | `completeDirectorJob`, a 64px data URL per scene | `POST /api/video/frames` |
-| 4 | Blog inline `frame:<t>` images | `materializeBlogImages`, capture then upload as `blog` | `POST /api/video/frames` (full resolution) |
+| 4 | Blog inline `frame:<t>` images | `materializeBlogImages`, capture then upload as `blog` | `POST /api/video/frames` (1080 px tall) |
 | 5 | Blog re-frame candidate strip | `captureBlogSiblings`, 108px data URLs | `POST /api/video/frames` (small height) |
-| 6 | Blog re-frame commit | `reframeBlogImage`, capture then upload | `POST /api/video/frames` (full resolution) |
+| 6 | Blog re-frame commit | `reframeBlogImage`, capture then upload | `POST /api/video/frames` (1080 px tall) |
 | 7 | Blog re-frame preview | `captureBlogPreview`, one 720px data URL | Reuses #5: the candidate strip is fetched at 720px in one frames job, so a candidate's own URL is its large preview. `captureBlogPreview` returns the cached URL, falling back to a one-frame job. `BlogFigure` is unchanged, since it already renders an image URL. |
 
 **Loses its browser fallback** (the server path already exists): scene slice, scene
@@ -116,8 +116,6 @@ the existing `GET /api/studio/job`.
   - **#3** Midpoint thumbs become frame URLs (`scene.thumb` holds a URL, not a data URL).
   - **#4 and #6** use the returned frame URL directly in the blog markdown. No re-upload.
   - **#5** returns URLs to the picker.
-  - **#7** the preview component renders `<video src={signed} preload="metadata">` and sets
-    `currentTime`.
 - Deleted in PR 1:
   - from `src/lib/frames.ts`: `captureFramesAt`, `captureFrames`, `composeContactSheet`,
     `captureContactSheet`, `captureSceneContactSheet`. The `ContactSheet` type stays

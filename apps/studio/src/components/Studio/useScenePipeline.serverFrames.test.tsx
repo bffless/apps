@@ -9,7 +9,16 @@ import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
 import { setupServer } from 'msw/node'
 import { http, HttpResponse } from 'msw'
-import studioReducer, { createProject, addSource, patchSource, patchSourceStage, selectActive, setScenes } from '../../store/studioSlice'
+import studioReducer, {
+  createProject,
+  addSource,
+  patchSource,
+  patchSourceStage,
+  selectActive,
+  setBlogResult,
+  setBlogRunning,
+  setScenes,
+} from '../../store/studioSlice'
 import { studioApi } from '../../store/studioApi'
 import { PER_VIDEO_STAGES } from '../../lib/pipeline'
 import { resetVideoBackendForTests } from '../../lib/videoBackend'
@@ -293,7 +302,14 @@ describe('blog re-frame on the server', () => {
   }, 15000)
 
   it('re-frames at full height and swaps the served url into the post', async () => {
+    const heights: number[] = []
+    server.events.on('request:start', async ({ request }) => {
+      if (new URL(request.url).pathname === '/api/video/frames') heights.push((await request.clone().json()).height)
+    })
     const store = makeStore()
+    const oldUrl = '/api/uploads/blog/old.jpg'
+    store.dispatch(setBlogRunning({ direction: '', script: '', jobId: 'blog-1' }))
+    store.dispatch(setBlogResult({ markdown: `Intro\n\n![A frame](${oldUrl})\n`, frames: [{ url: oldUrl, time: 40 }] }))
     let pipe!: ReturnType<typeof useScenePipeline>
     render(
       <Provider store={store}>
@@ -302,8 +318,13 @@ describe('blog re-frame on the server', () => {
     )
     let ok = false
     await act(async () => {
-      ok = await pipe.reframeBlogImage('/api/uploads/blog/old.jpg', 42)
+      ok = await pipe.reframeBlogImage(oldUrl, 42)
     })
     expect(ok).toBe(true)
+    expect(heights).toEqual([1080])
+    const blog = active(store).blog!
+    expect(blog.markdown).not.toContain(oldUrl)
+    expect(blog.markdown).toMatch(/!\[A frame\]\(\/api\/uploads\/projects\/p1\/frames\/server\/[^)]+\)/)
+    expect(blog.frames).toEqual([{ url: expect.stringContaining('/frames/server/'), time: 42 }])
   }, 15000)
 })

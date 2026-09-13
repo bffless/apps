@@ -129,8 +129,9 @@ const VIDEO_POLL_TIMEOUT_MS = 20 * 60 * 1000
 
 /** Scene card art height (px). Card thumbs render small; 180 stays crisp on retina. */
 const SCENE_THUMB_HEIGHT = 180
-/** Blog hero frames (px). CE scales to this height and does not cap at the source,
- *  so 1080 never upscales a 1080p recording. */
+/** Blog frames (px). CE scales every still to exactly this height and does not cap
+ *  at the source: a shorter recording is upscaled, a taller one downscaled. 1080 is
+ *  a deliberate size for blog images — sharp at article width and small to serve. */
 const BLOG_FRAME_HEIGHT = 1080
 /** Blog re-frame candidates (px): shown small in the strip, and large as the preview. */
 const BLOG_PREVIEW_HEIGHT = 720

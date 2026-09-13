@@ -358,12 +358,12 @@ describe('nextActions with a wider ffmpeg lane', () => {
     expect(steps.map((a) => a.kind === 'step' && a.scene.id)).toEqual(['a'])
   })
   it('cap 3 admits three cuts across scenes and holds the fourth', () => {
-    const caps = { ffmpeg: 3, refine: 1, sheets: 1 }
+    const caps = { ffmpeg: 3, refine: 1 }
     const steps = nextActions(scenes, [], caps).filter((a) => a.kind === 'step')
     expect(steps.map((a) => a.kind === 'step' && a.scene.id)).toEqual(['a', 'b', 'c'])
   })
   it('counts in-flight ffmpeg steps against the cap', () => {
-    const caps = { ffmpeg: 3, refine: 1, sheets: 1 }
+    const caps = { ffmpeg: 3, refine: 1 }
     const inFlight = [{ sceneId: 'a', stepId: 'cut' as const }, { sceneId: 'b', stepId: 'cut' as const }]
     const steps = nextActions(scenes, inFlight, caps).filter((a) => a.kind === 'step')
     expect(steps.map((a) => a.kind === 'step' && a.scene.id)).toEqual(['c'])
