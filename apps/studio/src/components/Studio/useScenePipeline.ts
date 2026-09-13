@@ -39,7 +39,7 @@ import { buildSliceCommand } from '../../lib/export/slice'
 import { slice as ffmpegSlice, sliceSourcePath } from '../../lib/export/ffmpeg'
 import { type ContactSheet } from '../../lib/frames'
 import { planGlobalSheetCaptures } from '../../lib/globalSheet'
-import { planSceneContactSheet } from '../../lib/contactSheet'
+import { planSceneContactSheet, MAX_SHEETS } from '../../lib/contactSheet'
 import {
   SERVER_SHEET_CELLS,
   toServerSheetsResult,
@@ -1003,15 +1003,23 @@ export function useScenePipeline() {
         ordered.map((s) => ({ id: s.id, duration: s.duration })),
         SERVER_SHEET_CELLS,
       )
-      const interval = captures.length > 1 ? captures[1].globalTime - captures[0].globalTime : 0
       const sheets: ContactSheet[] = []
       // A recording whose job fails is skipped (and named in the detail), so one
       // bad recording never throws away the sheets the others made.
       const failed: { fileName: string; message: string }[] = []
+      // A recording that the per-recording sheet budget gave no sheet to (past
+      // MAX_SHEETS recordings) is named too, so it reads as "not planned" rather
+      // than silently missing.
+      const unplanned: string[] = []
       let undrawn = false
       for (const src of ordered) {
         const mine = captures.filter((c) => c.sourceId === src.id)
-        if (mine.length === 0 || !src.sourceUrl) continue
+        if (!src.sourceUrl) continue
+        if (mine.length === 0) {
+          if (src.duration > 0) unplanned.push(src.fileName)
+          continue
+        }
+        const interval = mine.length > 1 ? mine[1].localTime - mine[0].localTime : 0
         const globalTimes = mine.map((c) => c.globalTime)
         const globalOf = new Map(mine.map((c) => [c.localTime, c.globalTime]))
         try {
@@ -1041,14 +1049,23 @@ export function useScenePipeline() {
           failed[0]?.message ?? 'No contact sheets were made — check that every recording finished uploading.',
         )
       }
-      const stamped = restampSheets(sheets)
+      // Defense in depth: the planner keeps this within MAX_SHEETS on its own, but
+      // never store more sheets than the director reads (`prep.fn.js:8`).
+      const dropped = Math.max(0, sheets.length - MAX_SHEETS)
+      const kept = dropped > 0 ? sheets.slice(0, MAX_SHEETS) : sheets
+      const stamped = restampSheets(kept)
       dispatch(setContactSheets(stamped))
       const frameCount = stamped.reduce((n, s) => n + s.count, 0)
+      const noSheet = unplanned.map((fileName) => ` · no sheet left for ${fileName}`).join('')
       const skipped = failed.map((f) => ` · skipped ${f.fileName}: ${f.message}`).join('')
       const noStamps = undrawn ? ' · timestamps not drawn (CE ffmpeg lacks drawtext)' : ''
+      const droppedText =
+        dropped > 0
+          ? ` · dropped ${dropped} sheet${dropped === 1 ? '' : 's'} past the director's ${MAX_SHEETS}-image limit`
+          : ''
       patch('thumbnails', {
         status: 'done',
-        detail: `${frameCount} frames · ${stamped.length} sheet${stamped.length === 1 ? '' : 's'} (server)${skipped}${noStamps}`,
+        detail: `${frameCount} frames · ${stamped.length} sheet${stamped.length === 1 ? '' : 's'} (server)${noSheet}${skipped}${noStamps}${droppedText}`,
       })
     },
     [patch, dispatch, sources, grabSheets, sheetsFor],

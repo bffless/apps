@@ -254,6 +254,62 @@ describe('prep contact sheets on the server', () => {
     expect(active(store).stageProgress.thumbnails?.detail).toContain('timestamps not drawn')
   }, 15000)
 
+  it('names an 11th recording the per-recording budget left with no sheet, instead of silently dropping it', async () => {
+    const store = makeStore()
+    store.dispatch(patchSource({ id: 'src1', patch: { duration: 600 } }))
+    let lastId = 'src1'
+    for (let i = 2; i <= 11; i++) {
+      const id = `src${i}`
+      lastId = id
+      store.dispatch(addSource({ id, fileName: `rec${i}.mov`, duration: 600 }))
+      store.dispatch(
+        patchSource({ id, patch: { sourceUrl: `/api/uploads/projects/p1/source/rec${i}.mov`, duration: 600 } }),
+      )
+      for (const stage of PER_VIDEO_STAGES) {
+        store.dispatch(patchSourceStage({ id, stage, patch: { status: 'done' } }))
+      }
+    }
+    await runNext(store)
+    // 11 recordings each round-trip their own /api/video/contact-sheet job
+    // sequentially (pending → running → done, POLL_INTERVAL_MS apart), so this
+    // takes noticeably longer than the 1-2 recording tests above.
+    await waitFor(() => expect(['done', 'error']).toContain(active(store).stageProgress.thumbnails?.status), {
+      timeout: 90000,
+    })
+
+    expect(active(store).stageProgress.thumbnails?.status).toBe('done')
+    const sheets = active(store).contactSheets
+    expect(sheets.length).toBeLessThanOrEqual(10)
+    // The 11th (last-added, equal-length) recording is the one the per-recording
+    // budget gives no sheet to (ties go to the earlier recording).
+    expect(active(store).stageProgress.thumbnails?.detail).toContain(`no sheet left for rec${lastId.slice(3)}.mov`)
+  }, 95000)
+
+  it('drops sheets past the director\'s image limit as defense in depth', async () => {
+    server.use(
+      http.post('/api/video/contact-sheet', () => HttpResponse.json({ jobId: 'clamp-many', status: 'pending' })),
+      http.get('/api/studio/job', ({ request }) => {
+        if (new URL(request.url).searchParams.get('id') !== 'clamp-many') return undefined
+        const sheets = Array.from({ length: 11 }, (_, i) => ({
+          url: `/api/uploads/projects/p1/thumbnails/server/clamp/sheet-${String(i + 1).padStart(2, '0')}.jpg`,
+          times: Array.from({ length: 12 }, (_, j) => i * 12 + j),
+          cols: 3,
+          rows: 4,
+          bytes: 1,
+        }))
+        return HttpResponse.json({ status: 'done', kind: 'video-contact-sheet', result: { sheets, drawn: true } })
+      }),
+    )
+    const store = makeStore()
+    await runNext(store)
+    await waitFor(() => expect(active(store).stageProgress.thumbnails?.status).toBe('done'), { timeout: 12000 })
+
+    const sheets = active(store).contactSheets
+    expect(sheets).toHaveLength(10)
+    expect(sheets.every((s) => s.total === 10)).toBe(true)
+    expect(active(store).stageProgress.thumbnails?.detail).toContain('dropped 1 sheet')
+  }, 15000)
+
   it('fails the stage, instead of passing it, when the job returns no sheets', async () => {
     server.use(
       http.post('/api/video/contact-sheet', () => HttpResponse.json({ jobId: 'empty-sheets', status: 'pending' })),
