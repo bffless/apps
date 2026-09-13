@@ -67,7 +67,8 @@ restorable cross-browser):
 
 ```ts
 blog: {
-  markdown: string          // resolved: image tokens rewritten to /api/uploads/blog/... URLs
+  markdown: string          // resolved: image tokens rewritten to /api/uploads/projects/<id>/frames/server/... URLs
+                            // (older posts may still hold /api/uploads/blog/... ones)
   direction: string         // the creator's free-text steer
   script: string            // the final script it was generated from (staleness key)
   status: 'idle' | 'running' | 'done' | 'error'
@@ -81,10 +82,10 @@ Flow (a new `BlogCard` + orchestration in `useScenePipeline.ts`):
    job, get `{ markdown }`.
 2. **Materialise images eagerly** (ADR-0002): parse the markdown for `frame:<t>` tokens,
    dedup timestamps; for each, map global→`(sourceId, localTime)` (`globalToLocal`, for
-   multi-source), seek the **source video** (in-memory `File` if present, else signed bucket
-   `sourceUrl`) and re-capture a clean full-res frame via `captureFramesAt`; upload each as a
-   **new blog asset** (presigned direct-to-bucket, reuse the `studio_source` upload schema,
-   `sub_dir: "blog"` → `projects/{id}/blog/frame-NN.jpg`). Get serve URLs.
+   multi-source), then grab clean, label-free frames **on the server**: one frames job per
+   source recording (`POST /api/video/frames`, CE's ffmpeg `frames` op, 1080 px tall). No
+   browser capture and no upload; each frame is already a bucket object with a serve URL
+   (`/api/uploads/projects/{id}/frames/server/...`).
 3. **Rewrite tokens → real Markdown image links** at the bucket serve URLs. Persist *that*
    resolved markdown to the slice + DB.
 4. **Preview** — render the resolved markdown **read-only** (a Markdown renderer dep, e.g.

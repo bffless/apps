@@ -65,16 +65,17 @@ of `nextAction(scenes)` returning the one next `(scene, step)`, a
 to lane capacities. The orchestrator fires whatever is runnable and not already
 in flight. Lanes encode the constraints above directly:
 
-- **ffmpeg lane, capacity 1** — at most one `cut` *or* `assemble` in flight,
+- **ffmpeg lane, capacity 1** — at most one `cut`, `sheets` *or* `assemble` in flight,
   taken in scene order. Preserves constraints 1 and 4 for free.
 - **refine lane, capacity 1, scene order** — refines stay ordered N−1 → N
   (constraint 3), but a refine is just polling, so it overlaps the ffmpeg lane
   completely. (Serializing refines costs almost no wall clock: each assemble
   render is minutes, plenty of time for the next refine to land.)
-- **sheets lane, capacity 1** — capture is main-thread canvas work; one at a
-  time, overlapping both other lanes.
+- *Sheets moved into the ffmpeg lane* when contact sheets moved to CE's server
+  `frames` op (PR #699): they now share the backend's single ffmpeg slot on the
+  Local executor, and widen with the lane on Remote.
 - **upload semaphore, capacity 1, shared** — every upload inside auto-build
-  steps (slice's two, sheets', saveSceneCut's) acquires it (constraint 2).
+  steps (slice's two, saveSceneCut's) acquires it (constraint 2).
 
 **C. K parallel scene-workers.** Run whole scenes concurrently, each stepping
 sequentially, with a global ffmpeg mutex. Simpler to picture, but both workers

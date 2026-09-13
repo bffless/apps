@@ -286,13 +286,6 @@ export function replaceBlogImageUrl(markdown: string, oldUrl: string, newUrl: st
   )
 }
 
-/** The bucket object name a re-framed frame uploads as: keyed by its global
- *  millisecond so re-picking the same moment is idempotent and distinct moments
- *  never collide (issue #91). */
-export function blogReframeFileName(time: number): string {
-  return `frame-t${Math.round(Math.max(0, Number.isFinite(time) ? time : 0) * 1000)}.jpg`
-}
-
 /**
  * A URL/filename-safe slug of the post title — lowercased, every run of
  * non-alphanumerics collapsed to a single hyphen, trimmed. Used to name the
