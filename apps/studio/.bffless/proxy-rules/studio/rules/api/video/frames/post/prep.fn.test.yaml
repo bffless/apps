@@ -1,0 +1,62 @@
+handler: ./prep.fn.js
+cases:
+  - name: a valid request passes through
+    data:
+      request:
+        body: { sourceUrl: /api/uploads/projects/p1/source/a.mov, projectId: p1, times: [10, 12.5], height: 720 }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        failJson: ""
+        input: /api/uploads/projects/p1/source/a.mov
+        projectId: p1
+        times: [10, 12.5]
+        height: 720
+        executor: ""
+  - name: a height outside 64-4320 is refused
+    data:
+      request:
+        body: { sourceUrl: /api/uploads/projects/p1/source/a.mov, projectId: p1, times: [10], height: 8000 }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: height must be an integer from 64 to 4320
+        failJson: '{"error":"height must be an integer from 64 to 4320","code":"BAD_REQUEST"}'
+        input: ""
+        projectId: ""
+        times: []
+        height: 0
+        executor: ""
+  - name: a source outside /api/uploads/ is refused
+    data:
+      request:
+        body: { sourceUrl: /etc/passwd, projectId: p1, times: [10], height: 720 }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: sourceUrl must be an /api/uploads/ path
+        failJson: '{"error":"sourceUrl must be an /api/uploads/ path","code":"BAD_REQUEST"}'
+        input: ""
+        projectId: ""
+        times: []
+        height: 0
+        executor: ""
+  - name: a negative time is refused
+    data:
+      request:
+        body: { sourceUrl: /api/uploads/projects/p1/source/a.mov, projectId: p1, times: [-1], height: 720 }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: times must be 1-200 non-negative seconds
+        failJson: '{"error":"times must be 1-200 non-negative seconds","code":"BAD_REQUEST"}'
+        input: ""
+        projectId: ""
+        times: []
+        height: 0
+        executor: ""
