@@ -528,7 +528,8 @@ export function useScenePipeline() {
 
   // One server frame job per source; returns key → frame url. A source whose job
   // fails is left out (callers treat a missing key as "no frame"). Results map back
-  // by index — the frames rule returns frames in request order.
+  // by the time CE echoes on each frame, never by position, so a frame CE leaves
+  // out is simply absent instead of shifting every later key.
   const grabFramesBySource = useCallback(
     async <K,>(wants: { sourceUrl: string; time: number; key: K }[], height: number): Promise<Map<K, string>> => {
       const bySource = new Map<string, { time: number; key: K }[]>()
@@ -541,9 +542,11 @@ export function useScenePipeline() {
       for (const [sourceUrl, items] of bySource) {
         try {
           const frames = await grabFrames(sourceUrl, items.map((i) => i.time), height)
-          items.forEach((it, i) => {
-            if (frames[i]) out.set(it.key, frames[i].url)
-          })
+          const urlByTime = new Map(frames.map((f) => [f.time, f.url]))
+          for (const it of items) {
+            const url = urlByTime.get(it.time)
+            if (url) out.set(it.key, url)
+          }
         } catch {
           // this source's frames are left out, never a broken image
         }
@@ -557,14 +560,14 @@ export function useScenePipeline() {
   // cell geometry, then map onto ContactSheet. A read that comes back 0 (the
   // image failed to load) is retried once; no loop beyond that.
   const sheetsFor = useCallback(
-    async (got: ServerSheet[], displayTimes: number[], interval: number) => {
+    async (got: ServerSheet[], displayTimeOf: (t: number) => number, interval: number) => {
       const sizes = await Promise.all(
         got.map(async (s) => {
           const size = await imageSize(s.url)
           return size.width > 0 && size.height > 0 ? size : imageSize(s.url)
         }),
       )
-      return toContactSheets(got, sizes, displayTimes, interval)
+      return toContactSheets(got, sizes, displayTimeOf, interval)
     },
     [],
   )
@@ -955,8 +958,9 @@ export function useScenePipeline() {
         const mine = captures.filter((c) => c.sourceId === src.id)
         if (mine.length === 0 || !src.sourceUrl) continue
         const globalTimes = mine.map((c) => c.globalTime)
+        const globalOf = new Map(mine.map((c) => [c.localTime, c.globalTime]))
         const got = await grabSheets(src.sourceUrl, mine.map((c) => c.localTime), sheetLabels(globalTimes))
-        sheets.push(...(await sheetsFor(got, globalTimes, interval)))
+        sheets.push(...(await sheetsFor(got, (t) => globalOf.get(t) ?? t, interval)))
       }
       if (sheets.length === 0) {
         throw new Error('No contact sheets were made — check that every recording finished uploading.')
@@ -1190,7 +1194,7 @@ export function useScenePipeline() {
         const plan = planSceneContactSheet(scene.start, scene.end)
         if (plan.times.length === 0) throw new Error('This scene is too short for a contact sheet.')
         const got = await grabSheets(src.sourceUrl, plan.times, sheetLabels(plan.times))
-        patchScene(id, { sheets: await sheetsFor(got, plan.times, plan.interval) })
+        patchScene(id, { sheets: await sheetsFor(got, (t) => t, plan.interval) })
       } catch (e) {
         setSceneErrorFor(id, stageError(e))
       } finally {

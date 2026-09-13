@@ -59,22 +59,21 @@ export function sheetLabels(times: number[]): string[] {
 }
 
 /**
- * Map server sheets onto `ContactSheet`. `displayTimes` are the times the sheet
- * should REPORT, which can differ from the local times sent to CE (prep sheets
- * report global times). They are assigned by position: sheet i holds the next
- * `sheets[i].times.length` entries. `sizes[i]` is the sheet JPEG's natural size;
- * cell geometry is derived from it through `cellGeometry`, or left at 0 when unknown.
+ * Map server sheets onto `ContactSheet`. `displayTimeOf` turns a time CE echoed
+ * back (the local time sent for that still) into the time the sheet should
+ * REPORT (prep sheets report global times). It is matched by time, never by
+ * position, so a still CE left out cannot shift the stills after it.
+ * `sizes[i]` is the sheet JPEG's natural size; cell geometry is derived from it
+ * through `cellGeometry`, or left at 0 when unknown.
  */
 export function toContactSheets(
   sheets: ServerSheet[],
   sizes: { width: number; height: number }[],
-  displayTimes: number[],
+  displayTimeOf: (t: number) => number,
   interval: number,
 ): ContactSheet[] {
-  let offset = 0
   return sheets.map((s, i) => {
-    const times = displayTimes.slice(offset, offset + s.times.length)
-    offset += s.times.length
+    const times = s.times.map(displayTimeOf)
     const width = sizes[i]?.width ?? 0
     const height = sizes[i]?.height ?? 0
     // Build base sheet with cellWidth/cellHeight at 0, then derive geometry
@@ -88,7 +87,7 @@ export function toContactSheets(
       cellWidth: 0,
       cellHeight: 0,
       gap: SERVER_SHEET_GAP,
-      count: times.length,
+      count: s.times.length,
       times,
       interval,
       bytes: s.bytes,

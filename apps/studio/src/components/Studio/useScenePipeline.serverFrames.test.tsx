@@ -206,6 +206,38 @@ describe('blog re-frame on the server', () => {
     expect(heights).toEqual([720]) // cached: no second job
   }, 15000)
 
+  it('matches frames back by time, so a dropped frame never shifts the others', async () => {
+    // The frames job answers for every requested time except the second, and
+    // names each url after its time so a mismatch is visible.
+    let asked: number[] = []
+    server.use(
+      http.post('/api/video/frames', async ({ request }) => {
+        asked = ((await request.clone().json()) as { times: number[] }).times
+        return HttpResponse.json({ jobId: 'drop-one', status: 'pending' })
+      }),
+      http.get('/api/studio/job', ({ request }) => {
+        if (new URL(request.url).searchParams.get('id') !== 'drop-one') return undefined
+        const frames = asked.filter((_, i) => i !== 1).map((time) => ({ time, url: `/api/uploads/projects/p1/frames/server/t-${time}.jpg` }))
+        return HttpResponse.json({ status: 'done', kind: 'video-frames', result: { frames } })
+      }),
+    )
+    const store = makeStore()
+    let pipe!: ReturnType<typeof useScenePipeline>
+    render(
+      <Provider store={store}>
+        <BlogHarness onReady={(p) => (pipe = p)} />
+      </Provider>,
+    )
+    let strip: { time: number; thumb: string }[] = []
+    await act(async () => {
+      strip = await pipe.captureBlogSiblings(300)
+    })
+    expect(asked.length).toBeGreaterThan(2)
+    expect(strip).toHaveLength(asked.length - 1)
+    expect(strip.map((s) => s.time)).not.toContain(asked[1])
+    for (const s of strip) expect(s.thumb).toBe(`/api/uploads/projects/p1/frames/server/t-${s.time}.jpg`)
+  }, 15000)
+
   it('re-frames at full height and swaps the served url into the post', async () => {
     const store = makeStore()
     let pipe!: ReturnType<typeof useScenePipeline>
