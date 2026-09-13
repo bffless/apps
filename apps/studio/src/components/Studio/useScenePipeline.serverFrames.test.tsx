@@ -178,6 +178,58 @@ describe('prep contact sheets on the server', () => {
     expect(active(store).stageProgress.thumbnails?.detail).toContain('skipped second.mov')
   }, 15000)
 
+  it("stores a later recording's sheets at global times, offset by the recordings before it", async () => {
+    const bodies: { sourceUrl: string; times: number[] }[] = []
+    server.events.on('request:start', async ({ request }) => {
+      if (new URL(request.url).pathname === '/api/video/contact-sheet') bodies.push(await request.clone().json())
+    })
+    const store = makeStore()
+    store.dispatch(addSource({ id: 'src2', fileName: 'second.mov', duration: 600 }))
+    store.dispatch(
+      patchSource({ id: 'src2', patch: { sourceUrl: '/api/uploads/projects/p1/source/second.mov', duration: 600 } }),
+    )
+    for (const stage of PER_VIDEO_STAGES) {
+      store.dispatch(patchSourceStage({ id: 'src2', stage, patch: { status: 'done' } }))
+    }
+    await runNext(store)
+    await waitFor(() => expect(active(store).stageProgress.thumbnails?.status).toBe('done'), { timeout: 12000 })
+
+    const second = bodies.find((b) => b.sourceUrl.includes('second.mov'))!
+    expect(second.times.length).toBeGreaterThan(0)
+    expect(Math.max(...second.times)).toBeLessThan(600) // sent at local times
+    const stored = active(store)
+      .contactSheets.flatMap((s) => s.times)
+      .filter((t) => t >= 1101)
+    expect(stored).toHaveLength(second.times.length)
+    stored.forEach((t, i) => expect(t).toBeCloseTo(second.times[i] + 1101, 6))
+  }, 15000)
+
+  it('maps sheets onto the planned times in order when none of the times CE echoes match', async () => {
+    let asked: number[] = []
+    server.use(
+      http.post('/api/video/contact-sheet', async ({ request }) => {
+        asked = ((await request.clone().json()) as { times: number[] }).times
+        return HttpResponse.json({ jobId: 'sheets-perturbed', status: 'pending' })
+      }),
+      http.get('/api/studio/job', ({ request }) => {
+        if (new URL(request.url).searchParams.get('id') !== 'sheets-perturbed') return undefined
+        const sheets = Array.from({ length: Math.ceil(asked.length / 12) }, (_, i) => ({
+          url: `/api/uploads/projects/p1/thumbnails/server/p/sheet-${i}.jpg`,
+          times: asked.slice(i * 12, i * 12 + 12).map((t) => t + 0.001),
+          cols: 3,
+          rows: 4,
+          bytes: 1,
+        }))
+        return HttpResponse.json({ status: 'done', kind: 'video-contact-sheet', result: { sheets, drawn: true } })
+      }),
+    )
+    const store = makeStore()
+    await runNext(store)
+    await waitFor(() => expect(active(store).stageProgress.thumbnails?.status).toBe('done'), { timeout: 12000 })
+    expect(asked.length).toBeGreaterThan(0)
+    expect(active(store).contactSheets.flatMap((s) => s.times)).toEqual(asked)
+  }, 15000)
+
   it('fails the stage, instead of passing it, when the job returns no sheets', async () => {
     server.use(
       http.post('/api/video/contact-sheet', () => HttpResponse.json({ jobId: 'empty-sheets', status: 'pending' })),
@@ -299,6 +351,34 @@ describe('blog re-frame on the server', () => {
     expect(strip).toHaveLength(asked.length - 1)
     expect(strip.map((s) => s.time)).not.toContain(asked[1])
     for (const s of strip) expect(s.thumb).toBe(`/api/uploads/projects/p1/frames/server/t-${s.time}.jpg`)
+  }, 15000)
+
+  it('falls back to request order when no frame time CE echoes matches the request', async () => {
+    let asked: number[] = []
+    server.use(
+      http.post('/api/video/frames', async ({ request }) => {
+        asked = ((await request.clone().json()) as { times: number[] }).times
+        return HttpResponse.json({ jobId: 'frames-perturbed', status: 'pending' })
+      }),
+      http.get('/api/studio/job', ({ request }) => {
+        if (new URL(request.url).searchParams.get('id') !== 'frames-perturbed') return undefined
+        const frames = asked.map((time, i) => ({ time: time + 0.001, url: `/api/uploads/projects/p1/frames/server/i-${i}.jpg` }))
+        return HttpResponse.json({ status: 'done', kind: 'video-frames', result: { frames } })
+      }),
+    )
+    const store = makeStore()
+    let pipe!: ReturnType<typeof useScenePipeline>
+    render(
+      <Provider store={store}>
+        <BlogHarness onReady={(p) => (pipe = p)} />
+      </Provider>,
+    )
+    let strip: { time: number; thumb: string }[] = []
+    await act(async () => {
+      strip = await pipe.captureBlogSiblings(300)
+    })
+    expect(asked.length).toBeGreaterThan(1)
+    expect(strip.map((s) => s.thumb)).toEqual(asked.map((_, i) => `/api/uploads/projects/p1/frames/server/i-${i}.jpg`))
   }, 15000)
 
   it('re-frames at full height and swaps the served url into the post', async () => {

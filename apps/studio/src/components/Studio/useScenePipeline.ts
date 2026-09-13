@@ -579,6 +579,13 @@ export function useScenePipeline() {
         try {
           const frames = await grabFrames(sourceUrl, items.map((i) => i.time), height, duration)
           const urlByTime = new Map(frames.map((f) => [f.time, f.url]))
+          // CE echoes requested times exactly, but a total miss must never turn into
+          // "no images, no error": same count → request order; otherwise drop the source.
+          if (frames.length > 0 && !items.some((it) => urlByTime.has(it.time))) {
+            if (frames.length !== items.length) throw new Error('Frame times from the server did not match the request')
+            items.forEach((it, i) => out.set(it.key, frames[i].url))
+            continue
+          }
           for (const it of items) {
             const url = urlByTime.get(it.time)
             if (url) out.set(it.key, url)
@@ -1000,7 +1007,16 @@ export function useScenePipeline() {
         const globalOf = new Map(mine.map((c) => [c.localTime, c.globalTime]))
         try {
           const got = await grabSheets(src.sourceUrl, mine.map((c) => c.localTime), sheetLabels(globalTimes), src.duration)
-          sheets.push(...(await sheetsFor(got, (t) => globalOf.get(t) ?? t, interval)))
+          // Matched by time. If EVERY time CE echoed for this recording misses, map
+          // the sheets positionally onto the planned global times instead, so a
+          // total mismatch never leaves local times on a global timeline.
+          const echoed = got.flatMap((s) => s.times)
+          let displayTimeOf = (t: number) => globalOf.get(t) ?? t
+          if (echoed.length > 0 && echoed.every((t) => !globalOf.has(t))) {
+            let next = 0
+            displayTimeOf = (t: number) => globalTimes[next++] ?? t
+          }
+          sheets.push(...(await sheetsFor(got, displayTimeOf, interval)))
         } catch (e) {
           failed.push({ fileName: src.fileName, message: stageError(e) })
         }
