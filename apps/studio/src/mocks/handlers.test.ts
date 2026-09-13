@@ -40,6 +40,7 @@ describe('server frame mocks', () => {
   afterAll(() => {
     server.close()
     vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
   })
 
   async function pollDone(jobId: string): Promise<unknown> {
