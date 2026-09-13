@@ -5,6 +5,7 @@
  * onto the existing `ContactSheet` shape, so the director, refiner and
  * filmstrip read server sheets exactly as they read the old browser ones.
  */
+import { cellGeometry } from './filmstrip'
 import { clockLabel } from './contactSheet'
 import type { ContactSheet } from './frames'
 
@@ -62,7 +63,7 @@ export function sheetLabels(times: number[]): string[] {
  * should REPORT, which can differ from the local times sent to CE (prep sheets
  * report global times). They are assigned by position: sheet i holds the next
  * `sheets[i].times.length` entries. `sizes[i]` is the sheet JPEG's natural size;
- * cell geometry is derived from it, or left at 0 when unknown.
+ * cell geometry is derived from it through `cellGeometry`, or left at 0 when unknown.
  */
 export function toContactSheets(
   sheets: ServerSheet[],
@@ -70,23 +71,23 @@ export function toContactSheets(
   displayTimes: number[],
   interval: number,
 ): ContactSheet[] {
-  const gap = SERVER_SHEET_GAP
   let offset = 0
   return sheets.map((s, i) => {
     const times = displayTimes.slice(offset, offset + s.times.length)
     offset += s.times.length
     const width = sizes[i]?.width ?? 0
     const height = sizes[i]?.height ?? 0
-    return {
+    // Build base sheet with cellWidth/cellHeight at 0, then derive geometry
+    const base: ContactSheet = {
       dataUrl: '',
       url: s.url,
       width,
       height,
       cols: s.cols,
       rows: s.rows,
-      cellWidth: width > 0 ? (width - (s.cols + 1) * gap) / s.cols : 0,
-      cellHeight: height > 0 ? (height - (s.rows + 1) * gap) / s.rows : 0,
-      gap,
+      cellWidth: 0,
+      cellHeight: 0,
+      gap: SERVER_SHEET_GAP,
       count: times.length,
       times,
       interval,
@@ -94,6 +95,12 @@ export function toContactSheets(
       index: i,
       total: sheets.length,
     }
+    // Derive geometry from the base sheet only when both dimensions are known
+    if (width > 0 && height > 0) {
+      const { cellWidth, cellHeight, gap } = cellGeometry(base)
+      return { ...base, cellWidth, cellHeight, gap }
+    }
+    return base
   })
 }
 
