@@ -553,11 +553,17 @@ export function useScenePipeline() {
     [grabFrames],
   )
 
-  // Read each sheet JPEG's natural size once, so the cut editor's sprite crop has
-  // cell geometry, then map onto ContactSheet.
+  // Read each sheet JPEG's natural size, so the cut editor's sprite crop has
+  // cell geometry, then map onto ContactSheet. A read that comes back 0 (the
+  // image failed to load) is retried once; no loop beyond that.
   const sheetsFor = useCallback(
     async (got: ServerSheet[], displayTimes: number[], interval: number) => {
-      const sizes = await Promise.all(got.map((s) => imageSize(s.url)))
+      const sizes = await Promise.all(
+        got.map(async (s) => {
+          const size = await imageSize(s.url)
+          return size.width > 0 && size.height > 0 ? size : imageSize(s.url)
+        }),
+      )
       return toContactSheets(got, sizes, displayTimes, interval)
     },
     [],

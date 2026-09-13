@@ -111,8 +111,12 @@ export function cellGeometry(sheet: ContactSheet): {
     return { cellWidth: sheet.cellWidth, cellHeight: sheet.cellHeight, gap }
   }
   // width = cols*cellW + (cols+1)*gap  ⇒  cellW = (width - (cols+1)*gap) / cols.
-  const cellWidth = sheet.cols > 0 ? (sheet.width - (sheet.cols + 1) * gap) / sheet.cols : 0
-  const cellHeight = sheet.rows > 0 ? (sheet.height - (sheet.rows + 1) * gap) / sheet.rows : 0
+  // A sheet whose size never loaded (width/height 0) would derive a negative
+  // cell; clamp to 0 so `spriteStyle` draws a blank cell, never a broken sprite.
+  const derivedWidth = sheet.cols > 0 ? (sheet.width - (sheet.cols + 1) * gap) / sheet.cols : 0
+  const derivedHeight = sheet.rows > 0 ? (sheet.height - (sheet.rows + 1) * gap) / sheet.rows : 0
+  const cellWidth = derivedWidth > 0 ? derivedWidth : 0
+  const cellHeight = derivedHeight > 0 ? derivedHeight : 0
   return { cellWidth, cellHeight, gap }
 }
 

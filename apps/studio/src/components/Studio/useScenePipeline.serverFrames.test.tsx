@@ -99,6 +99,22 @@ describe('prep contact sheets on the server', () => {
     expect(active(store).stageProgress.thumbnails?.detail).toBe('120 frames · 10 sheets (server)')
   }, 15000)
 
+  it('re-measures a sheet whose image size failed to load, once', async () => {
+    const real = { width: 3 * 1280 + 8, height: 4 * 720 + 10 }
+    const calls = new Map<string, number>()
+    imageSizeMock.mockImplementation(async (url: string) => {
+      const n = (calls.get(url) ?? 0) + 1
+      calls.set(url, n)
+      return n === 1 ? { width: 0, height: 0 } : real
+    })
+    const store = makeStore()
+    await runNext(store)
+    await waitFor(() => expect(active(store).stageProgress.thumbnails?.status).toBe('done'), { timeout: 12000 })
+    const sheets = active(store).contactSheets
+    expect(sheets[0]).toMatchObject({ width: real.width, height: real.height, cellWidth: 1280, cellHeight: 720 })
+    expect(calls.get(sheets[0].url!)).toBe(2)
+  }, 15000)
+
   it('fails the stage, instead of passing it, when the job returns no sheets', async () => {
     server.use(
       http.post('/api/video/contact-sheet', () => HttpResponse.json({ jobId: 'empty-sheets', status: 'pending' })),
