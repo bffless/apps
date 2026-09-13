@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/bffless/apps/compare/studio-v1.15.1...studio-v1.16.0) (2026-09-13)
+
+
+### Features
+
+* **studio:** build contact sheets and frame grabs on the server ([#699](https://github.com/bffless/apps/issues/699)) ([ac662a3](https://github.com/bffless/apps/commit/ac662a35cc02a6405d34ae1e69393a5132aad651))
+
 ## [1.15.1](https://github.com/bffless/apps/compare/studio-v1.15.0...studio-v1.15.1) (2026-09-12)
 
 
