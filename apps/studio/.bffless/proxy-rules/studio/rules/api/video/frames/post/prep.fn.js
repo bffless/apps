@@ -7,7 +7,8 @@ function handler({ request }) {
     return {
       ok: false, notOk: true, error: msg,
       failJson: JSON.stringify({ error: msg, code: 'BAD_REQUEST' }),
-      input: '', projectId: '', times: [], height: 0, executor: '',
+      input: '', projectId: '', times: [], height: 0,
+      h180: false, h720: false, h1080: false, executor: '',
     }
   }
 
@@ -28,12 +29,14 @@ function handler({ request }) {
     times.push(t)
   }
   var height = body.height
-  if (typeof height !== 'number' || Math.floor(height) !== height || height < 64 || height > 4320) {
-    return no('height must be an integer from 64 to 4320')
+  // One ffmpeg step per allowed size (rule.yaml): CE does not template the numeric knobs.
+  if (height !== 180 && height !== 720 && height !== 1080) {
+    return no('height must be one of 180, 720, 1080')
   }
   return {
     ok: true, notOk: false, error: '', failJson: '',
     input: sourceUrl, projectId: pid, times: times, height: height,
+    h180: height === 180, h720: height === 720, h1080: height === 1080,
     executor: body.executor === 'local' || body.executor === 'remote' ? body.executor : '',
   }
 }

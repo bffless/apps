@@ -292,10 +292,14 @@ const studioHandlers = [
 
   // Server frame grabs (CE ffmpeg `frames`, no draw/tile): { frames: [{ time, url }] } in request order.
   http.post('/api/video/frames', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as { times?: number[]; projectId?: string }
+    const body = (await request.json().catch(() => ({}))) as { times?: number[]; height?: number; projectId?: string }
     const times = Array.isArray(body.times) ? body.times : []
     if (times.length === 0) {
       return HttpResponse.json({ error: 'times must be 1-200 non-negative seconds', code: 'BAD_REQUEST' }, { status: 400 })
+    }
+    // The rule has one literal-height ffmpeg step per allowed size.
+    if (body.height !== 180 && body.height !== 720 && body.height !== 1080) {
+      return HttpResponse.json({ error: 'height must be one of 180, 720, 1080', code: 'BAD_REQUEST' }, { status: 400 })
     }
     const pid = body.projectId ?? 'mock'
     const stamp = Date.now()

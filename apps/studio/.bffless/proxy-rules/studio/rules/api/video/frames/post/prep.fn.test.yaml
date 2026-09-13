@@ -14,21 +14,63 @@ cases:
         projectId: p1
         times: [10, 12.5]
         height: 720
+        h180: false
+        h720: true
+        h1080: false
         executor: ""
-  - name: a height outside 64-4320 is refused
+  - name: a scene thumb height selects the 180 step
     data:
       request:
-        body: { sourceUrl: /api/uploads/projects/p1/source/a.mov, projectId: p1, times: [10], height: 8000 }
+        body: { sourceUrl: /api/uploads/projects/p1/source/a.mov, projectId: p1, times: [10], height: 180 }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        failJson: ""
+        input: /api/uploads/projects/p1/source/a.mov
+        projectId: p1
+        times: [10]
+        height: 180
+        h180: true
+        h720: false
+        h1080: false
+        executor: ""
+  - name: a blog frame height selects the 1080 step
+    data:
+      request:
+        body: { sourceUrl: /api/uploads/projects/p1/source/a.mov, projectId: p1, times: [10], height: 1080 }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        failJson: ""
+        input: /api/uploads/projects/p1/source/a.mov
+        projectId: p1
+        times: [10]
+        height: 1080
+        h180: false
+        h720: false
+        h1080: true
+        executor: ""
+  - name: a height outside the allowed sizes is refused
+    data:
+      request:
+        body: { sourceUrl: /api/uploads/projects/p1/source/a.mov, projectId: p1, times: [10], height: 500 }
     expect:
       result:
         ok: false
         notOk: true
-        error: height must be an integer from 64 to 4320
-        failJson: '{"error":"height must be an integer from 64 to 4320","code":"BAD_REQUEST"}'
+        error: height must be one of 180, 720, 1080
+        failJson: '{"error":"height must be one of 180, 720, 1080","code":"BAD_REQUEST"}'
         input: ""
         projectId: ""
         times: []
         height: 0
+        h180: false
+        h720: false
+        h1080: false
         executor: ""
   - name: a source outside /api/uploads/ is refused
     data:
@@ -44,6 +86,9 @@ cases:
         projectId: ""
         times: []
         height: 0
+        h180: false
+        h720: false
+        h1080: false
         executor: ""
   - name: a negative time is refused
     data:
@@ -59,4 +104,7 @@ cases:
         projectId: ""
         times: []
         height: 0
+        h180: false
+        h720: false
+        h1080: false
         executor: ""

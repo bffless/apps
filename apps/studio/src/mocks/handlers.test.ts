@@ -74,4 +74,14 @@ describe('server frame mocks', () => {
     const frames = toServerFrames(await pollDone(jobId))
     expect(frames.map((f) => f.time)).toEqual([3, 9])
   })
+
+  it('frames refuses a height the rule has no step for, like the rule', async () => {
+    const res = await fetch('/api/video/frames', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceUrl: '/api/uploads/projects/p1/source/a.mp4', projectId: 'p1', times: [3], height: 500 }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'height must be one of 180, 720, 1080', code: 'BAD_REQUEST' })
+  })
 })

@@ -3,7 +3,7 @@ order: 61
 timeout: 120000
 pipeline:
   name: Server frame grabs (ffmpeg frames, async)
-  description: "POST { sourceUrl, projectId, times, height, executor? } -> ENQUEUE a job (kind 'video-frames'); CE's ffmpeg `frames` op (CE >= 0.4.35) grabs one clean still per `times` entry at `height` px. Result { frames: [{ time, url }] } in request order, polled via /api/studio/job. Scene card thumbs, blog images and the blog re-frame strip."
+  description: "POST { sourceUrl, projectId, times, height ∈ {180, 720, 1080}, executor? } -> ENQUEUE a job (kind 'video-frames'); CE's ffmpeg `frames` op (CE >= 0.4.35) grabs one clean still per `times` entry at `height` px. Result { frames: [{ time, url }] } in request order, polled via /api/studio/job. Scene card thumbs, blog images and the blog re-frame strip."
   steps:
     - id: prep
       name: prep
@@ -49,18 +49,42 @@ pipeline:
           status: "'running'"
         recordId: steps.createJob.id
         schemaId: $schema:studio_jobs
-    - id: frames
-      name: frames
+    # CE does not template ffmpeg_handler's numeric knobs (height goes straight to
+    # Number(), so "{{steps.prep.height}}" is NaN and the job fails). A height must be
+    # a literal, so there is one step per allowed size, picked by prep's h180/h720/h1080.
+    - id: frames180
+      name: frames180
       handler: ffmpeg_handler
       config:
-        condition: steps.prep.ok
+        condition: steps.prep.h180
         operation: frames
         executor: "{{steps.prep.executor}}"
         input: "{{steps.prep.input}}"
         outputPrefix: "projects/{{steps.prep.projectId}}/frames/server/{{uuid()}}"
         times: steps.prep.times
-        # CE's knob() accepts a numeric string, so a template works here.
-        height: "{{steps.prep.height}}"
+        height: 180
+    - id: frames720
+      name: frames720
+      handler: ffmpeg_handler
+      config:
+        condition: steps.prep.h720
+        operation: frames
+        executor: "{{steps.prep.executor}}"
+        input: "{{steps.prep.input}}"
+        outputPrefix: "projects/{{steps.prep.projectId}}/frames/server/{{uuid()}}"
+        times: steps.prep.times
+        height: 720
+    - id: frames1080
+      name: frames1080
+      handler: ffmpeg_handler
+      config:
+        condition: steps.prep.h1080
+        operation: frames
+        executor: "{{steps.prep.executor}}"
+        input: "{{steps.prep.input}}"
+        outputPrefix: "projects/{{steps.prep.projectId}}/frames/server/{{uuid()}}"
+        times: steps.prep.times
+        height: 1080
     - id: check
       name: check
       handler: function_handler
