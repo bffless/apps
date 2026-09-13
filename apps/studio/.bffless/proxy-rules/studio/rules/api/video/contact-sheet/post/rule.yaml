@@ -62,7 +62,8 @@ pipeline:
         input: "{{steps.prep.input}}"
         outputPrefix: "projects/{{steps.prep.projectId}}/thumbnails/server/{{uuid()}}"
         times: steps.prep.times
-        # CONTACT_SHEET_CELL in src/lib/frames.ts - the cell height the browser sheets used.
+        # Cell height (px): 1280×720 cells stay legible to the director (Gemini tiles images
+        # rather than shrinking them).
         height: 720
         draw:
           text: steps.prep.labels
