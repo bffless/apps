@@ -1,0 +1,101 @@
+handler: ./prep.fn.js
+cases:
+  - name: a valid request passes through, executor blank by default
+    data:
+      request:
+        body:
+          sourceUrl: /api/uploads/projects/p1/source/2026-09-13/a.mov
+          projectId: p1
+          times: [1.5, 31.5]
+          labels: ["0:01", "0:31"]
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        failJson: ""
+        input: /api/uploads/projects/p1/source/2026-09-13/a.mov
+        projectId: p1
+        times: [1.5, 31.5]
+        labels: ["0:01", "0:31"]
+        executor: ""
+  - name: an explicit remote executor is kept
+    data:
+      request:
+        body:
+          sourceUrl: /api/uploads/projects/p1/source/a.mp4
+          projectId: p1
+          times: [0]
+          labels: ["0:00"]
+          executor: remote
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        failJson: ""
+        input: /api/uploads/projects/p1/source/a.mp4
+        projectId: p1
+        times: [0]
+        labels: ["0:00"]
+        executor: remote
+  - name: a source outside /api/uploads/ is refused
+    data:
+      request:
+        body: { sourceUrl: "https://evil.example/a.mp4", projectId: p1, times: [1], labels: ["0:01"] }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: sourceUrl must be an /api/uploads/ path
+        failJson: '{"error":"sourceUrl must be an /api/uploads/ path","code":"BAD_REQUEST"}'
+        input: ""
+        projectId: ""
+        times: []
+        labels: []
+        executor: ""
+  - name: a projectId with a slash is refused
+    data:
+      request:
+        body: { sourceUrl: /api/uploads/projects/p1/source/a.mp4, projectId: "p1/../p2", times: [1], labels: ["0:01"] }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: projectId is required and must be a single path segment
+        failJson: '{"error":"projectId is required and must be a single path segment","code":"BAD_REQUEST"}'
+        input: ""
+        projectId: ""
+        times: []
+        labels: []
+        executor: ""
+  - name: empty times are refused
+    data:
+      request:
+        body: { sourceUrl: /api/uploads/projects/p1/source/a.mp4, projectId: p1, times: [], labels: [] }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: times must be 1-200 non-negative seconds
+        failJson: '{"error":"times must be 1-200 non-negative seconds","code":"BAD_REQUEST"}'
+        input: ""
+        projectId: ""
+        times: []
+        labels: []
+        executor: ""
+  - name: labels must match times one for one
+    data:
+      request:
+        body: { sourceUrl: /api/uploads/projects/p1/source/a.mp4, projectId: p1, times: [1, 2], labels: ["0:01"] }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: labels must be one string per time
+        failJson: '{"error":"labels must be one string per time","code":"BAD_REQUEST"}'
+        input: ""
+        projectId: ""
+        times: []
+        labels: []
+        executor: ""
