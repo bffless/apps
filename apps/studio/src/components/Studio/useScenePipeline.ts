@@ -135,6 +135,33 @@ const BLOG_FRAME_HEIGHT = 1080
 /** Blog re-frame candidates (px): shown small in the strip, and large as the preview. */
 const BLOG_PREVIEW_HEIGHT = 720
 
+/** Screen recordings can hold a still screen for up to ~49 s with no new frame, so a time near the end can fail the whole frames job (bffless/ce#798). */
+const TAIL_RETRY_SECONDS = 60
+
+/**
+ * Run a frame job over `times`; if it fails and the recording's `duration` is
+ * known, retry once without every time in its last `TAIL_RETRY_SECONDS`. `run`
+ * gets the indexes into `times` to send, so callers can trim parallel lists
+ * (labels) the same way. Rethrows the original error when nothing would be
+ * dropped or nothing would remain.
+ */
+async function withTailRetry<T>(
+  times: number[],
+  duration: number | undefined,
+  run: (indexes: number[]) => Promise<T>,
+): Promise<T> {
+  const all = times.map((_, i) => i)
+  try {
+    return await run(all)
+  } catch (e) {
+    if (!duration || !Number.isFinite(duration) || duration <= 0) throw e
+    const keep = all.filter((i) => times[i] < duration - TAIL_RETRY_SECONDS)
+    if (keep.length === 0 || keep.length === all.length) throw e
+    console.warn(`[studio] frame job failed; retrying without the last ${TAIL_RETRY_SECONDS}s of the recording`)
+    return run(keep)
+  }
+}
+
 /**
  * Job ids currently being polled, shared across hook instances (same rationale as
  * `stepInFlight`). Both the live action AND the resume-on-mount effect can race to
@@ -491,37 +518,42 @@ export function useScenePipeline() {
   )
 
   // Server frame grabs (CE ffmpeg `frames`). The executor follows the video
-  // backend picker, like slice/concat/extract.
+  // backend picker, like slice/concat/extract. `duration` (the source's) enables
+  // one tail-trimmed retry when a job fails (`withTailRetry`).
   const grabSheets = useCallback(
-    (sourceUrl: string, times: number[], labels: string[]): Promise<ServerSheet[]> =>
-      runVideoJob(
-        'contact sheets',
-        async () =>
-          videoContactSheetStartReq({
-            sourceUrl,
-            projectId: activeProjectId ?? '',
-            times,
-            labels,
-            executor: stepExecutor(await getVideoBackend()),
-          }).unwrap(),
-        toServerSheets,
+    (sourceUrl: string, times: number[], labels: string[], duration?: number): Promise<ServerSheet[]> =>
+      withTailRetry(times, duration, (idx) =>
+        runVideoJob(
+          'contact sheets',
+          async () =>
+            videoContactSheetStartReq({
+              sourceUrl,
+              projectId: activeProjectId ?? '',
+              times: idx.map((i) => times[i]),
+              labels: idx.map((i) => labels[i]),
+              executor: stepExecutor(await getVideoBackend()),
+            }).unwrap(),
+          toServerSheets,
+        ),
       ),
     [runVideoJob, videoContactSheetStartReq, activeProjectId],
   )
 
   const grabFrames = useCallback(
-    (sourceUrl: string, times: number[], height: number): Promise<ServerFrame[]> =>
-      runVideoJob(
-        'frames',
-        async () =>
-          videoFramesStartReq({
-            sourceUrl,
-            projectId: activeProjectId ?? '',
-            times,
-            height,
-            executor: stepExecutor(await getVideoBackend()),
-          }).unwrap(),
-        toServerFrames,
+    (sourceUrl: string, times: number[], height: number, duration?: number): Promise<ServerFrame[]> =>
+      withTailRetry(times, duration, (idx) =>
+        runVideoJob(
+          'frames',
+          async () =>
+            videoFramesStartReq({
+              sourceUrl,
+              projectId: activeProjectId ?? '',
+              times: idx.map((i) => times[i]),
+              height,
+              executor: stepExecutor(await getVideoBackend()),
+            }).unwrap(),
+          toServerFrames,
+        ),
       ),
     [runVideoJob, videoFramesStartReq, activeProjectId],
   )
@@ -531,17 +563,20 @@ export function useScenePipeline() {
   // by the time CE echoes on each frame, never by position, so a frame CE leaves
   // out is simply absent instead of shifting every later key.
   const grabFramesBySource = useCallback(
-    async <K,>(wants: { sourceUrl: string; time: number; key: K }[], height: number): Promise<Map<K, string>> => {
-      const bySource = new Map<string, { time: number; key: K }[]>()
+    async <K,>(
+      wants: { sourceUrl: string; time: number; key: K; duration: number }[],
+      height: number,
+    ): Promise<Map<K, string>> => {
+      const bySource = new Map<string, { duration: number; items: { time: number; key: K }[] }>()
       for (const w of wants) {
-        const arr = bySource.get(w.sourceUrl) ?? []
-        arr.push({ time: w.time, key: w.key })
-        bySource.set(w.sourceUrl, arr)
+        const group = bySource.get(w.sourceUrl) ?? { duration: w.duration, items: [] }
+        group.items.push({ time: w.time, key: w.key })
+        bySource.set(w.sourceUrl, group)
       }
       const out = new Map<K, string>()
-      for (const [sourceUrl, items] of bySource) {
+      for (const [sourceUrl, { duration, items }] of bySource) {
         try {
-          const frames = await grabFrames(sourceUrl, items.map((i) => i.time), height)
+          const frames = await grabFrames(sourceUrl, items.map((i) => i.time), height, duration)
           const urlByTime = new Map(frames.map((f) => [f.time, f.url]))
           for (const it of items) {
             const url = urlByTime.get(it.time)
@@ -614,7 +649,7 @@ export function useScenePipeline() {
         const wants = built.flatMap((s) => {
           const src = sourceForScene(sources, s)
           return src?.sourceUrl
-            ? [{ sourceUrl: src.sourceUrl, time: (s.start + s.end) / 2, key: s.id }]
+            ? [{ sourceUrl: src.sourceUrl, time: (s.start + s.end) / 2, key: s.id, duration: src.duration }]
             : []
         })
         const thumbById = await grabFramesBySource(wants, SCENE_THUMB_HEIGHT)
@@ -728,7 +763,7 @@ export function useScenePipeline() {
       // the source, never crop a sheet). Served straight from the bucket, no re-upload.
       const wants = captures.flatMap((c) => {
         const src = sources.find((s) => s.id === c.sourceId)
-        return src?.sourceUrl ? [{ sourceUrl: src.sourceUrl, time: c.localTime, key: c.time }] : []
+        return src?.sourceUrl ? [{ sourceUrl: src.sourceUrl, time: c.localTime, key: c.time, duration: src.duration }] : []
       })
       const urlByTime = await grabFramesBySource(wants, BLOG_FRAME_HEIGHT)
       // The sidecar mirrors exactly what survives into the Markdown (a token that
@@ -754,7 +789,7 @@ export function useScenePipeline() {
       const wants = times.flatMap((t) => {
         const loc = globalToLocal(lite, t)
         const src = loc && sources.find((s) => s.id === loc.sourceId)
-        return loc && src?.sourceUrl ? [{ sourceUrl: src.sourceUrl, time: loc.localTime, key: t }] : []
+        return loc && src?.sourceUrl ? [{ sourceUrl: src.sourceUrl, time: loc.localTime, key: t, duration: src.duration }] : []
       })
       blogPreviewCache.current = await grabFramesBySource(wants, BLOG_PREVIEW_HEIGHT)
       return times
@@ -774,7 +809,7 @@ export function useScenePipeline() {
       const src = loc && sources.find((s) => s.id === loc.sourceId)
       if (!loc || !src?.sourceUrl) return ''
       try {
-        const [frame] = await grabFrames(src.sourceUrl, [loc.localTime], BLOG_PREVIEW_HEIGHT)
+        const [frame] = await grabFrames(src.sourceUrl, [loc.localTime], BLOG_PREVIEW_HEIGHT, src.duration)
         return frame?.url ?? ''
       } catch {
         return ''
@@ -791,7 +826,7 @@ export function useScenePipeline() {
       const src = loc && sources.find((s) => s.id === loc.sourceId)
       if (!loc || !src?.sourceUrl) return false
       try {
-        const [frame] = await grabFrames(src.sourceUrl, [loc.localTime], BLOG_FRAME_HEIGHT)
+        const [frame] = await grabFrames(src.sourceUrl, [loc.localTime], BLOG_FRAME_HEIGHT, src.duration)
         if (!frame) return false
         dispatch(reframeBlogImageAction({ oldUrl, newUrl: frame.url, time }))
         return true
@@ -954,23 +989,33 @@ export function useScenePipeline() {
       )
       const interval = captures.length > 1 ? captures[1].globalTime - captures[0].globalTime : 0
       const sheets: ContactSheet[] = []
+      // A recording whose job fails is skipped (and named in the detail), so one
+      // bad recording never throws away the sheets the others made.
+      const failed: { fileName: string; message: string }[] = []
       for (const src of ordered) {
         const mine = captures.filter((c) => c.sourceId === src.id)
         if (mine.length === 0 || !src.sourceUrl) continue
         const globalTimes = mine.map((c) => c.globalTime)
         const globalOf = new Map(mine.map((c) => [c.localTime, c.globalTime]))
-        const got = await grabSheets(src.sourceUrl, mine.map((c) => c.localTime), sheetLabels(globalTimes))
-        sheets.push(...(await sheetsFor(got, (t) => globalOf.get(t) ?? t, interval)))
+        try {
+          const got = await grabSheets(src.sourceUrl, mine.map((c) => c.localTime), sheetLabels(globalTimes), src.duration)
+          sheets.push(...(await sheetsFor(got, (t) => globalOf.get(t) ?? t, interval)))
+        } catch (e) {
+          failed.push({ fileName: src.fileName, message: stageError(e) })
+        }
       }
       if (sheets.length === 0) {
-        throw new Error('No contact sheets were made — check that every recording finished uploading.')
+        throw new Error(
+          failed[0]?.message ?? 'No contact sheets were made — check that every recording finished uploading.',
+        )
       }
       const stamped = restampSheets(sheets)
       dispatch(setContactSheets(stamped))
       const frameCount = stamped.reduce((n, s) => n + s.count, 0)
+      const skipped = failed.map((f) => ` · skipped ${f.fileName}: ${f.message}`).join('')
       patch('thumbnails', {
         status: 'done',
-        detail: `${frameCount} frames · ${stamped.length} sheet${stamped.length === 1 ? '' : 's'} (server)`,
+        detail: `${frameCount} frames · ${stamped.length} sheet${stamped.length === 1 ? '' : 's'} (server)${skipped}`,
       })
     },
     [patch, dispatch, sources, grabSheets, sheetsFor],
@@ -1193,7 +1238,7 @@ export function useScenePipeline() {
       try {
         const plan = planSceneContactSheet(scene.start, scene.end)
         if (plan.times.length === 0) throw new Error('This scene is too short for a contact sheet.')
-        const got = await grabSheets(src.sourceUrl, plan.times, sheetLabels(plan.times))
+        const got = await grabSheets(src.sourceUrl, plan.times, sheetLabels(plan.times), src.duration)
         patchScene(id, { sheets: await sheetsFor(got, (t) => t, plan.interval) })
       } catch (e) {
         setSceneErrorFor(id, stageError(e))

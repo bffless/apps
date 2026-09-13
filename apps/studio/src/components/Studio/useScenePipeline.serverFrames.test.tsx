@@ -115,6 +115,60 @@ describe('prep contact sheets on the server', () => {
     expect(calls.get(sheets[0].url!)).toBe(2)
   }, 15000)
 
+  it('retries a failed sheet job once without the last minute of the recording', async () => {
+    const bodies: { times: number[]; labels: string[] }[] = []
+    server.use(
+      http.post('/api/video/contact-sheet', async ({ request }) => {
+        bodies.push((await request.clone().json()) as { times: number[]; labels: string[] })
+        return bodies.length === 1 ? HttpResponse.json({ jobId: 'tail-fail', status: 'pending' }) : undefined
+      }),
+      http.get('/api/studio/job', ({ request }) =>
+        new URL(request.url).searchParams.get('id') === 'tail-fail'
+          ? HttpResponse.json({ status: 'error', kind: 'video-contact-sheet', error: 'Server contact sheets failed' })
+          : undefined,
+      ),
+    )
+    const store = makeStore()
+    await runNext(store)
+    await waitFor(() => expect(['done', 'error']).toContain(active(store).stageProgress.thumbnails?.status), { timeout: 12000 })
+
+    expect(active(store).stageProgress.thumbnails?.status).toBe('done')
+    expect(active(store).contactSheets.length).toBeGreaterThan(0)
+    expect(bodies).toHaveLength(2)
+    expect(Math.max(...bodies[0].times)).toBeGreaterThanOrEqual(1101 - 60)
+    expect(Math.max(...bodies[1].times)).toBeLessThan(1101 - 60)
+    expect(bodies[1].labels).toHaveLength(bodies[1].times.length)
+  }, 15000)
+
+  it('keeps the sheets from recordings that succeed and names the one it skipped', async () => {
+    server.use(
+      http.post('/api/video/contact-sheet', async ({ request }) => {
+        const body = (await request.clone().json()) as { sourceUrl: string }
+        return body.sourceUrl.includes('second.mov') ? HttpResponse.json({ jobId: 'always-fail', status: 'pending' }) : undefined
+      }),
+      http.get('/api/studio/job', ({ request }) =>
+        new URL(request.url).searchParams.get('id') === 'always-fail'
+          ? HttpResponse.json({ status: 'error', kind: 'video-contact-sheet', error: 'Server contact sheets failed' })
+          : undefined,
+      ),
+    )
+    const store = makeStore()
+    store.dispatch(addSource({ id: 'src2', fileName: 'second.mov', duration: 600 }))
+    store.dispatch(
+      patchSource({ id: 'src2', patch: { sourceUrl: '/api/uploads/projects/p1/source/second.mov', duration: 600 } }),
+    )
+    for (const stage of PER_VIDEO_STAGES) {
+      store.dispatch(patchSourceStage({ id: 'src2', stage, patch: { status: 'done' } }))
+    }
+    await runNext(store)
+    await waitFor(() => expect(['done', 'error']).toContain(active(store).stageProgress.thumbnails?.status), { timeout: 12000 })
+
+    expect(active(store).stageProgress.thumbnails?.status).toBe('done')
+    expect(active(store).contactSheets.length).toBeGreaterThan(0)
+    expect(active(store).contactSheets.every((s) => Math.max(...s.times) < 1101)).toBe(true)
+    expect(active(store).stageProgress.thumbnails?.detail).toContain('skipped second.mov')
+  }, 15000)
+
   it('fails the stage, instead of passing it, when the job returns no sheets', async () => {
     server.use(
       http.post('/api/video/contact-sheet', () => HttpResponse.json({ jobId: 'empty-sheets', status: 'pending' })),
