@@ -41,13 +41,20 @@ import { slice as ffmpegSlice, sliceSourcePath } from '../../lib/export/ffmpeg'
 import {
   captureFramesAt,
   captureSceneContactSheet,
-  composeContactSheet,
-  CONTACT_SHEET_CELL,
-  CONTACT_SHEET_SUPERSAMPLE,
   type ContactSheet,
 } from '../../lib/frames'
-import { chunk, cellsPerSheet } from '../../lib/contactSheet'
 import { planGlobalSheetCaptures } from '../../lib/globalSheet'
+import {
+  SERVER_SHEET_CELLS,
+  toServerSheets,
+  toServerFrames,
+  sheetLabels,
+  toContactSheets,
+  restampSheets,
+  type ServerSheet,
+  type ServerFrame,
+} from '../../lib/serverFrames'
+import { imageSize } from '../../lib/imageSize'
 import { useAppDispatch, useAppSelector } from '../../store/hooks'
 import {
   studioApi,
@@ -63,6 +70,8 @@ import {
   useVideoExtractStartMutation,
   useVideoSliceStartMutation,
   useVideoConcatStartMutation,
+  useVideoContactSheetStartMutation,
+  useVideoFramesStartMutation,
   toVideoResult,
   type UploadKind,
   type VideoJobKind,
@@ -260,6 +269,8 @@ export function useScenePipeline() {
   const [videoExtractStartReq] = useVideoExtractStartMutation()
   const [videoSliceStartReq] = useVideoSliceStartMutation()
   const [videoConcatStartReq] = useVideoConcatStartMutation()
+  const [videoContactSheetStartReq] = useVideoContactSheetStartMutation()
+  const [videoFramesStartReq] = useVideoFramesStartMutation()
   const [scenesReq] = useScenesMutation()
   const [refineSceneReq] = useRefineSceneMutation()
   const [describeReq] = useDescribeMutation()
@@ -464,12 +475,16 @@ export function useScenePipeline() {
    * the same way. Retries are logged; nothing in the UI halts.
    */
   const runVideoJob = useCallback(
-    (label: string, start: () => Promise<StartJobResponse>): Promise<VideoResult> =>
+    <T = VideoResult>(
+      label: string,
+      start: () => Promise<StartJobResponse>,
+      coerce: (raw: unknown) => T = toVideoResult as unknown as (raw: unknown) => T,
+    ): Promise<T> =>
       withBusyRetry(
         async () => {
           const { jobId } = await start()
           const job = await pollJob(jobId, { timeoutMs: VIDEO_POLL_TIMEOUT_MS })
-          return toVideoResult(job.result)
+          return coerce(job.result)
         },
         {
           onRetry: ({ attempt, delayMs, error }) =>
@@ -477,6 +492,53 @@ export function useScenePipeline() {
         },
       ),
     [pollJob],
+  )
+
+  // Server frame grabs (CE ffmpeg `frames`). The executor follows the video
+  // backend picker, like slice/concat/extract.
+  const grabSheets = useCallback(
+    (sourceUrl: string, times: number[], labels: string[]): Promise<ServerSheet[]> =>
+      runVideoJob(
+        'contact sheets',
+        async () =>
+          videoContactSheetStartReq({
+            sourceUrl,
+            projectId: activeProjectId ?? '',
+            times,
+            labels,
+            executor: stepExecutor(await getVideoBackend()),
+          }).unwrap(),
+        toServerSheets,
+      ),
+    [runVideoJob, videoContactSheetStartReq, activeProjectId],
+  )
+
+  // @ts-expect-error -- unused until Task 7 wires it into blog + scene thumb frame grabs
+  const grabFrames = useCallback( // eslint-disable-line @typescript-eslint/no-unused-vars
+    (sourceUrl: string, times: number[], height: number): Promise<ServerFrame[]> =>
+      runVideoJob(
+        'frames',
+        async () =>
+          videoFramesStartReq({
+            sourceUrl,
+            projectId: activeProjectId ?? '',
+            times,
+            height,
+            executor: stepExecutor(await getVideoBackend()),
+          }).unwrap(),
+        toServerFrames,
+      ),
+    [runVideoJob, videoFramesStartReq, activeProjectId],
+  )
+
+  // Read each sheet JPEG's natural size once, so the cut editor's sprite crop has
+  // cell geometry, then map onto ContactSheet.
+  const sheetsFor = useCallback(
+    async (got: ServerSheet[], displayTimes: number[], interval: number) => {
+      const sizes = await Promise.all(got.map((s) => imageSize(s.url)))
+      return toContactSheets(got, sizes, displayTimes, interval)
+    },
+    [],
   )
 
   /**
@@ -949,87 +1011,41 @@ export function useScenePipeline() {
     [patch, dispatch, transcribeStartReq, audioUrl, diarize, currentSource, completeTranscribeJob],
   )
 
-  // Stage ④ — sample interval thumbnails across ALL source videos, compose them
-  // into timestamped contact sheets (real, browser-side), then upload each to its
-  // bucket so the master director (story 03) can be handed real image URLs — not
-  // just in-browser blobs. The global timeline spacing is based on the COMBINED
-  // duration of all sources so the ≤10-sheet budget holds. Each frame is stamped
-  // with its GLOBAL time so the director reads one continuous timeline (story 09c).
+  // Stage ④ — the director's contact sheets, built on the server (CE ffmpeg
+  // `frames` + tile via /api/video/contact-sheet). Frames are planned on the
+  // COMBINED timeline (story 09c), grabbed per source at LOCAL times, and labelled
+  // and reported with GLOBAL times so the director reads one continuous timeline.
+  // The browser never downloads a recording. No sheets back is a failure, never a
+  // silent "done".
   const generateThumbnails = useCallback(
     async () => {
       patch('thumbnails', { status: 'active' })
       const ordered = [...sources].sort((a, b) => a.order - b.order)
-      const captures = planGlobalSheetCaptures(ordered.map((s) => ({ id: s.id, duration: s.duration })))
-
-      // Capture each planned frame from the RIGHT source video at its LOCAL time,
-      // off a same-origin blob URL (a <video crossOrigin> read of the signed GCS
-      // URL fails CORS — same lesson as the per-scene refiner sheets). Group by
-      // source so we sign+fetch each video once; keep frames in global order.
-      const captureHeight = Math.round(CONTACT_SHEET_CELL * CONTACT_SHEET_SUPERSAMPLE)
-      const frameByIndex: (string | null)[] = new Array(captures.length).fill(null)
-      const idxBySource = new Map<string, number[]>()
-      captures.forEach((c, i) => {
-        const arr = idxBySource.get(c.sourceId) ?? []
-        arr.push(i)
-        idxBySource.set(c.sourceId, arr)
-      })
-      for (const [sourceId, idxs] of idxBySource) {
-        const src = ordered.find((s) => s.id === sourceId)
-        if (!src?.sourceUrl) continue
-        const { url: signed } = await signReq(src.sourceUrl, true).unwrap()
-        const blob = await (await fetch(signed)).blob()
-        const objectUrl = URL.createObjectURL(blob)
-        try {
-          const localTimes = idxs.map((i) => captures[i].localTime)
-          const frames = await captureFramesAt(objectUrl, localTimes, captureHeight, { type: 'image/png' })
-          idxs.forEach((i, k) => {
-            frameByIndex[i] = frames[k] ?? null
-          })
-        } finally {
-          URL.revokeObjectURL(objectUrl)
-        }
-      }
-
-      // Keep only captures that produced a frame, in global order, and compose into
-      // ≤10 tiles stamped with GLOBAL time (so the director reads one timeline).
-      const kept = captures.map((c, i) => ({ c, frame: frameByIndex[i] })).filter((x) => x.frame)
-      const frames = kept.map((x) => x.frame as string)
-      const times = kept.map((x) => x.c.globalTime)
-      const perSheet = cellsPerSheet(frames.length)
-      const frameTiles = chunk(frames, perSheet)
-      const timeTiles = chunk(times, perSheet)
-      // Global sampling spacing (seconds between frames) — evenly spaced across the
-      // combined timeline, so consecutive captures differ by a constant interval.
-      // composeContactSheet can't infer it, so stamp it (the preview reads it).
-      const interval = times.length > 1 ? times[1] - times[0] : 0
+      const captures = planGlobalSheetCaptures(
+        ordered.map((s) => ({ id: s.id, duration: s.duration })),
+        SERVER_SHEET_CELLS,
+      )
+      const interval = captures.length > 1 ? captures[1].globalTime - captures[0].globalTime : 0
       const sheets: ContactSheet[] = []
-      for (let t = 0; t < frameTiles.length; t++) {
-        const sheet = await composeContactSheet(frameTiles[t], timeTiles[t], CONTACT_SHEET_CELL)
-        if (sheet.dataUrl) sheets.push({ ...sheet, interval, index: sheets.length, total: frameTiles.length })
+      for (const src of ordered) {
+        const mine = captures.filter((c) => c.sourceId === src.id)
+        if (mine.length === 0 || !src.sourceUrl) continue
+        const globalTimes = mine.map((c) => c.globalTime)
+        const got = await grabSheets(src.sourceUrl, mine.map((c) => c.localTime), sheetLabels(globalTimes))
+        sheets.push(...(await sheetsFor(got, globalTimes, interval)))
       }
-
-      // ===== keep the EXISTING upload + dispatch logic below, verbatim =====
-      setPendingSheets(sheets)
-      const uploaded: ContactSheet[] = []
-      for (const sheet of sheets) {
-        const blob = await (await fetch(sheet.dataUrl)).blob()
-        const ext = blob.type === 'image/png' ? 'png' : 'jpg'
-        const name = `contact-${String(sheet.index + 1).padStart(2, '0')}.${ext}`
-        const file = new File([blob], name, { type: blob.type })
-        const { url } = await uploadReq({ file, kind: 'thumbnails' }).unwrap()
-        uploaded.push({ ...sheet, url, dataUrl: '' })
+      if (sheets.length === 0) {
+        throw new Error('No contact sheets were made — check that every recording finished uploading.')
       }
-      dispatch(setContactSheets(uploaded))
-      setPendingSheets([])
-      const frameCount = uploaded.reduce((n, s) => n + s.count, 0)
+      const stamped = restampSheets(sheets)
+      dispatch(setContactSheets(stamped))
+      const frameCount = stamped.reduce((n, s) => n + s.count, 0)
       patch('thumbnails', {
         status: 'done',
-        detail: frameCount
-          ? `${frameCount} frames · ${uploaded.length} sheet${uploaded.length === 1 ? '' : 's'} → bucket`
-          : 'no frames sampled',
+        detail: `${frameCount} frames · ${stamped.length} sheet${stamped.length === 1 ? '' : 's'} (server)`,
       })
     },
-    [patch, dispatch, sources, signReq, uploadReq],
+    [patch, dispatch, sources, grabSheets, sheetsFor],
   )
 
   // Stages ⑤⑥ — the master director (story 03, 13f contract). One multimodal
