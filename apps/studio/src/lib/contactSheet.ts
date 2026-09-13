@@ -15,13 +15,14 @@
  *    so a few large cells beat many tiny ones: prefer `PREFERRED_CELLS_PER_SHEET`,
  *    allow up to `MAX_CELLS_PER_SHEET`.
  * 4. **Image count** — at most `MAX_SHEETS` images per director call.
- * 5. **Upload size** — ≤ 7 MB per image (enforced in `frames.ts` at encode time).
+ * 5. **Upload size** — ≤ 7 MB per image (the server's JPEG sheets stay well under it).
  *
  * Net behaviour: short clips sample at ~`MIN_INTERVAL` and use as many frames as
  * that needs; once the clip is long enough to hit `MAX_FRAMES` (10 × 12 = 120)
  * the budget caps it and the spacing widens — staying ≤ 30s up to ~60 min, then
- * relaxing past it. The capture and canvas compositing live in `frames.ts`; this
- * file only decides WHICH timestamps to grab and HOW to tile them (pure + tested).
+ * relaxing past it. Capture and tiling happen on the server via
+ * `/api/video/contact-sheet`; this file only decides WHICH timestamps to grab and
+ * HOW to tile them (pure + tested).
  */
 
 /** Finest spacing we sample at — closer just yields near-duplicate frames. Drives

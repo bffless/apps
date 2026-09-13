@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { buildFilmstrip, frameAt, frameForRow, spriteStyle, type FilmFrame } from './filmstrip'
+import { buildFilmstrip, cellGeometry, frameAt, frameForRow, spriteStyle, type FilmFrame } from './filmstrip'
 import type { ContactSheet } from './frames'
 
 /** A minimal contact sheet: a `cols`×N grid of `cellW`×`cellH` cells with a 2px
- *  gap, sampled at the given times. Geometry mirrors `composeContactSheet`. */
+ *  gap, sampled at the given times. Geometry mirrors the server-composed sheets. */
 function sheet(times: number[], opts: Partial<ContactSheet> = {}): ContactSheet {
   const cols = opts.cols ?? 3
   const rows = Math.ceil(times.length / cols)
@@ -135,6 +135,13 @@ describe('spriteStyle', () => {
       index: 0,
       sheet: { ...normal, cellWidth: 0, cellHeight: 0, cols: 0, width: 0 },
     }
+    expect(spriteStyle(f, 100)).toEqual({ width: 100 })
+  })
+
+  it('never derives negative geometry from a sheet whose size failed to load', () => {
+    const zero: ContactSheet = { ...sheet(Array.from({ length: 12 }, (_, i) => i)), width: 0, height: 0, cols: 3, rows: 4, cellWidth: 0, cellHeight: 0 }
+    expect(cellGeometry(zero)).toEqual({ cellWidth: 0, cellHeight: 0, gap: 2 })
+    const [f] = buildFilmstrip([zero])
     expect(spriteStyle(f, 100)).toEqual({ width: 100 })
   })
 })

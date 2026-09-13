@@ -1,0 +1,64 @@
+handler: ./check.fn.js
+cases:
+  - name: frames map to serve urls in request order
+    data:
+      steps:
+        frames180:
+          frames:
+            - { time: 10, storage_path: o/r/uploads/projects/p1/frames/server/u1/frame-01.jpg, content_type: image/jpeg, size: 50 }
+            - { time: 12.5, storage_path: o/r/uploads/projects/p1/frames/server/u1/frame-02.jpg, content_type: image/jpeg, size: 60 }
+          count: 2
+          drawn: false
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        data:
+          frames:
+            - { time: 10, url: /api/uploads/projects/p1/frames/server/u1/frame-01.jpg }
+            - { time: 12.5, url: /api/uploads/projects/p1/frames/server/u1/frame-02.jpg }
+  - name: output from the 720 step is read
+    data:
+      steps:
+        frames720:
+          frames:
+            - { time: 40, storage_path: o/r/uploads/projects/p1/frames/server/u2/frame-01.jpg, content_type: image/jpeg, size: 50 }
+          count: 1
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        data:
+          frames:
+            - { time: 40, url: /api/uploads/projects/p1/frames/server/u2/frame-01.jpg }
+  - name: output from the 1080 step is read, and a frame without a numeric time is dropped
+    data:
+      steps:
+        frames1080:
+          frames:
+            - { time: 42, storage_path: o/r/uploads/projects/p1/frames/server/u3/frame-01.jpg, content_type: image/jpeg, size: 50 }
+            - { time: "43", storage_path: o/r/uploads/projects/p1/frames/server/u3/frame-02.jpg, content_type: image/jpeg, size: 50 }
+          count: 2
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        data:
+          frames:
+            - { time: 42, url: /api/uploads/projects/p1/frames/server/u3/frame-01.jpg }
+  - name: no step output is a failure
+    data:
+      steps: {}
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Server frame capture failed
+        data: null

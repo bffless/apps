@@ -152,7 +152,7 @@ describe('cutEditorInputs · whole-project readout (duration + projectCuts)', ()
 })
 
 /** A contact sheet sampled at `times`, tagged by `url` so a frame's origin is
- *  identifiable. Geometry mirrors `composeContactSheet`. */
+ *  identifiable. Geometry mirrors the server-composed sheets. */
 function sheet(url: string, times: number[]): ContactSheet {
   const cols = 3
   const rows = Math.ceil(times.length / cols)

@@ -67,7 +67,8 @@ restorable cross-browser):
 
 ```ts
 blog: {
-  markdown: string          // resolved: image tokens rewritten to /api/uploads/blog/... URLs
+  markdown: string          // resolved: image tokens rewritten to /api/uploads/projects/<id>/frames/server/... URLs
+                            // (older posts may still hold /api/uploads/blog/... ones)
   direction: string         // the creator's free-text steer
   script: string            // the final script it was generated from (staleness key)
   status: 'idle' | 'running' | 'done' | 'error'
@@ -81,10 +82,10 @@ Flow (a new `BlogCard` + orchestration in `useScenePipeline.ts`):
    job, get `{ markdown }`.
 2. **Materialise images eagerly** (ADR-0002): parse the markdown for `frame:<t>` tokens,
    dedup timestamps; for each, map global→`(sourceId, localTime)` (`globalToLocal`, for
-   multi-source), seek the **source video** (in-memory `File` if present, else signed bucket
-   `sourceUrl`) and re-capture a clean full-res frame via `captureFramesAt`; upload each as a
-   **new blog asset** (presigned direct-to-bucket, reuse the `studio_source` upload schema,
-   `sub_dir: "blog"` → `projects/{id}/blog/frame-NN.jpg`). Get serve URLs.
+   multi-source), then grab clean, label-free frames **on the server**: one frames job per
+   source recording (`POST /api/video/frames`, CE's ffmpeg `frames` op, 1080 px tall). No
+   browser capture and no upload; each frame is already a bucket object with a serve URL
+   (`/api/uploads/projects/{id}/frames/server/...`).
 3. **Rewrite tokens → real Markdown image links** at the bucket serve URLs. Persist *that*
    resolved markdown to the slice + DB.
 4. **Preview** — render the resolved markdown **read-only** (a Markdown renderer dep, e.g.
@@ -102,10 +103,11 @@ Flow (a new `BlogCard` + orchestration in `useScenePipeline.ts`):
 - **Mock-first**: add an MSW handler for `/api/blog` returning the same `{ markdown }` shape;
   coerce both routes through one pure `toBlog()`/parse fn. Pure logic (token parsing, slug,
   bundle assembly, global→local mapping) in `src/lib/*` with `*.test.ts`.
-- **No base64 in Redux/localStorage** — blog frames persist **url-only** (they're real bucket
-  assets); the captured bytes never enter the slice.
-- **Presigned direct-to-bucket** for the frame uploads; never stream image bodies through the
-  pipeline (1 MB nginx cap).
+- **No base64 in Redux/localStorage** — blog frames persist **url-only**: the post stores only
+  their `/api/uploads/...` serve URLs (they're real bucket objects); no image bytes enter the slice.
+- **No image bytes through the browser or a pipeline body** — frames are grabbed on the server
+  (`POST /api/video/frames`) and written straight to the bucket; the request carries only the
+  source URL and times, never an image body (1 MB nginx cap).
 - After changing rules, edit the source under `.bffless/proxy-rules/studio/` and commit — CI syncs it
   to the project on deploy.
 - One stage per PR; `build`, `lint`, `test:run` pass.

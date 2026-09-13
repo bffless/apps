@@ -1,0 +1,65 @@
+handler: ./check.fn.js
+cases:
+  - name: sheets map to serve urls with their grid and byte size
+    data:
+      steps:
+        sheets:
+          sheets:
+            - { storage_path: o/r/uploads/projects/p1/thumbnails/server/u1/sheet-01.jpg, content_type: image/jpeg, size: 1200, times: [1, 2, 3, 4], index: 0, total: 2, cols: 3, rows: 2 }
+            - { storage_path: o/r/uploads/projects/p1/thumbnails/server/u1/sheet-02.jpg, content_type: image/jpeg, size: 800, times: [5], index: 1, total: 2, cols: 1, rows: 1 }
+          count: 5
+          drawn: true
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        data:
+          sheets:
+            - { url: /api/uploads/projects/p1/thumbnails/server/u1/sheet-01.jpg, times: [1, 2, 3, 4], cols: 3, rows: 2, index: 0, total: 2, bytes: 1200 }
+            - { url: /api/uploads/projects/p1/thumbnails/server/u1/sheet-02.jpg, times: [5], cols: 1, rows: 1, index: 1, total: 2, bytes: 800 }
+          drawn: true
+  - name: executor and timings ride along when CE reports them
+    data:
+      steps:
+        sheets:
+          sheets:
+            - { storage_path: o/r/uploads/projects/p1/thumbnails/server/u1/sheet-01.jpg, content_type: image/jpeg, size: 10, times: [1], index: 0, total: 1, cols: 1, rows: 1 }
+          count: 1
+          drawn: false
+          executor: remote
+          timings: { totalMs: 900 }
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: true
+        notOk: false
+        error: ""
+        data:
+          sheets:
+            - { url: /api/uploads/projects/p1/thumbnails/server/u1/sheet-01.jpg, times: [1], cols: 1, rows: 1, index: 0, total: 1, bytes: 10 }
+          drawn: false
+          executor: remote
+          timings: { totalMs: 900 }
+  - name: no step output is a failure
+    data:
+      steps: {}
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Server contact-sheet capture failed
+        data: null
+  - name: an empty sheet list is a failure
+    data:
+      steps:
+        sheets: { sheets: [], count: 0, drawn: true }
+      deployment: { owner: o, repo: r }
+    expect:
+      result:
+        ok: false
+        notOk: true
+        error: Server contact-sheet capture failed
+        data: null

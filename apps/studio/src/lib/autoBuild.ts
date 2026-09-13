@@ -81,28 +81,27 @@ export function isSceneComplete(scene: Scene): boolean {
 /** One step currently executing. `sceneId: null` only for the final `'stitch'`. */
 export type ActiveStep = { sceneId: string | null; stepId: AutoStepId | 'stitch' }
 
-export type Lane = 'ffmpeg' | 'refine' | 'sheets'
+export type Lane = 'ffmpeg' | 'refine'
 
 /**
- * Which shared resource each step occupies. cut + assemble both run ffmpeg —
- * on the wasm backend that's the ONE ffmpeg.wasm instance (the MT core already
- * saturates every core, with a fixed 3 GiB heap), and on CE's Local executor
- * it's the backend's single ffmpeg slot, so the lane holds capacity 1 there.
- * On the Remote executor each job is its own Cloud Run instance, so the lane
- * widens to `ffmpegLaneCapacity` (spec P6). refine is a server job the browser
- * merely polls; sheets is main-thread canvas capture — both stay at 1.
+ * Which shared resource each step occupies. cut, sheets and assemble all run
+ * ffmpeg — on the wasm backend that's the ONE ffmpeg.wasm instance, and on CE's
+ * Local executor it's the backend's single ffmpeg slot, so the lane holds
+ * capacity 1 there. On the Remote executor each job is its own Cloud Run
+ * instance, so the lane widens to `ffmpegLaneCapacity` (spec P6). refine is a
+ * server job the browser merely polls, and stays at 1.
  */
 export const STEP_LANE: Record<AutoStepId, Lane> = {
   cut: 'ffmpeg',
   assemble: 'ffmpeg',
   refine: 'refine',
-  sheets: 'sheets',
+  sheets: 'ffmpeg',
 }
 
 /** How many steps each lane may hold at once. */
 export type LaneCaps = Record<Lane, number>
 
-export const DEFAULT_LANE_CAPS: LaneCaps = { ffmpeg: 1, refine: 1, sheets: 1 }
+export const DEFAULT_LANE_CAPS: LaneCaps = { ffmpeg: 1, refine: 1 }
 
 /**
  * Fallback for CE's remote in-flight fuse when the capabilities probe does not
@@ -162,7 +161,7 @@ export function nextActions(
   inFlight: ActiveStep[],
   caps: LaneCaps = DEFAULT_LANE_CAPS,
 ): AutoAction[] {
-  const laneLoad: Record<Lane, number> = { ffmpeg: 0, refine: 0, sheets: 0 }
+  const laneLoad: Record<Lane, number> = { ffmpeg: 0, refine: 0 }
   for (const a of inFlight) if (a.stepId !== 'stitch') laneLoad[STEP_LANE[a.stepId]] += 1
   const busyScenes = new Set(inFlight.map((a) => a.sceneId))
   const actions: AutoAction[] = []

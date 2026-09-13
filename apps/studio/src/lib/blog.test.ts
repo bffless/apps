@@ -13,7 +13,6 @@ import {
   blogImageRefs,
   planBlogSiblings,
   replaceBlogImageUrl,
-  blogReframeFileName,
 } from './blog'
 
 function scene(over: Partial<Scene> = {}): Scene {
@@ -329,15 +328,6 @@ describe('replaceBlogImageUrl', () => {
     const md = '![a](/u/a.jpg)'
     expect(replaceBlogImageUrl(md, '/u/missing.jpg', '/u/z.jpg')).toBe(md)
     expect(replaceBlogImageUrl(md, '/u/a.jpg', '/u/a.jpg')).toBe(md)
-  })
-})
-
-describe('blogReframeFileName', () => {
-  it('names by global millisecond so distinct moments never collide', () => {
-    expect(blogReframeFileName(12)).toBe('frame-t12000.jpg')
-    expect(blogReframeFileName(12.5)).toBe('frame-t12500.jpg')
-    expect(blogReframeFileName(12)).toBe(blogReframeFileName(12)) // idempotent
-    expect(blogReframeFileName(-3)).toBe('frame-t0.jpg')
   })
 })
 
