@@ -266,8 +266,10 @@ describe('nextActions (lane scheduler)', () => {
   const stepsOf = (actions: ReturnType<typeof nextActions>) =>
     actions.filter((a) => a.kind === 'step').map((a) => `${a.scene.id}:${a.step}`)
 
-  it('maps cut+assemble to the ffmpeg lane, refine and sheets to their own', () => {
-    expect(STEP_LANE).toEqual({ cut: 'ffmpeg', assemble: 'ffmpeg', refine: 'refine', sheets: 'sheets' })
+  it('maps cut, sheets and assemble to the ffmpeg lane and refine to its own', () => {
+    // Sheets are a server ffmpeg job now, so on the Local executor they share
+    // the backend's single slot with cut and assemble.
+    expect(STEP_LANE).toEqual({ cut: 'ffmpeg', assemble: 'ffmpeg', refine: 'refine', sheets: 'ffmpeg' })
   })
 
   it('offers only one ffmpeg step: assemble of the earlier scene wins over cut of a later one', () => {
@@ -275,17 +277,16 @@ describe('nextActions (lane scheduler)', () => {
     expect(stepsOf(actions)).toEqual(['s1:assemble'])
   })
 
-  it('overlaps the three lanes across scenes', () => {
+  it('overlaps the ffmpeg and refine lanes across scenes; sheets wait for the ffmpeg slot', () => {
     const actions = nextActions([atAssemble('s1', 0), atRefine('s2', 1), atSheets('s3', 2)], [])
-    // s2 refine is allowed: the only earlier scene (s1) already has `refined`.
-    expect(stepsOf(actions)).toEqual(['s1:assemble', 's2:refine', 's3:sheets'])
+    expect(stepsOf(actions)).toEqual(['s1:assemble', 's2:refine'])
   })
 
   it('blocks a lane already in flight', () => {
     const inFlight: ActiveStep[] = [{ sceneId: 's1', stepId: 'assemble' }]
     const actions = nextActions([atAssemble('s1', 0), atCut('s2', 1), atSheets('s3', 2)], inFlight)
-    // s2's cut needs the busy ffmpeg lane; s3's sheets lane is free.
-    expect(stepsOf(actions)).toEqual(['s3:sheets'])
+    // Both s2's cut and s3's sheets need the busy ffmpeg lane.
+    expect(stepsOf(actions)).toEqual([])
   })
 
   it('never offers a second step on a scene that already has one in flight', () => {
@@ -337,10 +338,10 @@ describe('ffmpegLaneCapacity / laneCapsFor', () => {
     expect(ffmpegLaneCapacity('remote', 12, 16)).toBe(12) // scenes still cap it
     expect(ffmpegLaneCapacity('remote', 12, 0)).toBe(REMOTE_FFMPEG_MAX) // a bogus cap falls back to the default, never zeroes the lane
     expect(ffmpegLaneCapacity('local', 12, 4)).toBe(1)
-    expect(laneCapsFor('remote', 12, 4)).toEqual({ ffmpeg: 4, refine: 1, sheets: 1 })
+    expect(laneCapsFor('remote', 12, 4)).toEqual({ ffmpeg: 4, refine: 1 })
   })
-  it('leaves refine and sheets at 1', () => {
-    expect(laneCapsFor('remote', 5)).toEqual({ ffmpeg: 5, refine: 1, sheets: 1 })
+  it('leaves refine at 1', () => {
+    expect(laneCapsFor('remote', 5)).toEqual({ ffmpeg: 5, refine: 1 })
     expect(laneCapsFor(null, 5)).toEqual(DEFAULT_LANE_CAPS)
   })
 })
@@ -371,11 +372,12 @@ describe('nextActions with a wider ffmpeg lane', () => {
     const steps = nextActions(scenes, [], laneCapsFor('remote', scenes.length)).filter((a) => a.kind === 'step')
     expect(steps).toHaveLength(4)
   })
-  it('a wider ffmpeg lane never widens refine or sheets', () => {
-    // two scenes both on `sheets` (cut done): only one sheets step is admitted
+  it('a wider ffmpeg lane widens sheets along with cut/assemble — they share the lane now', () => {
+    // two scenes both on `sheets` (cut done): sheets is a server ffmpeg job now,
+    // so both are admitted under the widened ffmpeg lane, same as cut/assemble.
     const cut = (s: Scene): Scene => ({ ...s, clipUrl: 'c.mp4', clipAudioUrl: 'c.wav' })
     const twoOnSheets = [cut(bare('a', 0)), cut(bare('b', 1))]
     const steps = nextActions(twoOnSheets, [], laneCapsFor('remote', 2)).filter((a) => a.kind === 'step')
-    expect(steps.map((a) => a.kind === 'step' && a.step)).toEqual(['sheets'])
+    expect(steps.map((a) => a.kind === 'step' && a.step)).toEqual(['sheets', 'sheets'])
   })
 })

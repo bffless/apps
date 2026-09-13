@@ -40,10 +40,10 @@ import { buildSliceCommand } from '../../lib/export/slice'
 import { slice as ffmpegSlice, sliceSourcePath } from '../../lib/export/ffmpeg'
 import {
   captureFramesAt,
-  captureSceneContactSheet,
   type ContactSheet,
 } from '../../lib/frames'
 import { planGlobalSheetCaptures } from '../../lib/globalSheet'
+import { planSceneContactSheet } from '../../lib/contactSheet'
 import {
   SERVER_SHEET_CELLS,
   toServerSheets,
@@ -1246,10 +1246,10 @@ export function useScenePipeline() {
 
   // ---- Per-scene refiner (story 03c) ----------------------------------------
 
-  // Button 1: capture DENSE contact sheets for just this scene's window and
-  // upload them (url-only persisted, like the prep sheets). Captures off the
-  // persisted source serve URL so it works after a reload without the in-memory
-  // clip. Separate from the whole-clip prep sheets.
+  // Button 1: DENSE contact sheets for just this scene's window, built on the
+  // server (CE ffmpeg `frames` + tile). The times are the scene's own seconds in
+  // its source recording, the same times the browser version captured, and they
+  // are used as the labels too. Persisted url-only, like the prep sheets.
   const generateSceneSheets = useCallback(
     async (id: string) => {
       if (sheetingIds.has(id) || refiningIds.has(id)) return
@@ -1258,36 +1258,18 @@ export function useScenePipeline() {
       if (!scene || !src?.sourceUrl) return
       setSheetingIds((s) => toggleId(s, id, true))
       setSceneErrorFor(id, null)
-      // Capture frames off a SAME-ORIGIN blob: URL, never the cross-origin signed
-      // bucket URL directly. A `<video crossOrigin>` media read against the GCS
-      // object fails CORS (the element's range/preflight isn't satisfied even
-      // though GET from this origin is allowed), whereas a plain `fetch` of the
-      // bytes is fine. The source bytes come from the session blob cache — shared
-      // with the cut step, so this never re-downloads the recording.
-      let objectUrl: string | null = null
       try {
-        const source = await sourceBlobs.get(src.sourceUrl)
-        objectUrl = URL.createObjectURL(source)
-        const sheets = await captureSceneContactSheet(objectUrl, scene.start, scene.end)
-        const uploaded: ContactSheet[] = []
-        for (const sheet of sheets) {
-          const blob = await (await fetch(sheet.dataUrl)).blob()
-          const ext = blob.type === 'image/png' ? 'png' : 'jpg'
-          const name = `scene-${scene.index + 1}-sheet-${String(sheet.index + 1).padStart(2, '0')}.${ext}`
-          const sheetFile = new File([blob], name, { type: blob.type })
-          const { url } = await uploadSlot.run(() => uploadReq({ file: sheetFile, kind: 'thumbnails' }).unwrap())
-          // Persist URL-only — drop the base64 blob so localStorage stays small.
-          uploaded.push({ ...sheet, url, dataUrl: '' })
-        }
-        patchScene(id, { sheets: uploaded })
+        const plan = planSceneContactSheet(scene.start, scene.end)
+        if (plan.times.length === 0) throw new Error('This scene is too short for a contact sheet.')
+        const got = await grabSheets(src.sourceUrl, plan.times, sheetLabels(plan.times))
+        patchScene(id, { sheets: await sheetsFor(got, plan.times, plan.interval) })
       } catch (e) {
         setSceneErrorFor(id, stageError(e))
       } finally {
-        if (objectUrl) URL.revokeObjectURL(objectUrl)
         setSheetingIds((s) => toggleId(s, id, false))
       }
     },
-    [sheetingIds, refiningIds, scenes, sources, sourceBlobs, uploadReq, patchScene, setSceneErrorFor],
+    [sheetingIds, refiningIds, scenes, sources, grabSheets, sheetsFor, patchScene, setSceneErrorFor],
   )
 
   // Button 2: hand the scene's word timings + the director's cutting brief +

@@ -9,11 +9,12 @@ import { Provider } from 'react-redux'
 import { configureStore } from '@reduxjs/toolkit'
 import { setupServer } from 'msw/node'
 import { http, HttpResponse } from 'msw'
-import studioReducer, { createProject, addSource, patchSource, patchSourceStage, selectActive } from '../../store/studioSlice'
+import studioReducer, { createProject, addSource, patchSource, patchSourceStage, selectActive, setScenes } from '../../store/studioSlice'
 import { studioApi } from '../../store/studioApi'
 import { PER_VIDEO_STAGES } from '../../lib/pipeline'
 import { resetVideoBackendForTests } from '../../lib/videoBackend'
 import { installMswRelativeUrlShim } from '../../test/mswRequestShim'
+import type { Scene } from '../../lib/scenes'
 
 const { imageSizeMock } = vi.hoisted(() => ({ imageSizeMock: vi.fn() }))
 vi.mock('../../lib/imageSize', () => ({ imageSize: imageSizeMock }))
@@ -108,5 +109,48 @@ describe('prep contact sheets on the server', () => {
     await waitFor(() => expect(active(store).stageProgress.thumbnails?.status).toBe('error'), { timeout: 12000 })
     expect(active(store).stageProgress.thumbnails?.detail).toMatch(/without any sheets/)
     expect(active(store).contactSheets).toEqual([])
+  }, 15000)
+})
+
+function SheetsHarness({ id }: { id: string }) {
+  const pipe = useScenePipeline()
+  return <button onClick={() => void pipe.generateSceneSheets(id)}>sheets</button>
+}
+
+describe('per-scene sheets on the server', () => {
+  it('grabs the scene window through /api/video/contact-sheet and patches url-only sheets', async () => {
+    const bodies: { times: number[]; labels: string[] }[] = []
+    server.events.on('request:start', async ({ request }) => {
+      if (new URL(request.url).pathname === '/api/video/contact-sheet') bodies.push(await request.clone().json())
+    })
+    const store = makeStore()
+    store.dispatch(
+      setScenes([
+        {
+          id: 'sc1',
+          index: 0,
+          sourceId: 'src1',
+          title: 'Intro',
+          start: 60,
+          end: 90,
+          transcript: '',
+          status: 'pending',
+          cuts: [],
+        } as Scene,
+      ]),
+    )
+    render(
+      <Provider store={store}>
+        <SheetsHarness id="sc1" />
+      </Provider>,
+    )
+    await act(async () => {
+      screen.getByText('sheets').click()
+    })
+    await waitFor(() => expect(active(store).scenes[0].sheets?.length ?? 0).toBeGreaterThan(0), { timeout: 12000 })
+    expect(bodies[0].times[0]).toBeGreaterThanOrEqual(60)
+    expect(bodies[0].times.at(-1)!).toBeLessThan(90)
+    expect(bodies[0].labels[0]).toBe('1:00')
+    expect(active(store).scenes[0].sheets!.every((s) => s.url?.includes('/thumbnails/server/'))).toBe(true)
   }, 15000)
 })
