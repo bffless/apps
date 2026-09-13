@@ -266,11 +266,54 @@ const studioHandlers = [
     return HttpResponse.json({ jobId, status: 'pending' })
   }),
 
+  // Server contact sheets (CE ffmpeg `frames` + tile). Mirrors the rule's result
+  // { sheets: [{ url, times, cols, rows, index, total, bytes }], drawn }: 12 stills per
+  // sheet, 3 wide. The bytes are a stub, so <img> reports no natural size offline.
+  http.post('/api/video/contact-sheet', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { times?: number[]; labels?: string[]; projectId?: string }
+    const times = Array.isArray(body.times) ? body.times : []
+    if (times.length === 0 || !Array.isArray(body.labels) || body.labels.length !== times.length) {
+      return HttpResponse.json({ error: 'times must be 1-200 non-negative seconds', code: 'BAD_REQUEST' }, { status: 400 })
+    }
+    const pid = body.projectId ?? 'mock'
+    const stamp = Date.now()
+    const total = Math.ceil(times.length / 12)
+    const sheets = Array.from({ length: total }, (_, i) => {
+      const chunk = times.slice(i * 12, i * 12 + 12)
+      const key = `projects/${pid}/thumbnails/server/${stamp}/sheet-${String(i + 1).padStart(2, '0')}.jpg`
+      const bytes = new TextEncoder().encode('mock-jpeg')
+      objectStore.set(key, { body: bytes.buffer as ArrayBuffer, type: 'image/jpeg' })
+      const cols = Math.min(chunk.length, 3)
+      return { url: `/api/uploads/${key}`, times: chunk, cols, rows: Math.ceil(chunk.length / cols), index: i, total, bytes: bytes.byteLength }
+    })
+    const jobId = enqueueJob('video-contact-sheet', { sheets, drawn: true, executor: 'local', timings: { totalMs: 1800 } })
+    return HttpResponse.json({ jobId, status: 'pending' })
+  }),
+
+  // Server frame grabs (CE ffmpeg `frames`, no draw/tile): { frames: [{ time, url }] } in request order.
+  http.post('/api/video/frames', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { times?: number[]; projectId?: string }
+    const times = Array.isArray(body.times) ? body.times : []
+    if (times.length === 0) {
+      return HttpResponse.json({ error: 'times must be 1-200 non-negative seconds', code: 'BAD_REQUEST' }, { status: 400 })
+    }
+    const pid = body.projectId ?? 'mock'
+    const stamp = Date.now()
+    const frames = times.map((time, i) => {
+      const key = `projects/${pid}/frames/server/${stamp}/frame-${String(i + 1).padStart(2, '0')}.jpg`
+      const bytes = new TextEncoder().encode('mock-jpeg')
+      objectStore.set(key, { body: bytes.buffer as ArrayBuffer, type: 'image/jpeg' })
+      return { time, url: `/api/uploads/${key}` }
+    })
+    const jobId = enqueueJob('video-frames', { frames, executor: 'local', timings: { totalMs: 700 } })
+    return HttpResponse.json({ jobId, status: 'pending' })
+  }),
+
   http.get('/api/video/capabilities', () =>
     HttpResponse.json(
       mockVideoServer
         ? {
-            server: true, ops: ['probe', 'extract_audio', 'slice', 'concat'], version: 'ffmpeg 7.0-mock',
+            server: true, ops: ['probe', 'extract_audio', 'slice', 'concat', 'frames'], version: 'ffmpeg 7.0-mock',
             executors: mockVideoExecutors, defaultExecutor: mockVideoExecutors[0] ?? 'local',
             ...(mockVideoExecutors.includes('remote') ? { remote: { ready: true, version: 'mock' } } : {}),
           }

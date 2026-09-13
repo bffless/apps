@@ -32,7 +32,7 @@ type ScenesResult = { synopsis?: string; scenes?: DirectorScene[] }
 /** The per-scene refiner's result blob (story 03c): the refined cuts. */
 type RefineSceneResult = RefineSceneRaw
 
-export type VideoJobKind = 'video-extract' | 'video-slice' | 'video-concat'
+export type VideoJobKind = 'video-extract' | 'video-slice' | 'video-concat' | 'video-contact-sheet' | 'video-frames'
 export type VideoResult = { url: string; audioUrl?: string | null; duration?: number | null }
 
 /**
@@ -131,6 +131,23 @@ export const studioApi = createApi({
     // Video concatenation (join multiple video parts).
     videoConcatStart: builder.mutation<StartJobResponse, { parts: string[]; projectId: string; executor?: 'local' | 'remote' }>({
       query: (body) => ({ url: 'api/video/concat', method: 'POST', body }),
+    }),
+
+    // Contact sheets on the server (CE ffmpeg `frames` op with draw + tile): the
+    // browser never downloads the source. Result coerced by `toServerSheets`.
+    videoContactSheetStart: builder.mutation<
+      StartJobResponse,
+      { sourceUrl: string; projectId: string; times: number[]; labels: string[]; executor?: 'local' | 'remote' }
+    >({
+      query: (body) => ({ url: 'api/video/contact-sheet', method: 'POST', body }),
+    }),
+
+    // Clean still frames on the server. Result coerced by `toServerFrames`.
+    videoFramesStart: builder.mutation<
+      StartJobResponse,
+      { sourceUrl: string; projectId: string; times: number[]; height: number; executor?: 'local' | 'remote' }
+    >({
+      query: (body) => ({ url: 'api/video/frames', method: 'POST', body }),
     }),
 
     // The master director (story 03, 13f contract): timestamped transcript +
@@ -326,6 +343,8 @@ export const {
   useVideoExtractStartMutation,
   useVideoSliceStartMutation,
   useVideoConcatStartMutation,
+  useVideoContactSheetStartMutation,
+  useVideoFramesStartMutation,
   useLazyGetStudioJobQuery,
   useSignDownloadQuery,
   useLazySignDownloadQuery,
