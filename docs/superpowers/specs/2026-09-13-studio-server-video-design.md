@@ -96,10 +96,13 @@ the existing `GET /api/studio/job`.
 - Call-site changes, one per row above:
   - **Sheet budget with several recordings.** The director and blog rules read only the
     first 10 sheet URLs (`rules/api/scenes/post/prep.fn.js:8`). Each recording's job tiles
-    its own frames 12 to a sheet, so every boundary between recordings can cost one extra
-    sheet. `planGlobalSheetCaptures` therefore caps the global frame count at
-    `12 × (10 − (recordings − 1))`. With one recording that is 120, the same as today. For
-    `k` recordings, `Σ ceil(nᵢ/12) ≤ ceil(Σnᵢ/12) + (k − 1) ≤ 10`.
+    its own frames 12 to a sheet, so the director's ≤10-image budget has to be split ACROSS
+    recordings, not just across frames. `planGlobalSheetCaptures` therefore allocates the
+    10 sheets across recordings by length (`allocateSheets`): every recording gets ≥ 1 of
+    the 10 sheets and the rest go by length, and each recording's frames are capped at its
+    sheets × 12. With more than 10 recordings, the shortest ones get no sheet and prep
+    names them rather than dropping them silently. Prep also never stores more than 10
+    sheets.
   - **#1** `generateThumbnails` plans the global captures as today, groups them by source,
     starts one contact-sheet job per source (sequentially, through the existing upload/ffmpeg
     lane), then orders the sheets globally and dispatches `setContactSheets`. No browser
