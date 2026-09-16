@@ -227,7 +227,12 @@ describe('payload offload — run.finished', () => {
     // Live slice state stays inline.
     expect(store.getState().run.state!.outputs!.big).toBe(BIG)
 
-    const patch = writes.find((w): w is Extract<Recorded, { op: 'patch' }> => w.op === 'patch' && w.id === runId)
+    // The run's patch is queued from the run.finished effect behind a real
+    // upload, so it lands a few task turns after the status flips — wait for
+    // the write itself, not the status (#696: red under Node 24 otherwise).
+    const isRunPatch = (w: Recorded): w is Extract<Recorded, { op: 'patch' }> => w.op === 'patch' && w.id === runId
+    await pumpUntil(advance, () => writes.some(isRunPatch))
+    const patch = writes.find(isRunPatch)
     expect(patch).toBeDefined()
     const outputs = patch!.patch.outputs as Record<string, unknown>
     const path = `workflows/test/payload/runs/${runId}/outputs/big.json`
@@ -522,10 +527,12 @@ describe('payload offload — step.skipped (a headless skip)', () => {
 
     // The persisted row got {$file} for the oversized output only, under the
     // skipped step's own scope (not the upstream step that produced the value).
-    const skipped = writes.find(
-      (w): w is Extract<Recorded, { op: 'upsert' }> =>
-        w.op === 'upsert' && w.key === CONFIRM_KEY && w.patch.status === 'skipped',
-    )
+    // The write waits on the upload, so it can land after the run stops
+    // running — wait for the write itself (#696: red under Node 24 otherwise).
+    const isSkipUpsert = (w: Recorded): w is Extract<Recorded, { op: 'upsert' }> =>
+      w.op === 'upsert' && w.key === CONFIRM_KEY && w.patch.status === 'skipped'
+    await pumpUntil(advance, () => writes.some(isSkipUpsert))
+    const skipped = writes.find(isSkipUpsert)
     expect(skipped).toBeDefined()
     const outputs = skipped!.patch.outputs as Record<string, unknown>
     const path = `workflows/test/payload/runs/${runId}/${CONFIRM_KEY}/big.json`
