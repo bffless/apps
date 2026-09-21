@@ -505,3 +505,58 @@ describe('jobOutcome — a skipped step that carries outputs', () => {
     ])
   })
 })
+
+// ---------------------------------------------------------------------------
+// A deep chain of matrix jobs
+// ---------------------------------------------------------------------------
+
+describe('a chain of matrix jobs', () => {
+  // Seven matrix jobs in a row, four items and three outputs each: the shape of a real
+  // workflow (contact sheets → find → plan → stills → read → …). Each job's outputs read
+  // the job before it, so resolving the last one walks the whole chain. Before each job
+  // was resolved once per walk, every output of every item re-resolved its ancestry:
+  // (3 × 4)^7, about 36 million evaluations, and a run page that froze.
+  const DEPTH = 7
+  const ITEMS = 4
+  const jobs: Record<string, unknown> = {}
+  for (let d = 0; d < DEPTH; d++) {
+    const prev = d === 0 ? "'seed'" : `needs.j${d - 1}.outputs.a[0]`
+    jobs[`j${d}`] = {
+      ...(d > 0 ? { needs: `j${d - 1}` } : {}),
+      strategy: { matrix: { n: '${{ inputs.items }}' } },
+      steps: [{ id: 's', uses: 'pipeline', with: { path: 'echo' }, outputs: { v: { type: 'string', value: '${{ response.text }}' } } }],
+      outputs: {
+        a: `\${{ ${prev} }}`,
+        b: '${{ steps.s.outputs.v }}',
+        c: '${{ matrix.n }}',
+      },
+    }
+  }
+  const chainDef: Definition = toDefinition({
+    name: 'Chain',
+    on: { manual: { inputs: { items: { type: 'json' } } } },
+    jobs,
+  })
+  const items = Array.from({ length: ITEMS }, (_, n) => ({ n }))
+  const steps: Record<string, StepState> = {}
+  const expansions: RunState['expansions'] = {}
+  for (let d = 0; d < DEPTH; d++) {
+    expansions[`j${d}`] = { total: ITEMS, items }
+    for (let i = 0; i < ITEMS; i++) {
+      const s = step(`j${d}`, i, 's', { outputs: { v: `j${d}.${i}` } })
+      steps[s.key] = s
+    }
+  }
+  const chainState = makeState({ steps, expansions })
+
+  it('resolves in linear time, and to the same values', () => {
+    const started = performance.now()
+    const run = buildRunContexts(chainDef, chainState)
+    const last = buildContexts(chainDef, chainState, { job: `j${DEPTH - 1}`, index: ITEMS - 1, stepId: 's' })
+    expect(performance.now() - started).toBeLessThan(2_000)
+
+    expect(evalValue(`\${{ jobs.j${DEPTH - 1}.outputs.a }}`, run)).toEqual(Array(ITEMS).fill('seed'))
+    expect(evalValue(`\${{ jobs.j${DEPTH - 1}.outputs.b }}`, run)).toEqual(items.map((_, i) => `j${DEPTH - 1}.${i}`))
+    expect(evalValue(`\${{ needs.j${DEPTH - 2}.outputs.c }}`, last)).toEqual([0, 1, 2, 3])
+  }, 20_000)
+})
