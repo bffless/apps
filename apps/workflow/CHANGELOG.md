@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.2](https://github.com/bffless/apps/compare/workflow-v1.13.1...workflow-v1.13.2) (2026-09-21)
+
+
+### Bug Fixes
+
+* **workflow:** a job's outputs are resolved once per context build, not once per output per matrix item per level ([#706](https://github.com/bffless/apps/issues/706)) ([aec5e51](https://github.com/bffless/apps/commit/aec5e51f6cbb648682651f0a215be0ac54c1b11a))
+* **workflow:** image tiles load lazily and decode off the main thread ([#704](https://github.com/bffless/apps/issues/704)) ([849f043](https://github.com/bffless/apps/commit/849f0430cb37e996b53339ecfc1d09a7a38d8072))
+
 ## [1.13.1](https://github.com/bffless/apps/compare/workflow-v1.13.0...workflow-v1.13.1) (2026-09-12)
 
 
