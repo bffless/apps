@@ -29,7 +29,9 @@ function ImageItem({ fileRef }: { fileRef: FileRef }) {
   const url = viewUrl(fileRef.url)
   return (
     <div className="images-grid-item">
-      <img src={url} alt={fileRef.name} />
+      {/* Off-screen tiles are neither fetched nor decoded until scrolled to: a run with a
+          hundred full-size stills otherwise holds every bitmap at once and the page crawls. */}
+      <img src={url} alt={fileRef.name} loading="lazy" decoding="async" />
       <a className="images-grid-download" href={downloadHref(url)} download>
         Download
       </a>
