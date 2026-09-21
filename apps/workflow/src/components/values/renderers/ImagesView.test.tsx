@@ -33,6 +33,11 @@ describe('ImagesView', () => {
     expect(imgs).toHaveLength(2)
     expect(imgs[0].getAttribute('src')).toBe('/api/uploads/a.png')
     expect(imgs[1].getAttribute('src')).toBe('/api/uploads/b.png')
+    // A long list of full-size images must not all load and decode up front.
+    for (const img of imgs) {
+      expect(img.getAttribute('loading')).toBe('lazy')
+      expect(img.getAttribute('decoding')).toBe('async')
+    }
 
     const downloads = screen.getAllByText('Download') as HTMLAnchorElement[]
     expect(downloads).toHaveLength(2)
