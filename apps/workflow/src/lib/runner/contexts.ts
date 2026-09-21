@@ -230,7 +230,33 @@ export function evalOutputDecl(decl: OutputDecl, contexts: Record<string, unknow
 }
 
 /**
- * Job outputs, evaluated lazily against that job's own contexts. A matrix job's
+ * One walk over the `needs` graph: the cycle guard, and every job ref resolved
+ * so far.
+ *
+ * `refs` is what keeps a walk linear. A job's outputs are evaluated against its
+ * own contexts, whose `needs` hold the outputs of *its* needs, and so on up the
+ * graph — so without it every site re-evaluated its whole ancestry once per
+ * output per matrix item, multiplied at each level. On a twelve-job workflow
+ * with three matrix jobs in a chain that was tens of thousands of expression
+ * evaluations for one step card, on every render: the run page froze.
+ *
+ * It lives for one top-level build only, during which `state` cannot change —
+ * never across calls, where a cache keyed on `state` would have to trust that
+ * no caller ever mutates it.
+ */
+interface Walk {
+  stack: Set<string>
+  refs: Map<string, JobRef>
+  /** How often the cycle guard fired: a ref resolved around a cycle is not remembered. */
+  cycles: number
+}
+
+type JobRef = { outputs: Record<string, unknown> | null; result: Outcome }
+
+const newWalk = (): Walk => ({ stack: new Set(), refs: new Map(), cycles: 0 })
+
+/**
+ * Job outputs, evaluated against that job's own contexts. A matrix job's
  * outputs collect into lists in matrix order (01 Deviation); an item that never
  * ran or failed contributes `null`.
  */
@@ -238,46 +264,48 @@ function jobOutputs(
   def: Definition,
   state: RunState,
   job: string,
-  stack: Set<string>,
+  walk: Walk,
 ): Record<string, unknown> {
   const decl = def.jobs[job]
   const out: Record<string, unknown> = {}
   if (!decl) return out
-  const total = state.expansions[job]?.total ?? 1
+  const total = decl.matrix ? (state.expansions[job]?.total ?? 1) : 1
+  // One context per item, shared by all of its outputs.
+  const contexts: Array<Record<string, unknown> | null> = []
+  for (let i = 0; i < total; i++) {
+    contexts.push(
+      !decl.matrix || itemProduced(def, state, job, i) ? jobContexts(def, state, job, i, walk) : null,
+    )
+  }
   for (const [name, value] of Object.entries(decl.outputs)) {
-    if (decl.matrix) {
-      const list: unknown[] = []
-      for (let i = 0; i < total; i++) {
-        list.push(
-          itemProduced(def, state, job, i)
-            ? evalOutputDecl(value, jobContexts(def, state, job, i, stack))
-            : null,
-        )
-      }
-      out[name] = list
-    } else {
-      out[name] = evalOutputDecl(value, jobContexts(def, state, job, 0, stack))
-    }
+    out[name] = decl.matrix
+      ? contexts.map((ctx) => (ctx ? evalOutputDecl(value, ctx) : null))
+      : evalOutputDecl(value, contexts[0]!)
   }
   return out
 }
 
 /** `{ outputs, result }` — the shape behind both `needs.<job>` and `jobs.<job>`. */
-function jobRef(
-  def: Definition,
-  state: RunState,
-  job: string,
-  stack: Set<string>,
-): { outputs: Record<string, unknown> | null; result: Outcome } {
+function jobRef(def: Definition, state: RunState, job: string, walk: Walk): JobRef {
+  const known = walk.refs.get(job)
+  if (known) return known
   const result = jobOutcome(def, state, job)
   // Outputs of a job that was skipped, failed or cancelled are null (01).
+  if (result !== 'success') return { outputs: null, result }
   // `stack` guards against a definition that (illegally) cycles through needs.
-  if (result !== 'success' || stack.has(job)) return { outputs: null, result }
-  stack.add(job)
+  if (walk.stack.has(job)) {
+    walk.cycles++
+    return { outputs: null, result }
+  }
+  walk.stack.add(job)
+  const cyclesBefore = walk.cycles
   try {
-    return { outputs: jobOutputs(def, state, job, stack), result }
+    const ref: JobRef = { outputs: jobOutputs(def, state, job, walk), result }
+    // What a job reads around a cycle depends on where the walk entered it.
+    if (walk.cycles === cyclesBefore) walk.refs.set(job, ref)
+    return ref
   } finally {
-    stack.delete(job)
+    walk.stack.delete(job)
   }
 }
 
@@ -285,10 +313,10 @@ function needsCtx(
   def: Definition,
   state: RunState,
   job: string,
-  stack: Set<string>,
+  walk: Walk,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  for (const need of def.jobs[job]?.needs ?? []) out[need] = jobRef(def, state, need, stack)
+  for (const need of def.jobs[job]?.needs ?? []) out[need] = jobRef(def, state, need, walk)
   return out
 }
 
@@ -338,7 +366,7 @@ function jobContexts(
   state: RunState,
   job: string,
   index: number,
-  stack: Set<string>,
+  walk: Walk,
   beforePos = Number.POSITIVE_INFINITY,
 ): Record<string, unknown> {
   const steps: Record<string, unknown> = {}
@@ -349,7 +377,7 @@ function jobContexts(
   const expansion = state.expansions[job]
   return {
     ...ambientCtx(state),
-    needs: needsCtx(def, state, job, stack),
+    needs: needsCtx(def, state, job, walk),
     steps,
     matrix: expansion?.items[index] ?? {},
     strategy: { 'job-index': index, 'job-total': expansion?.total ?? 1 },
@@ -363,7 +391,7 @@ export function buildJobContexts(
   job: string,
   index = 0,
 ): Record<string, unknown> {
-  return jobContexts(def, state, job, index, new Set())
+  return jobContexts(def, state, job, index, newWalk())
 }
 
 /** The 01 contexts table for one evaluation site. */
@@ -378,7 +406,7 @@ export function buildContexts(
     state,
     scope.job,
     scope.index,
-    new Set(),
+    newWalk(),
     pos >= 0 ? pos : Number.POSITIVE_INFINITY,
   )
 
@@ -419,7 +447,8 @@ export function buildContexts(
 /** Contexts for top-level outputs (adds `jobs`). */
 export function buildRunContexts(def: Definition, state: RunState): Record<string, unknown> {
   const jobs: Record<string, unknown> = {}
-  for (const job of Object.keys(def.jobs)) jobs[job] = jobRef(def, state, job, new Set())
+  const walk = newWalk()
+  for (const job of Object.keys(def.jobs)) jobs[job] = jobRef(def, state, job, walk)
   return { ...ambientCtx(state), jobs }
 }
 
