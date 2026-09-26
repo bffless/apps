@@ -16,7 +16,7 @@ import type { RunRow, StepRow } from '../lib/runner/rows'
 import type { Definition, StepKey } from '../lib/runner/types'
 import { stepKey } from '../lib/runner/types'
 import type { RunStore } from '../lib/runStore'
-import { createRunStore } from '../lib/runStore'
+import { RunStoreError, createRunStore } from '../lib/runStore'
 import helloYaml from '../../docs/spec/examples/hello.workflow.yaml?raw'
 import type { AppStore } from './index'
 import { makeStore } from './index'
@@ -63,12 +63,17 @@ interface FakeRunStore {
   setLeaseFailures(n: number): void
 }
 
-/** A `RunStore` fake that records every write; `failUpsertKey` rejects that step's upserts forever (both attempts of the retry). */
-function fakeRunStore(opts: { failUpsertKey?: StepKey } = {}): FakeRunStore {
+/**
+ * A `RunStore` fake that records every write; `failUpsertKey` rejects that
+ * step's upserts forever (both attempts of the retry), throwing `failUpsertWith`
+ * when given — a `RunStoreError` carrying a status, say — or a plain `Error`.
+ */
+function fakeRunStore(opts: { failUpsertKey?: StepKey; failUpsertWith?: Error } = {}): FakeRunStore {
   const writes: Recorded[] = []
   const leaseCalls: FakeRunStore['leaseCalls'] = []
   let lease: { ok: boolean; leaseUntil?: number; heldBy?: string } = { ok: true, leaseUntil: Date.now() + 60_000 }
   let leaseFailuresRemaining = 0
+  const upsertFailure = opts.failUpsertWith ?? new Error('upsertStep: simulated failure')
 
   const store: RunStore = {
     async createRun(row) {
@@ -78,7 +83,7 @@ function fakeRunStore(opts: { failUpsertKey?: StepKey } = {}): FakeRunStore {
       writes.push({ op: 'patch', id, patch })
     },
     async upsertStep(runId, key, patch) {
-      if (opts.failUpsertKey && key === opts.failUpsertKey) throw new Error('upsertStep: simulated failure')
+      if (opts.failUpsertKey && key === opts.failUpsertKey) throw upsertFailure
       writes.push({ op: 'upsert', runId, key, patch })
     },
     async lease(id, owner, takeover) {
@@ -398,6 +403,40 @@ describe('createRunnerMiddleware — write-ahead failure', () => {
     // before the step's own fire-and-forget adapter run has any chance to
     // matter — the controller ONE_KEY was registered under is gone either way.
     expect(runnerControllers.has(ONE_KEY)).toBe(false)
+  })
+
+  // The pause copy (apps#707): a write that still 401s after the shared
+  // refresh was tried means the session is gone — say so, and say what to do.
+  // Keyed on the `RunStoreError` status, never on its message text.
+  async function pauseWith(error: Error): Promise<string> {
+    const { http } = scriptedHttp({ '/api/test/x': [{ status: 200, body: { v: 'hi' } }] })
+    const { clock, advance } = virtualClock()
+    const { store: runStore } = fakeRunStore({ failUpsertKey: ONE_KEY, failUpsertWith: error })
+    const deps: RunnerDeps = { http, clock, runStore, registerFile: registerFileFake }
+
+    const store = trackedStore(deps)
+    store.dispatch(
+      startRun({ impl: 'test', workflow: 'twojobs', def: TWO_JOBS, yaml: 'name: Two jobs', workflowName: 'Two jobs', values: {} }),
+    )
+
+    await pumpUntil(advance, () => store.getState().run.paused !== undefined)
+    return store.getState().run.paused!
+  }
+
+  it('names the expired session when the failing write is a 401 (apps#707)', async () => {
+    const paused = await pauseWith(new RunStoreError('runStore: /api/workflow/run-step answered 401', 401))
+
+    expect(paused).toBe(
+      `Could not save step ${ONE_KEY}: your session expired. Reload the page to sign in again, then resume the run.`,
+    )
+    expect(paused).not.toContain('answered 401')
+  })
+
+  it('keeps the raw detail for any other write failure', async () => {
+    const paused = await pauseWith(new RunStoreError('runStore: /api/workflow/run-step answered 500', 500))
+
+    expect(paused).toBe(`Could not save step ${ONE_KEY}: runStore: /api/workflow/run-step answered 500`)
+    expect(paused).not.toContain('session expired')
   })
 })
 
