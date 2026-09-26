@@ -22,8 +22,9 @@ window.__workflow, and writes the record and its file outputs to --out.
 Options (run):
   --inputs <file>   JSON object of kickoff values, keyed by the names in
                     on.manual.inputs. A \`file\` input's value is a local path:
-                    it is uploaded (prepare -> PUT -> register) and replaced by
-                    the File ref before the page opens. A workflow that takes
+                    it is registered (prepare -> register) with its bytes
+                    streamed from disk to the bucket, and replaced by the
+                    File ref before the page opens. A workflow that takes
                     no inputs still needs a file containing {}.
   --out <dir>       where run.json, outputs/, steps.log, console.log and the
                     milestone screenshots are written (default: no artifacts)

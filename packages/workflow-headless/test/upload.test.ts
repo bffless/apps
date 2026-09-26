@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest'
 import type { ApiLike } from '../src/api.js'
 import type { Downloaded } from '../src/download.js'
 import { DriverError, EXIT } from '../src/errors.js'
-import { contentTypeFor, toFileRef, uploadFileInputs } from '../src/upload.js'
+import { contentTypeFor, nodeUploadDeps, toFileRef, uploadFileInputs } from '../src/upload.js'
 
 interface Call {
   path: string
@@ -104,6 +104,35 @@ describe('uploadFileInputs', () => {
     })
     // Everything else passes through untouched.
     expect(values.greeting).toBe('Hi')
+  })
+
+  test('a local path streams from disk when the deps can size it and PUT from disk (#710)', async () => {
+    const { api, calls, puts } = fakeApi()
+    const disk: Array<{ url: string; path: string; size: number; contentType: string }> = []
+    const values = await uploadFileInputs(
+      api,
+      ctx,
+      { clip: { type: 'file' } },
+      { clip: './big.mp4' },
+      {
+        ...deps,
+        async readFile(): Promise<Uint8Array> {
+          throw new Error('a streamed upload must not read the file into memory')
+        },
+        fileSize: async () => 628_412_762,
+        putFromDisk: async (url, path, size, contentType) => {
+          disk.push({ url, path, size, contentType })
+          return { status: 200 }
+        },
+      },
+    )
+
+    expect(puts).toHaveLength(0)
+    expect(disk).toEqual([
+      { url: 'https://bucket.test/workflows/hello/interactive/inputs/big.mp4', path: './big.mp4', size: 628_412_762, contentType: 'video/mp4' },
+    ])
+    expect(calls[0]!.body).toMatchObject({ filename: 'big.mp4', contentType: 'video/mp4', size: 628_412_762 })
+    expect(values.clip).toMatchObject({ path: 'workflows/hello/interactive/inputs/big.mp4', name: 'big.mp4', size: 628_412_762 })
   })
 
   test('a `list: true` file input maps every entry', async () => {
@@ -339,7 +368,7 @@ describe('uploadFileInputs — URL values (spec 2026-09-08)', () => {
     expect(calls).toEqual([])
   })
 
-  test('a local path still goes through the page PUT, exactly as before', async () => {
+  test('a local path keeps the page PUT when the deps cannot size the file (no streaming without both deps)', async () => {
     const { api, puts } = fakeApi()
     let fromDisk = 0
     await uploadFileInputs(api, ctx, { clip: { type: 'file' } }, { clip: './clip.png' }, {
@@ -348,6 +377,43 @@ describe('uploadFileInputs — URL values (spec 2026-09-08)', () => {
     })
     expect(puts).toHaveLength(1)
     expect(fromDisk).toBe(0)
+  })
+
+  test('a local path under --mocks takes the page PUT although the deps could stream (D5: MSW is a service worker)', async () => {
+    const { api, puts } = fakeApi()
+    let fromDisk = 0
+    const values = await uploadFileInputs(
+      api,
+      ctx,
+      { clip: { type: 'file' } },
+      { clip: './clip.png' },
+      { ...deps, fileSize: async () => 99, putFromDisk: async () => { fromDisk += 1; return { status: 200 } } },
+      { mocks: true },
+    )
+    expect(puts).toHaveLength(1)
+    expect(fromDisk).toBe(0)
+    expect(values.clip).toMatchObject({ path: 'workflows/hello/interactive/inputs/clip.png', size: 'bytes of ./clip.png'.length })
+  })
+
+  test('the shipped deps stream: nodeUploadDeps sizes a real file and rejects a directory before any prepare call', async () => {
+    expect(typeof nodeUploadDeps.fileSize).toBe('function')
+    expect(typeof nodeUploadDeps.putFromDisk).toBe('function')
+    const { api, calls } = fakeApi()
+    await expect(
+      uploadFileInputs(api, ctx, { clip: { type: 'file' } }, { clip: '.' }, { ...deps, fileSize: nodeUploadDeps.fileSize, putFromDisk: async () => ({ status: 200 }) }),
+    ).rejects.toThrow(/\. is not a file/)
+    expect(calls).toHaveLength(0)
+    await expect(
+      uploadFileInputs(api, ctx, { clip: { type: 'file' } }, { clip: './does-not-exist.png' }, { ...deps, fileSize: nodeUploadDeps.fileSize, putFromDisk: async () => ({ status: 200 }) }),
+    ).rejects.toThrow(/does-not-exist\.png/)
+    expect(calls).toHaveLength(0)
+  })
+
+  test('a streamed PUT that never got a response says so without blaming the browser', async () => {
+    const { api } = fakeApi()
+    await expect(
+      uploadFileInputs(api, ctx, { clip: { type: 'file' } }, { clip: './big.mp4' }, { ...deps, fileSize: async () => 5, putFromDisk: async () => ({ status: 0, error: 'fetch failed: ECONNRESET' }) }),
+    ).rejects.toThrow(/^the upload PUT failed before a response \(fetch failed: ECONNRESET\) while uploading \.\/big\.mp4$/)
   })
 })
 

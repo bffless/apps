@@ -16,7 +16,7 @@
  * rather than pass it as a plain string; the driver treats it the same as the
  * bare URL, optionally renaming the stored object from the wrapper's `name`.
  */
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import type { ApiLike } from './api.js'
 import { downloadToTemp, isHttpUrl, safeFilename, type Downloaded } from './download.js'
@@ -46,6 +46,15 @@ export interface UploadDeps {
   /** URL-sourced files (spec 2026-09-08, D2). Optional: existing callers and tests need not supply them. */
   download?(url: string, input: string): Promise<Downloaded>
   putFromDisk?: PutFromDisk
+  /**
+   * The size of a local file without reading it; rejects a path that is not a regular file.
+   * With `putFromDisk` this lets a local path stream from disk to the presigned URL
+   * (bffless/apps#710): a file over ~380 MB cannot take the page road, whose base64 body
+   * exceeds V8's string limit. Optional: without it the bytes are read and PUT through the
+   * page as before. The file must be complete when the driver starts: the size is read
+   * once, before `prepare`, and the stream after it.
+   */
+  fileSize?(path: string): Promise<number>
 }
 
 export interface UploadOptions {
@@ -66,6 +75,11 @@ export const nodeUploadDeps: UploadDeps = {
   contentTypeFor,
   download: defaultDownload,
   putFromDisk: defaultPutFromDisk,
+  fileSize: async (path) => {
+    const st = await stat(path)
+    if (!st.isFile()) throw new Error(`${path} is not a file`)
+    return st.size
+  },
 }
 
 function str(value: unknown): string | undefined {
@@ -154,33 +168,42 @@ async function registerUpload(
   return toFileRef(register.body)
 }
 
-/** One local file → a registered File ref. */
+/**
+ * One local file → a registered File ref. From disk when the deps allow it (#710): the
+ * bucket PUT needs no page and no credentials, and a 600 MB recording must not become one
+ * base64 string. Under `--mocks` the page road stays (design 2026-09-08 D2, D5): the mock
+ * backend is a service worker that only an in-page fetch reaches, and it answers a relative
+ * `uploadUrl` that Node's fetch could not even parse.
+ */
 export async function uploadOne(
   api: ApiLike,
   ctx: UploadContext,
   localPath: string,
   deps: UploadDeps,
+  opts: UploadOptions = {},
 ): Promise<FileRef> {
-  const bytes = await deps.readFile(localPath)
   const filename = deps.basename(localPath)
   const contentType = deps.contentTypeFor(localPath)
 
-  const { uploadUrl, storageKey, scope } = await prepareUpload(
-    api,
-    ctx,
-    { filename, contentType, size: bytes.byteLength },
-    localPath,
-  )
+  const streamed = !opts.mocks && deps.putFromDisk && deps.fileSize ? { put: deps.putFromDisk, size: await deps.fileSize(localPath) } : undefined
+  const bytes = streamed ? undefined : await deps.readFile(localPath)
+  const size = streamed ? streamed.size : bytes!.byteLength
 
-  const put = await api.put(uploadUrl, bytes, contentType)
+  const { uploadUrl, storageKey, scope } = await prepareUpload(api, ctx, { filename, contentType, size }, localPath)
+
+  const put = streamed
+    ? await streamed.put(uploadUrl, localPath, size, contentType)
+    : await api.put(uploadUrl, bytes!, contentType)
   if (put.status === 0) {
-    // No status at all: the browser refused to send (or to read) the request.
-    // For a direct-to-bucket PUT that is almost always the bucket's CORS
-    // allow-list missing this origin — the harness's own upload says exactly
-    // this, and it is the first thing a live run trips over.
+    // No status at all. From the page: the browser refused to send (or to read) the
+    // request, and for a direct-to-bucket PUT that is almost always the bucket's CORS
+    // allow-list missing this origin — the harness's own upload says exactly this, and it
+    // is the first thing a live run trips over. From disk: Node's fetch itself failed.
     throw new DriverError(
-      "the upload PUT failed before a response — usually the storage bucket's CORS allow-list " +
-        `does not include this origin (${put.error ?? 'no detail'}) while uploading ${localPath}`,
+      streamed
+        ? `the upload PUT failed before a response (${put.error ?? 'no detail'}) while uploading ${localPath}`
+        : "the upload PUT failed before a response — usually the storage bucket's CORS allow-list " +
+            `does not include this origin (${put.error ?? 'no detail'}) while uploading ${localPath}`,
       EXIT.USAGE,
     )
   }
@@ -286,7 +309,7 @@ export async function uploadFileInputs(
   }
 
   const one = async (name: string, value: string): Promise<FileRef> => {
-    if (!isHttpUrl(value)) return uploadOne(api, ctx, value, deps)
+    if (!isHttpUrl(value)) return uploadOne(api, ctx, value, deps, opts)
     return viaUrl(name, value)
   }
 
