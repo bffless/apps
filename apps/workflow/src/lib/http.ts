@@ -8,6 +8,7 @@
  * NOT reauth: the 401-refresh-retry policy belongs to the layer that owns the
  * run's lifecycle (Phase 3's runtime), not to a single request.
  */
+import { attemptRefresh } from './auth'
 import type { HttpJson } from './runner/adapters/pipeline'
 import { scopeHeaders } from './scope'
 
@@ -93,42 +94,13 @@ export const httpJson: HttpJson = async (path, init) => {
 // Reauth (R5) — owned by the runner (Phase 3), not by `httpJson` itself.
 // ---------------------------------------------------------------------------
 
-/** SuperTokens' own refresh route, reached through the harness's `/api/auth/*` rule. */
-const REFRESH_URL = '/api/auth/session/refresh'
-
-/**
- * SuperTokens *rotates* the refresh token, so two concurrent refreshes race on
- * the same cookie: the first rotation invalidates the token the others hold. A
- * run fans out into many parallel writes/steps that can all 401 at once, so the
- * shared in-flight promise is the common path, not the edge case — the same
- * shape as `workflowApi.ts`'s read-side `baseQueryWithReauth`.
- */
-let refreshInFlight: Promise<boolean> | null = null
-
-async function requestRefresh(): Promise<boolean> {
-  try {
-    const res = await fetch(REFRESH_URL, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { rid: 'session' },
-    })
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
-function attemptRefresh(): Promise<boolean> {
-  refreshInFlight ??= requestRefresh().finally(() => {
-    refreshInFlight = null
-  })
-  return refreshInFlight
-}
-
 /**
  * `httpJson` wrapped with the app's 401-refresh-retry policy: a run outlives
  * the SuperTokens access token, so both the runner's write path (`runStore`)
  * and its pipeline-step calls need one reauth-and-retry, same as the read side.
+ * The refresh itself is `lib/auth.ts`'s single-flight `attemptRefresh`, shared
+ * with the read side (`workflowApi.ts`'s `baseQueryWithReauth`) so a poll 401
+ * and a write 401 in the same instant produce one refresh, not two.
  * This is what `RunnerDeps.http` is built from (Phase 3, `store/index.ts`).
  */
 export const httpJsonWithReauth: HttpJson = async (path, init) => {

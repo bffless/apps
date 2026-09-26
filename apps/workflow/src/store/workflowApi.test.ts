@@ -8,6 +8,7 @@ import { db, seedFinishedRun, stepRowKey } from '../mocks/db'
 import { FINISHED_RUN } from '../mocks/fixtures/finishedRun'
 import { HELLO_INDEX } from '../mocks/handlers'
 import { fileUrl } from '../lib/coerce'
+import { httpJsonWithReauth } from '../lib/http'
 import type { FileRef } from '../lib/runner/types'
 import { server } from '../mocks/server'
 import { makeStore } from './index'
@@ -413,6 +414,42 @@ describe('reauth', () => {
 
     expect(refreshes).toBe(1)
     expect(res.data?.run?.runId).toBe(FINISHED_RUN.run.runId)
+  })
+
+  it('shares one refresh between the read path and the write path (apps#707)', async () => {
+    // A run's 5 s poll (RTK Query, this module) and its `run-step` write
+    // (`httpJsonWithReauth`, `lib/http.ts`) 401 in the same instant when the
+    // access token expires. SuperTokens rotates the refresh token, so the two
+    // paths must ride ONE refresh — `lib/auth.ts`'s — not one promise each.
+    // The write's first attempt is the 401 that joins the read's refresh; its
+    // retry lands after the refresh resolved.
+    seedFinishedRun()
+    let refreshes = 0
+    let writeCalls = 0
+    server.use(
+      http.get('/api/workflow/run', () => new HttpResponse(null, { status: 401 }), { once: true }),
+      http.post('/api/test/write', () => {
+        writeCalls += 1
+        return writeCalls === 1 ? new HttpResponse(null, { status: 401 }) : HttpResponse.json({ ok: true })
+      }),
+      http.post('/api/auth/session/refresh', async () => {
+        refreshes += 1
+        // Hold the refresh open long enough for the other path's 401 to arrive
+        // while it is still in flight — otherwise the test would pass on two
+        // independent promises too, one finishing before the other starts.
+        await new Promise((r) => setTimeout(r, 20))
+        return new HttpResponse(null, { status: 200 })
+      }),
+    )
+
+    const [read, write] = await Promise.all([
+      store().dispatch(workflowApi.endpoints.getRun.initiate(FINISHED_RUN.run.runId)),
+      httpJsonWithReauth('/api/test/write', { method: 'POST', body: {} }),
+    ])
+
+    expect(refreshes).toBe(1)
+    expect(read.data?.run?.runId).toBe(FINISHED_RUN.run.runId)
+    expect(write).toEqual({ status: 200, ok: true, body: { ok: true } })
   })
 
   it('gives up when the refresh fails', async () => {

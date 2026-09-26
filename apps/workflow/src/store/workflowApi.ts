@@ -26,41 +26,11 @@ import {
   unwrapRows,
 } from '../lib/coerce'
 import type { Implementation, RunsPageRow, ServerRunRow, ServerStepRow, Whoami } from '../lib/coerce'
+import { attemptRefresh } from '../lib/auth'
 import { aliasesUrl } from '../lib/discovery'
 import { fetchPayloadCached, forgetPayloads } from '../lib/payloadFetch'
 import { scopeHeaders } from '../lib/scope'
 import { hydrateOutputs } from '../lib/runner/payload'
-
-/** SuperTokens' own refresh route, reached through the harness's `/api/auth/*` rule. */
-const REFRESH_URL = '/api/auth/session/refresh'
-
-/**
- * SuperTokens *rotates* the refresh token, so two concurrent refreshes race on
- * the same cookie: the first rotation invalidates the token the others hold. A
- * run fans out into many parallel calls that all 401 at once, so the shared
- * in-flight promise is the common path, not the edge case.
- */
-let refreshInFlight: Promise<boolean> | null = null
-
-async function requestRefresh(): Promise<boolean> {
-  try {
-    const res = await fetch(REFRESH_URL, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { rid: 'session' },
-    })
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
-function attemptRefresh(): Promise<boolean> {
-  refreshInFlight ??= requestRefresh().finally(() => {
-    refreshInFlight = null
-  })
-  return refreshInFlight
-}
 
 /** The run `getRun` last hydrated — the payload memo's scope. */
 let lastHydratedRunId: string | null = null
@@ -95,6 +65,12 @@ type ReauthBaseQuery = BaseQueryFn<
   FetchBaseQueryMeta
 >
 
+/**
+ * The refresh is `lib/auth.ts`'s single-flight `attemptRefresh`, shared with
+ * the write side (`httpJsonWithReauth`): a run's 5 s poll and its `run-step`
+ * writes 401 in the same instant when the token expires, and SuperTokens
+ * rotates the refresh token, so they must ride one refresh, not one each.
+ */
 const baseQueryWithReauth: ReauthBaseQuery = async (args, api, extraOptions) => {
   const result = await rawBaseQuery(args, api, extraOptions)
   if (result.error?.status !== 401) return result

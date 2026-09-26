@@ -19,6 +19,7 @@ import { createListenerMiddleware } from '@reduxjs/toolkit'
 import type { ListenerMiddleware } from '@reduxjs/toolkit'
 import type { IslandHost, IslandHostDeps } from '../islands/IslandHost'
 import { toFileRef } from '../lib/coerce'
+import { RunStoreError } from '../lib/runStore'
 import type { RunStore } from '../lib/runStore'
 import { buildRunContexts, evalOutputDecl } from '../lib/runner/contexts'
 import { completeFormStep, formInitialValues, formInputs } from '../lib/runner/adapters/form'
@@ -314,9 +315,22 @@ async function persistWrite(store: RunStore, write: PersistWrite): Promise<{ ok:
   }
 }
 
+/**
+ * The banner copy for a run parked on a failed write. A write that still 401s
+ * after the shared refresh (`lib/auth.ts`) was tried means the session is gone
+ * for good — the person has to sign in again, and the run is then resumable
+ * from the record (the `ResumeBanner` offers Resume / Take over). Keyed on the
+ * status the `RunStoreError` carries, never on message text: a rule's own
+ * `error` string replaces the generic line (`runStore.ts`), so text is not
+ * stable. Any other failure keeps the raw detail, which is what a person needs
+ * to report it.
+ */
 function pauseMessage(event: RunEvent, error: unknown): string {
   const key = 'key' in event ? event.key : undefined
-  const detail = messageOf(error)
+  const detail =
+    error instanceof RunStoreError && error.status === 401
+      ? 'your session expired. Reload the page to sign in again, then resume the run.'
+      : messageOf(error)
   return key ? `Could not save step ${key}: ${detail}` : `Could not save the run: ${detail}`
 }
 
