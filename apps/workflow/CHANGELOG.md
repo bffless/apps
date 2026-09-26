@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.4](https://github.com/bffless/apps/compare/workflow-v1.13.3...workflow-v1.13.4) (2026-09-26)
+
+
+### Bug Fixes
+
+* **workflow-headless:** stream a local file input from disk ([#710](https://github.com/bffless/apps/issues/710)) ([#711](https://github.com/bffless/apps/issues/711)) ([5ba82cd](https://github.com/bffless/apps/commit/5ba82cdc9da63f3671f208baa8fbe7d67e72ac71))
+
 ## [1.13.3](https://github.com/bffless/apps/compare/workflow-v1.13.2...workflow-v1.13.3) (2026-09-26)
 
 
