@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.3](https://github.com/bffless/apps/compare/workflow-v1.13.2...workflow-v1.13.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* **workflow:** share one session refresh and name an expired session when a run pauses ([#708](https://github.com/bffless/apps/issues/708)) ([3d9f25b](https://github.com/bffless/apps/commit/3d9f25b5a12f0665ba692479cc808a7c5e5186f3))
+
 ## [1.13.2](https://github.com/bffless/apps/compare/workflow-v1.13.1...workflow-v1.13.2) (2026-09-21)
 
 
