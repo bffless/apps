@@ -10,7 +10,10 @@
  * relays the rotated `Set-Cookie` headers back. There is no `/_bffless/auth/*`
  * relay fallback here: the relay only refreshes the `bffless_*` cookies a
  * true cross-origin custom domain gets, and both harness hosts are
- * primary-domain subdomains (same reasoning as `apps/studio/src/lib/auth.ts`).
+ * primary-domain subdomains. (`apps/studio/src/lib/auth.ts` explains the same
+ * limitation but keeps a relay fallback anyway, against a future custom
+ * domain; the harness has no such plan, so it carries no dead path — decided
+ * on apps#707.)
  *
  * Why one module: a run outlives the access token, and when it expires every
  * `/api/*` call — the read side (RTK Query, `store/workflowApi.ts`) and the
@@ -22,7 +25,7 @@
  */
 
 /** SuperTokens' own refresh route, reached through the harness's `/api/auth/*` rule. */
-export const REFRESH_URL = '/api/auth/session/refresh'
+const REFRESH_URL = '/api/auth/session/refresh'
 
 /**
  * SuperTokens *rotates* the refresh token, so two concurrent refreshes race on
