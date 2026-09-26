@@ -27,6 +27,15 @@ export const EXIT = {
    */
   BUSY: 5,
   /**
+   * The page stopped driving mid-leg (apps#716): it published `paused`, or the
+   * record's lease has an owner and has lapsed while the page still said
+   * `running` — a page that stopped heartbeating. Deliberately not `4`: a
+   * timeout says the run may still be going; this says the page it was on is
+   * not. Nothing is written to the row — it stays `running`, and a later
+   * `resume` adopts the expired lease.
+   */
+  STALLED: 6,
+  /**
    * SIGINT — whenever the driver is interrupted, whether or not there was a
    * run to cancel. Before the run page exists there is nothing to click, so
    * the handler closes the browser and leaves with this; once the run is up it

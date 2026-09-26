@@ -20,6 +20,7 @@ import { installDriveKey } from './driveKey.js'
 import { DriverError, EXIT } from './errors.js'
 import { loginViaAppToken, loginViaRelay, type Credentials } from './login.js'
 import {
+  GRACE_POLL_MS,
   TERMINAL,
   waitForSettled,
   waitForStart,
@@ -71,6 +72,8 @@ export interface RunDeps {
   uploadDeps?: UploadDeps
   /** Test seam for the driver's own waits; real time by default. */
   sleep?: (ms: number) => Promise<void>
+  /** Test seam for the clock those waits are measured on; `Date.now` by default. */
+  now?: () => number
 }
 
 export interface RunReport {
@@ -79,7 +82,9 @@ export interface RunReport {
    * `succeeded` · `failed` · `cancelled` · `invalid` (the page refused the
    * start) · `parked` (the run waits on a person; the row is still `running`)
    * · `busy` (another tab or job holds the lease — reachable from `resume`,
-   * or from `run --wait park` after a grace resume races another lease-taker).
+   * or from `run --wait park` after a grace resume races another lease-taker)
+   * · `stalled` (the page stopped driving mid-leg: it said `paused`, or its
+   * lease lapsed while it still said `running`; the row is still `running`).
    */
   status: string
   url: string
@@ -87,6 +92,8 @@ export interface RunReport {
   errors?: Record<string, string>
   /** Only on `parked`: the step keys the run is waiting on a person for. */
   parkedOn?: string[]
+  /** Only on `stalled`: the step keys the page was on when it stopped driving. */
+  stalledOn?: string[]
   artifacts: DownloadResult
 }
 
@@ -291,6 +298,26 @@ export function graceVerdict(
   return 'answered'
 }
 
+/**
+ * Whether the record says the page this driver is watching has stopped driving
+ * (apps#716): the row still `running`, a lease with an owner, and that lease
+ * lapsed — the page that held it stopped heartbeating (the harness renews
+ * every 15 s on a 60 s lease). Pure, like `graceVerdict`, and deliberately
+ * narrow: a **null** lease is a park in progress, not a stall; a live lease is
+ * a page that is driving; a terminal row is the run's own end, which the page
+ * will show on its next poll; an unreadable record says nothing at all.
+ */
+export function leaseLapsed(body: unknown, now: number): boolean {
+  const run = (((body ?? {}) as { run?: unknown }).run ?? {}) as Record<string, unknown>
+  if (run.status !== 'running') return false
+  const leaseOwner = typeof run.leaseOwner === 'string' ? run.leaseOwner : ''
+  const leaseUntil = typeof run.leaseUntil === 'number' ? run.leaseUntil : undefined
+  return leaseOwner !== '' && leaseUntil !== undefined && leaseUntil < now
+}
+
+/** A page that has stopped driving mid-leg, whichever of the two signals said so. */
+const STALLED: ReadonlySet<string> = new Set(['paused', 'stalled'])
+
 export interface FollowContext {
   page: PageLike
   api: ApiLike
@@ -308,9 +335,6 @@ export interface FollowContext {
   shot: (name: string) => Promise<void>
 }
 
-/** How often the record is re-read while the grace window is open. */
-const GRACE_POLL_MS = 10_000
-
 /**
  * Follow a run this driver is on the page of, through as many parks as the
  * grace window allows (DR9).
@@ -324,10 +348,31 @@ const GRACE_POLL_MS = 10_000
  *
  * A live lease means a person's tab (DR4) or another job has it — leave it to
  * them and report the park.
+ *
+ * A page that stops driving *without* parking is a stall (apps#716): it
+ * either says so (`paused`) or its lease lapses while it still says `running`,
+ * which the record is re-read every `GRACE_POLL_MS` to catch. Either way the
+ * leg ends `stalled` rather than waiting out `--timeout` on a page that will
+ * never move again. Nothing is clicked and nothing is written: the row stays
+ * `running`, and a `resume` adopts the expired lease.
  */
 export async function followRun(
   ctx: FollowContext,
-): Promise<{ status: string; outputs: Record<string, unknown>; parkedOn: string[] }> {
+): Promise<{
+  status: string
+  outputs: Record<string, unknown>
+  parkedOn: string[]
+  stalledOn?: string[]
+}> {
+  const recordUrl = `/api/workflow/run?id=${encodeURIComponent(ctx.runId)}`
+  // A record that could not be read says nothing — `leaseLapsed(null)` is
+  // `false`. `pageApi.json` *throws* on a request that got no response at all
+  // (a reset, a bundle swap under the tab), and a probe meant to shorten a
+  // hopeless wait must not turn one blip on a run that is progressing into a
+  // driver fault: the page is still being polled, and the next ask is 10 s out.
+  const stalled = async () =>
+    leaseLapsed(await ctx.api.json(recordUrl).then((r) => r.body, () => null), ctx.now())
+
   // `timeoutMs` is per leg, not per job: a resumed run has just been answered
   // by a person, and holding it to what was left of the first leg's budget
   // would time out a run that is moving. The loop is still bounded — every
@@ -338,7 +383,20 @@ export async function followRun(
       timeoutMs: ctx.timeoutMs,
       pollMs: 1000,
       onTransition: ctx.onTransition,
+      sleep: ctx.sleep,
+      now: ctx.now,
+      stalled,
+      stallPollMs: GRACE_POLL_MS,
     })
+    if (STALLED.has(settled.status)) {
+      const stalledOn = settled.currentSteps
+      // The run's own line, so `steps.log` ends on the reason the leg did —
+      // the lease signal never shows on the page, so nothing else would log it.
+      ctx.onTransition({ at: ctx.now(), key: 'run', status: 'stalled' })
+      ctx.log(`stalled on ${stalledOn.join(', ')}`)
+      await ctx.shot('03-stalled')
+      return { status: 'stalled', outputs: {}, parkedOn: [], stalledOn }
+    }
     if (settled.status !== 'parked') {
       return { status: settled.status, outputs: settled.outputs, parkedOn: [] }
     }
@@ -355,7 +413,7 @@ export async function followRun(
       if (ctx.now() >= deadline) return { status: 'parked', outputs: {}, parkedOn }
       await ctx.sleep(Math.min(GRACE_POLL_MS, Math.max(0, deadline - ctx.now())))
 
-      const record = await ctx.api.json(`/api/workflow/run?id=${encodeURIComponent(ctx.runId)}`)
+      const record = await ctx.api.json(recordUrl)
       const verdict = graceVerdict(record.body, parkedOn, ctx.now())
       if (verdict === 'wait') continue
       if (verdict === 'held') {
@@ -539,7 +597,7 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
         park: o.wait === 'park',
         log: deps.log,
         sleep: deps.sleep ?? sleep,
-        now: Date.now,
+        now: deps.now ?? Date.now,
         onTransition: (t) => {
           transitions.push(t)
           deps.log(formatTransition(t))
@@ -576,6 +634,7 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
       url,
       outputs,
       ...(followed.parkedOn.length > 0 ? { parkedOn: followed.parkedOn } : {}),
+      ...(followed.stalledOn && followed.stalledOn.length > 0 ? { stalledOn: followed.stalledOn } : {}),
       artifacts,
     }
   } finally {

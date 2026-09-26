@@ -114,6 +114,7 @@ console.log       the page console
 01-resume.png     (resume) the run page, just after it re-opened with ?resume=1
 02-<status>.png   the run page at its terminal status
 03-parked.png     the run page at a step that needs a person (--wait park)
+03-stalled.png    the run page when it stopped driving (exit 6)
 failed.png        written whenever the run did not succeed
 ```
 
@@ -197,6 +198,7 @@ and [ADR-0006](https://github.com/bffless/apps/blob/main/apps/workflow/docs/adr/
 | `3` | the page refused the start (`status: 'invalid'`) — bad values, an undecodable `inputs`, a workflow that does not lint or could not be read, no such implementation/workflow, or a discovery failure |
 | `4` | the driver timed out (the run may still be going) |
 | `5` | another tab or job holds the lease, so nothing was driven — retryable, and deliberately neither `1` nor `2` (reachable from `resume`, or from a `run --wait park` that resumed after its grace window and lost the race for the lease) |
+| `6` | the page stopped driving mid-leg: it published `paused` (the page state apps#715 adds), or the record's lease has an owner and had lapsed while the page still said `running` (re-read every 10 s). Nothing was clicked or written — the row is still `running`, and `run.json` plus a `stalled: <run id> (<step keys>)` line say where. A `resume` adopts the expired lease; whether that is the right move depends on *why* the page stopped — a throttled tab resumes cleanly, a failed step write (`run.json`'s pause reason) would only fail again. Deliberately not `4`: a timeout says the run may still be going; this says the page it was on is not |
 | `130` | SIGINT: the driver was interrupted — before the run page exists it closes the browser and leaves; once the run is up it clicks Cancel and follows the run to `cancelled` first (see *Signals*) |
 
 Exit `3` is watched on `window.__workflow`, not on the `kickoff-invalid`

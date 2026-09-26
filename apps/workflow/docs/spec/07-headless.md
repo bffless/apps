@@ -296,6 +296,7 @@ no run record behind it, since everything the page can explain comes back as `in
 | `3` | the page refused the start (`status: 'invalid'`) |
 | `4` | the driver timed out (the run may still be going) |
 | `5` | another tab or job holds the lease, so nothing was driven — `resume`, or a `run --wait park` that resumed after its grace window and lost the race for the lease |
+| `6` | the page stopped driving mid-leg (`stalled`): it published `paused` (the page state apps#715 adds to this contract), or the record's lease has an owner and had lapsed while the page still said `running` — re-read every 10 s. Nothing is clicked or written; the row stays `running` and the report says `stalledOn`. A `resume` adopts the expired lease, but the pause reason in `run.json` decides whether resuming is appropriate — a run whose write path is failing would only pause again |
 | `130` | SIGINT: the driver was interrupted — before the run page exists it closes the browser and leaves; once the run is up it clicks Cancel and follows the run to `cancelled` first |
 
 SIGINT is the driver's own (Playwright's handler is disabled at launch, because it kills the

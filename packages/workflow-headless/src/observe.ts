@@ -38,21 +38,43 @@ export interface WatchOptions {
   onTransition?: (transition: Transition) => void
   now?: () => number
   sleep?: (ms: number) => Promise<void>
+  /**
+   * A second, slower question asked while the poll waits: has the page this
+   * driver is watching stopped driving? `followRun` answers it off the run
+   * record's lease (apps#716). `true` ends the wait with `status: 'stalled'`.
+   * Unset asks nothing — `waitForStart` never sets it, so a slow-to-mount run
+   * page is only ever a timeout.
+   */
+  stalled?: () => Promise<boolean>
+  /** How often `stalled` is asked; the first ask is one interval in. Default `GRACE_POLL_MS`. */
+  stallPollMs?: number
 }
+
+/**
+ * How often the *record* is re-read while a leg waits on the page — the grace
+ * window after a park, and the stall check during a follow. Slower than the
+ * page poll because it is an API round trip, not a property read.
+ */
+export const GRACE_POLL_MS = 10_000
 
 /** The statuses a run stops at. `invalid` is a *page* state and never appears here. */
 export const TERMINAL: ReadonlySet<string> = new Set(['succeeded', 'failed', 'cancelled'])
 
 /**
  * The statuses a *driver* stops following at: the run's own terminal three plus
- * the two page states of a driven run (07 `wait=park`, `resume=1`).
+ * the three page states at which the page has stopped driving — `parked` and
+ * `busy` from a driven run (07 `wait=park`, `resume=1`), and `paused`, the
+ * page's own word for a heartbeat it has given up (apps#715).
  *
- * `parked` and `busy` are not run statuses — the row behind either still says
- * `running` — but they are both facts about the page this driver is looking at,
- * and in both cases the page has stopped driving. Following past them is a
+ * None of the three is a run status — the row behind each still says
+ * `running` — but they are all facts about the page this driver is looking at,
+ * and in every case the page has stopped driving. Following past them is a
  * guaranteed timeout: nothing on that page will ever move again.
  */
-export const SETTLED: ReadonlySet<string> = new Set([...TERMINAL, 'parked', 'busy'])
+export const SETTLED: ReadonlySet<string> = new Set([...TERMINAL, 'parked', 'busy', 'paused'])
+
+/** What `poll` hands back when the record says the page stalled before the page ever published. */
+const NO_SNAPSHOT: Snapshot = { runId: '', status: '', currentSteps: [], outputs: {}, steps: {} }
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
@@ -87,13 +109,24 @@ async function poll(
   const pollMs = o.pollMs ?? 1000
   const now = o.now ?? Date.now
   const sleep = o.sleep ?? realSleep
-  const deadline = now() + o.timeoutMs
+  const start = now()
+  const deadline = start + o.timeoutMs
+  const stallPollMs = o.stallPollMs ?? GRACE_POLL_MS
+  let nextStall = start + stallPollMs
+  let last: Snapshot | undefined
 
   for (;;) {
     const snapshot = await readGlobal(page)
     if (snapshot !== undefined) {
+      last = snapshot
       observe?.(snapshot, now())
       if (done(snapshot)) return snapshot
+    }
+    // The page's own answer wins when it has one; the record is asked only on
+    // its own cadence, and only when the caller gave us something to ask.
+    if (o.stalled && now() >= nextStall) {
+      nextStall += stallPollMs
+      if (await o.stalled()) return { ...(last ?? NO_SNAPSHOT), status: 'stalled' }
     }
     if (now() >= deadline) {
       throw new DriverError(
@@ -160,15 +193,25 @@ function waitUntil(
   )
 }
 
-/** The run, followed to `succeeded` / `failed` / `cancelled`. */
+/**
+ * The run, followed to `succeeded` / `failed` / `cancelled` — or to a page
+ * that says `paused`, which no `--wait` mode can follow past: the page has
+ * stopped driving, and `TERMINAL` itself is unchanged because `paused` is not
+ * where the *run* stops.
+ */
 export async function waitForTerminal(page: PageLike, o: WatchOptions): Promise<Snapshot> {
-  return waitUntil(page, o, 'the run to reach a terminal status', (s) => TERMINAL.has(s.status))
+  return waitUntil(
+    page,
+    o,
+    'the run to reach a terminal status',
+    (s) => TERMINAL.has(s.status) || s.status === 'paused',
+  )
 }
 
 /**
  * The run, followed until the *driver* is done with it: terminal, or a page
- * that has stopped driving (`parked`, `busy`). What `--wait park` and `resume`
- * wait on; `--wait fail` still waits for the run's own end.
+ * that has stopped driving (`parked`, `busy`, `paused`). What `--wait park` and
+ * `resume` wait on; `--wait fail` still waits for the run's own end.
  */
 export async function waitForSettled(page: PageLike, o: WatchOptions): Promise<Snapshot> {
   return waitUntil(page, o, 'the run to settle', (s) => SETTLED.has(s.status))

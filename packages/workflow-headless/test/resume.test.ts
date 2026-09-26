@@ -15,7 +15,7 @@ import { DRIVE_KEY_HEADER } from '../src/driveKey.js'
 import { EXIT } from '../src/errors.js'
 import type { RouteLike } from '../src/page.js'
 import { resumeRun } from '../src/resume.js'
-import { fakeBrowser, fakeRoute, type Route } from './fakes.js'
+import { fakeBrowser, fakeClock, fakeRoute, type Route } from './fakes.js'
 
 const RUN_ID = 'run_1'
 const RECORD = `/api/workflow/run?id=${RUN_ID}`
@@ -110,6 +110,52 @@ describe('resumeRun', () => {
     expect(report).toMatchObject({ status: 'parked', parkedOn: ['ask/1/sign'] })
     expect(existsSync(join(dir, 'run.json'))).toBe(true)
     expect(readFileSync(join(dir, 'console.log'), 'utf8')).toBe('')
+  })
+
+  /**
+   * apps#716: the adopted page can stop driving too. The pre-flight read sees
+   * an ordinary `running` row (the previous driver's lease is expired, which is
+   * exactly what makes it resumable); the page then never moves, and the lease
+   * it took lapses in turn. Ten seconds later the record says so, and the leg
+   * ends `stalled` instead of waiting out `--timeout`.
+   */
+  test('a resumed page that stops driving ends `stalled`, and clicks nothing', async () => {
+    const dir = out()
+    const clock = fakeClock()
+    const { browser, page } = fakeBrowser({
+      routes: { [RECORD]: record('running', { leaseOwner: 'tab', leaseUntil: clock.now() - 1 }) },
+      globals: [{ runId: RUN_ID, status: 'running', currentSteps: ['ask/0/answer'] }],
+    })
+
+    const report = await resumeRun(options({ out: dir, timeoutMs: 60_000 }), {
+      browser,
+      log: () => {},
+      warn: () => {},
+      ...clock,
+    })
+
+    expect(report).toMatchObject({ status: 'stalled', stalledOn: ['ask/0/answer'], url: RUN_URL })
+    expect(report.parkedOn).toBeUndefined()
+    expect(clock.now() - 1_700_000_000_000).toBe(10_000)
+    // One `?resume=1` open — the adoption — and nothing after it.
+    expect(page.gotos.filter((url) => url === RESUME_URL)).toHaveLength(1)
+    expect(page.clicks).toEqual([])
+    expect(existsSync(join(dir, '03-stalled.png'))).toBe(true)
+    const written = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')) as { run: { status: string } }
+    expect(written.run.status).toBe('running')
+  })
+
+  test('a resumed page that says `paused` is `stalled` on the next read', async () => {
+    const clock = fakeClock()
+    const { browser } = fakeBrowser({
+      routes: { [RECORD]: record('running') },
+      globals: [
+        { runId: RUN_ID, status: 'running' },
+        { runId: RUN_ID, status: 'paused', currentSteps: ['ask/1/sign'] },
+      ],
+    })
+    const report = await resumeRun(options(), { browser, log: () => {}, warn: () => {}, ...clock })
+    expect(report).toMatchObject({ status: 'stalled', stalledOn: ['ask/1/sign'] })
   })
 
   test('a run that already ended is reported, not re-opened', async () => {

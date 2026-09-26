@@ -16,6 +16,8 @@ import type { BrowserLike, ConsoleMessageLike, PageLike, RouteLike } from '../sr
 export interface Route {
   status: number
   text?: string
+  /** Set to answer as a request that got no response at all — what `pageApi.json` throws on. */
+  error?: string
 }
 
 export interface FakeOptions {
@@ -61,8 +63,33 @@ export interface FakePage extends PageLike {
   calls: Array<{ kind: 'goto' | 'route'; url?: string }>
 }
 
-/** Discovery for `hello/demo`, plus the run record `run.json` is written from. */
-export function helloRoutes(status: string, runId = 'run_1'): Record<string, Route | Route[]> {
+/** The record's lease, as the harness writes it: both null when nobody holds the run. */
+export interface Lease {
+  leaseOwner?: string | null
+  leaseUntil?: number | null
+}
+
+/** A clock that only moves when the driver sleeps — no real time passes in a test. */
+export function fakeClock(start = 1_700_000_000_000) {
+  let t = start
+  return {
+    now: () => t,
+    sleep: async (ms: number) => {
+      t += ms
+    },
+  }
+}
+
+/**
+ * Discovery for `hello/demo`, plus the run record `run.json` is written from.
+ * The lease is optional because most tests never look at it; the stall tests
+ * (apps#716) set an owner and a lapsed `leaseUntil` on a `running` row.
+ */
+export function helloRoutes(
+  status: string,
+  runId = 'run_1',
+  lease: Lease = {},
+): Record<string, Route | Route[]> {
   return {
     '/w/hello/.bffless/workflows/index.json': {
       status: 200,
@@ -79,7 +106,7 @@ export function helloRoutes(status: string, runId = 'run_1'): Record<string, Rou
     [`/api/workflow/run?id=${runId}`]: {
       status: 200,
       text: JSON.stringify({
-        run: { runId, status, impl: 'hello', workflow: 'demo', outputs: {} },
+        run: { runId, status, impl: 'hello', workflow: 'demo', outputs: {}, ...lease },
         steps: [],
       }),
     },
@@ -165,7 +192,7 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
         status: route?.status ?? 404,
         text: route?.text ?? '',
         base64: '',
-        error: null,
+        error: route?.error ?? null,
       }
     },
 
