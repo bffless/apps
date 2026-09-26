@@ -106,6 +106,35 @@ describe('uploadFileInputs', () => {
     expect(values.greeting).toBe('Hi')
   })
 
+  test('a local path streams from disk when the deps can size it and PUT from disk (#710)', async () => {
+    const { api, calls, puts } = fakeApi()
+    const disk: Array<{ url: string; path: string; size: number; contentType: string }> = []
+    const values = await uploadFileInputs(
+      api,
+      ctx,
+      { clip: { type: 'file' } },
+      { clip: './big.mp4' },
+      {
+        ...deps,
+        async readFile(): Promise<Uint8Array> {
+          throw new Error('a streamed upload must not read the file into memory')
+        },
+        fileSize: async () => 628_412_762,
+        putFromDisk: async (url, path, size, contentType) => {
+          disk.push({ url, path, size, contentType })
+          return { status: 200 }
+        },
+      },
+    )
+
+    expect(puts).toHaveLength(0)
+    expect(disk).toEqual([
+      { url: 'https://bucket.test/workflows/hello/interactive/inputs/big.mp4', path: './big.mp4', size: 628_412_762, contentType: 'video/mp4' },
+    ])
+    expect(calls[0]!.body).toMatchObject({ filename: 'big.mp4', contentType: 'video/mp4', size: 628_412_762 })
+    expect(values.clip).toMatchObject({ path: 'workflows/hello/interactive/inputs/big.mp4', name: 'big.mp4', size: 628_412_762 })
+  })
+
   test('a `list: true` file input maps every entry', async () => {
     const { api, puts } = fakeApi()
     const values = await uploadFileInputs(
