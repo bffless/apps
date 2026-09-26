@@ -16,7 +16,7 @@
  * rather than pass it as a plain string; the driver treats it the same as the
  * bare URL, optionally renaming the stored object from the wrapper's `name`.
  */
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import type { ApiLike } from './api.js'
 import { downloadToTemp, isHttpUrl, safeFilename, type Downloaded } from './download.js'
@@ -46,6 +46,13 @@ export interface UploadDeps {
   /** URL-sourced files (spec 2026-09-08, D2). Optional: existing callers and tests need not supply them. */
   download?(url: string, input: string): Promise<Downloaded>
   putFromDisk?: PutFromDisk
+  /**
+   * The size of a local file without reading it. With `putFromDisk` this lets a local path
+   * stream from disk to the presigned URL (bffless/apps#710): a file over ~380 MB cannot
+   * take the page road, whose base64 body exceeds V8's string limit. Optional: without it
+   * the bytes are read and PUT through the page as before.
+   */
+  fileSize?(path: string): Promise<number>
 }
 
 export interface UploadOptions {
@@ -66,6 +73,7 @@ export const nodeUploadDeps: UploadDeps = {
   contentTypeFor,
   download: defaultDownload,
   putFromDisk: defaultPutFromDisk,
+  fileSize: async (path) => (await stat(path)).size,
 }
 
 function str(value: unknown): string | undefined {
@@ -161,18 +169,20 @@ export async function uploadOne(
   localPath: string,
   deps: UploadDeps,
 ): Promise<FileRef> {
-  const bytes = await deps.readFile(localPath)
   const filename = deps.basename(localPath)
   const contentType = deps.contentTypeFor(localPath)
 
-  const { uploadUrl, storageKey, scope } = await prepareUpload(
-    api,
-    ctx,
-    { filename, contentType, size: bytes.byteLength },
-    localPath,
-  )
+  // From disk when the deps allow it (#710): the bucket PUT needs no page and no
+  // credentials, and a 600 MB recording must not become one base64 string.
+  const streamed = deps.putFromDisk && deps.fileSize ? { put: deps.putFromDisk, size: await deps.fileSize(localPath) } : undefined
+  const bytes = streamed ? undefined : await deps.readFile(localPath)
+  const size = streamed ? streamed.size : bytes!.byteLength
 
-  const put = await api.put(uploadUrl, bytes, contentType)
+  const { uploadUrl, storageKey, scope } = await prepareUpload(api, ctx, { filename, contentType, size }, localPath)
+
+  const put = streamed
+    ? await streamed.put(uploadUrl, localPath, size, contentType)
+    : await api.put(uploadUrl, bytes!, contentType)
   if (put.status === 0) {
     // No status at all: the browser refused to send (or to read) the request.
     // For a direct-to-bucket PUT that is almost always the bucket's CORS
