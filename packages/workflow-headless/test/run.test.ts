@@ -5,8 +5,8 @@ import { describe, test, expect } from 'vitest'
 import { DRIVE_KEY_HEADER } from '../src/driveKey.js'
 import { EXIT } from '../src/errors.js'
 import type { RouteLike } from '../src/page.js'
-import { graceVerdict, runWorkflow } from '../src/run.js'
-import { fakeBrowser, fakeRoute, helloRoutes, type Route } from './fakes.js'
+import { graceVerdict, leaseLapsed, runWorkflow } from '../src/run.js'
+import { fakeBrowser, fakeClock, fakeRoute, helloRoutes, type Route } from './fakes.js'
 
 const out = () => mkdtempSync(join(tmpdir(), 'wfh-run-'))
 
@@ -224,6 +224,135 @@ describe('runWorkflow — --wait park', () => {
     // prevent, so this one reports the park and leaves.
     expect(report.status).toBe('parked')
     expect(page.gotos.some((url) => url.includes('resume=1'))).toBe(false)
+  })
+})
+
+describe('runWorkflow — a page that stopped driving (apps#716)', () => {
+  /**
+   * The bug this closes (#712): a run page that stopped heartbeating — the tab
+   * was throttled, the SPA paused itself, the lease lapsed — looked merely slow
+   * to the driver, which waited out the whole `--timeout` on a page that would
+   * never move again and then reported 4, "the run may still be going". Two
+   * signals say otherwise, and either ends the leg as `stalled`: the page's
+   * own `paused` (apps#715), read every second like every other page state, and
+   * the record's lease — an owner, and a `leaseUntil` already past while the
+   * row still says `running` — re-read every 10 s.
+   */
+  const RECORD = '/api/workflow/run?id=run_1'
+  const stuck = [{ runId: 'run_1', status: 'running', currentSteps: ['work/0/x'], steps: { 'work/0/x': 'running' } }]
+  const quiet = (browser: import('../src/page.js').BrowserLike, clock: ReturnType<typeof fakeClock>) => ({
+    browser,
+    log: () => {},
+    warn: () => {},
+    ...clock,
+  })
+
+  test('a lapsed lease on a page still saying `running` ends the leg `stalled` within 10 s, well before --timeout', async () => {
+    const dir = out()
+    const clock = fakeClock()
+    const { browser, page } = fakeBrowser({
+      globals: stuck,
+      routes: helloRoutes('running', 'run_1', { leaseOwner: 'tab', leaseUntil: clock.now() - 1 }),
+    })
+
+    const report = await runWorkflow(options(60_000, dir), quiet(browser, clock))
+
+    expect(report).toMatchObject({ status: 'stalled', stalledOn: ['work/0/x'] })
+    expect(report.parkedOn).toBeUndefined()
+    // First ask is one interval in, on the injected clock — not the deadline.
+    expect(clock.now() - 1_700_000_000_000).toBe(10_000)
+    // Nothing was clicked: no Cancel, no resume. The row is left as it was.
+    expect(page.clicks).toEqual([])
+    expect(page.gotos.some((url) => url.includes('resume=1'))).toBe(false)
+    const written = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')) as { run: { status: string } }
+    expect(written.run.status).toBe('running')
+    // The usual artifacts, plus the stall's own shot; no outputs — nothing ended.
+    expect(existsSync(join(dir, '03-stalled.png'))).toBe(true)
+    expect(existsSync(join(dir, 'failed.png'))).toBe(false)
+    expect(report.artifacts.written).toEqual([])
+    // steps.log ends on the run's own line, saying why the leg did.
+    expect(readFileSync(join(dir, 'steps.log'), 'utf8').trimEnd().split('\n').pop()).toMatch(/\trun\tstalled$/)
+  })
+
+  test('a page that publishes `paused` ends the leg `stalled` on the next read, with no record round trip', async () => {
+    const clock = fakeClock()
+    const { browser, page } = fakeBrowser({
+      // The start read, one follow read that still says `running`, then `paused`.
+      globals: [...stuck, ...stuck, { runId: 'run_1', status: 'paused', currentSteps: ['work/0/x'] }],
+      routes: helloRoutes('running'),
+    })
+
+    const report = await runWorkflow(options(60_000), quiet(browser, clock))
+
+    expect(report).toMatchObject({ status: 'stalled', stalledOn: ['work/0/x'] })
+    // One page poll — the stall check's first ask was still nine seconds away.
+    expect(clock.now() - 1_700_000_000_000).toBe(1_000)
+    // Only `collect`'s single read of the record — the stall check never fell due.
+    expect(page.fetched.filter((k) => k === RECORD)).toHaveLength(1)
+    expect(page.clicks).toEqual([])
+  })
+
+  test('`--wait fail` stalls the same way — `paused` is not a status any wait can follow past', async () => {
+    const clock = fakeClock()
+    const { browser } = fakeBrowser({
+      globals: [...stuck, { runId: 'run_1', status: 'paused', currentSteps: ['work/0/x'] }],
+      routes: helloRoutes('running'),
+    })
+    const report = await runWorkflow({ ...options(60_000), wait: 'fail' }, quiet(browser, clock))
+    expect(report.status).toBe('stalled')
+  })
+
+  test.each([
+    ['a null lease (a park in progress)', {}],
+    ['a live lease (the page is driving)', { leaseOwner: 'tab', leaseUntil: 1_700_000_000_000 + 3_600_000 }],
+  ])('%s changes nothing: --timeout still exits 4', async (_name, lease) => {
+    const clock = fakeClock()
+    const { browser, page } = fakeBrowser({ globals: stuck, routes: helloRoutes('running', 'run_1', lease) })
+
+    await expect(runWorkflow(options(30_000), quiet(browser, clock))).rejects.toMatchObject({ code: EXIT.TIMEOUT })
+    // The record *was* asked, on the 10 s cadence — it just never said stalled.
+    expect(page.fetched.filter((k) => k === RECORD)).toHaveLength(3)
+  })
+
+  test('a terminal record under a page still saying `running` is not a stall either', async () => {
+    const clock = fakeClock()
+    const { browser } = fakeBrowser({
+      globals: stuck,
+      routes: helloRoutes('succeeded', 'run_1', { leaseOwner: 'tab', leaseUntil: clock.now() - 1 }),
+    })
+    await expect(runWorkflow(options(30_000), quiet(browser, clock))).rejects.toMatchObject({ code: EXIT.TIMEOUT })
+  })
+})
+
+describe('leaseLapsed', () => {
+  const now = 1_700_000_000_000
+  const body = (run: Record<string, unknown>) => ({
+    run: { runId: 'run_1', status: 'running', leaseOwner: null, leaseUntil: null, ...run },
+    steps: [],
+  })
+
+  test('a running row whose owned lease is in the past', () => {
+    expect(leaseLapsed(body({ leaseOwner: 'tab', leaseUntil: now - 1 }), now)).toBe(true)
+  })
+
+  test('a live lease, a null lease, and a lease at exactly now are not', () => {
+    expect(leaseLapsed(body({ leaseOwner: 'tab', leaseUntil: now + 1 }), now)).toBe(false)
+    expect(leaseLapsed(body({}), now)).toBe(false)
+    expect(leaseLapsed(body({ leaseOwner: 'tab', leaseUntil: now }), now)).toBe(false)
+    // An owner with no expiry is malformed, not lapsed.
+    expect(leaseLapsed(body({ leaseOwner: 'tab' }), now)).toBe(false)
+  })
+
+  test('only a `running` row can stall', () => {
+    for (const status of ['succeeded', 'failed', 'cancelled', 'pending']) {
+      expect(leaseLapsed(body({ status, leaseOwner: 'tab', leaseUntil: now - 1 }), now)).toBe(false)
+    }
+  })
+
+  test('a body that is not a record at all is not a stall, never a crash', () => {
+    expect(leaseLapsed(null, now)).toBe(false)
+    expect(leaseLapsed('<!doctype html>', now)).toBe(false)
+    expect(leaseLapsed({ run: null }, now)).toBe(false)
   })
 })
 

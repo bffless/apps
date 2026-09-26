@@ -75,6 +75,10 @@ function exitFor(report: RunReport, sigint: boolean): ExitCode {
   // `busy` did no work at all — its own code, so a retry can tell it apart
   // from a run that ran and failed.
   if (report.status === 'busy') return EXIT.BUSY
+  // A stall is neither the run's failure nor a driver fault nor a timeout: the
+  // page stopped driving and the row is still `running`. Its own code, so CI
+  // can tell "resume this" from "the run may still be going" (4).
+  if (report.status === 'stalled') return EXIT.STALLED
   if (report.status === 'cancelled' && sigint) return EXIT.SIGINT
   return EXIT.FAILED
 }
@@ -84,6 +88,8 @@ function announce(report: RunReport, io: CliIo): void {
   if (report.status === 'succeeded') io.out(`succeeded: ${report.runId}`)
   else if (report.status === 'parked') {
     io.out(`parked: ${report.runId} (${(report.parkedOn ?? []).join(', ')})`)
+  } else if (report.status === 'stalled') {
+    io.out(`stalled: ${report.runId} (${(report.stalledOn ?? []).join(', ')})`)
   } else if (report.status !== 'invalid') io.err(`${report.status}: ${report.runId}`)
   for (const path of report.artifacts.written) io.out(`wrote ${path}`)
 }

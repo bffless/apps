@@ -26,6 +26,7 @@ export { DriverError, EXIT, type ExitCode } from './errors.js'
 export { adminOrigin, exchangeUrl, loginUrl, loginViaAppToken, loginViaRelay, type Credentials } from './login.js'
 export {
   formatTransition,
+  GRACE_POLL_MS,
   readGlobal,
   SETTLED,
   TERMINAL,
@@ -53,6 +54,7 @@ export {
   encodeInputs,
   followRun,
   graceVerdict,
+  leaseLapsed,
   runWorkflow,
   startUrl,
   waitForSealedRecord,

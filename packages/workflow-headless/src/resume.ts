@@ -150,7 +150,7 @@ export async function resumeRun(o: ResumeOptions, deps: RunDeps): Promise<RunRep
         park: true,
         log: deps.log,
         sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
-        now: Date.now,
+        now: deps.now ?? Date.now,
         onTransition: (t) => {
           transitions.push(t)
           deps.log(formatTransition(t))
@@ -190,6 +190,7 @@ export async function resumeRun(o: ResumeOptions, deps: RunDeps): Promise<RunRep
       url: runUrl,
       outputs: done.outputs,
       ...(followed.parkedOn.length > 0 ? { parkedOn: followed.parkedOn } : {}),
+      ...(followed.stalledOn ? { stalledOn: followed.stalledOn } : {}),
       artifacts: done.artifacts,
     }
   } finally {

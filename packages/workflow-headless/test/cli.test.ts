@@ -138,6 +138,41 @@ describe('exit codes', () => {
     expect(h.err).toContain(`busy: ${runId}`)
   })
 
+  /**
+   * 6 (apps#716): the page stopped driving — it said `paused`, or its lease
+   * lapsed under it — and the row is still `running`. Not 4: a timeout says the
+   * run may still be going, this says the page it was on is not, and the line
+   * on stdout names the run so the next step can `resume` it. Not 1 either: the
+   * run did not fail. Nothing was clicked.
+   */
+  test('a page that stopped driving is 6, on stdout, saying where it stopped', async () => {
+    const h = withBrowser({
+      globals: [
+        { runId: 'run_1', status: 'running', currentSteps: ['work/0/x'] },
+        { runId: 'run_1', status: 'paused', currentSteps: ['work/0/x'] },
+      ],
+      routes: helloRoutes('running'),
+    })
+    const code = await runCli(argv('--timeout', '30s'), h.io)
+    expect(code).toBe(EXIT.STALLED)
+    expect(code).toBe(6)
+    expect(code).not.toBe(EXIT.TIMEOUT)
+    expect(code).not.toBe(EXIT.FAILED)
+    expect(h.out).toContain('stalled: run_1 (work/0/x)')
+    expect(h.err).toEqual([])
+    expect(h.page.clicks).toEqual([])
+  })
+
+  test('resume: a page that stopped driving is 6 too', async () => {
+    const runId = 'run_01M1BREJZK5V77ZRPXKTG7ZG7C'
+    const h = withBrowser({
+      globals: [{ runId, status: 'paused', currentSteps: ['ask/0/answer'] }],
+      routes: helloRoutes('running', runId),
+    })
+    expect(await runCli(['resume', 'https://harness.test', runId, '--mocks'], h.io)).toBe(EXIT.STALLED)
+    expect(h.out).toContain(`stalled: ${runId} (ask/0/answer)`)
+  })
+
   test('an already-finished run is 0 without being opened', async () => {
     const runId = 'run_01M1BREJZK5V77ZRPXKTG7ZG7C'
     const h = withBrowser({
