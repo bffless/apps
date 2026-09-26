@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.14.0](https://github.com/bffless/apps/compare/workflow-v1.13.4...workflow-v1.14.0) (2026-09-26)
+
+
+### Features
+
+* **workflow-headless:** end a follow leg as `stalled` (exit 6) when the page stops driving ([#717](https://github.com/bffless/apps/issues/717)) ([486f9ad](https://github.com/bffless/apps/commit/486f9ad58fc1c39027da8a318a1881a7381002be))
+
+
+### Bug Fixes
+
+* **workflow:** a 5xx or NETWORK poll tick backs off and keeps polling until poll.timeout ([#719](https://github.com/bffless/apps/issues/719)) ([728df63](https://github.com/bffless/apps/commit/728df63aec6c2a1aa08853ca4e86779885117a5b))
+* **workflow:** a paused run publishes status 'paused' on window.__workflow instead of 'running' ([#718](https://github.com/bffless/apps/issues/718)) ([0e09e57](https://github.com/bffless/apps/commit/0e09e573667965cddc6b2ab86489ab429722304e))
+
 ## [1.13.4](https://github.com/bffless/apps/compare/workflow-v1.13.3...workflow-v1.13.4) (2026-09-26)
 
 

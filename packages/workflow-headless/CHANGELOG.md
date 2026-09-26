@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/bffless/apps/compare/workflow-headless-v1.6.1...workflow-headless-v1.7.0) (2026-09-26)
+
+
+### Features
+
+* **workflow-headless:** end a follow leg as `stalled` (exit 6) when the page stops driving ([#717](https://github.com/bffless/apps/issues/717)) ([486f9ad](https://github.com/bffless/apps/commit/486f9ad58fc1c39027da8a318a1881a7381002be))
+
 ## [1.6.1](https://github.com/bffless/apps/compare/workflow-headless-v1.6.0...workflow-headless-v1.6.1) (2026-09-26)
 
 
