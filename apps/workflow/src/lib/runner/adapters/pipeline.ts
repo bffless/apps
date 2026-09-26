@@ -118,6 +118,12 @@ const DEFAULT_EVERY = '3s'
 const DEFAULT_POLL_TIMEOUT = '10m'
 const DEFAULT_POLL_METHOD = 'GET'
 const DEFAULT_RETRY_DELAY = '5s'
+/**
+ * Ceiling of the poll's transient-tick backoff ladder (apps#714): a streak of
+ * 5xx / `NETWORK` ticks sleeps `every`, 2×, 4×, … and never longer than
+ * `max(30 s, every)`, so a streak never polls *faster* than the step asked for.
+ */
+const POLL_BACKOFF_CAP_MS = 30_000
 
 function obj(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {}
@@ -157,6 +163,29 @@ function pollFailError(response: unknown): StepError {
     code: str(r.code) ?? str(r.error) ?? 'POLL_FAILED',
     message: str(r.message) ?? str(r.error) ?? 'the poll `fail` condition held',
   }
+}
+
+/**
+ * Is this tick worth asking again? A 5xx and a network failure (the fetch threw,
+ * so there is no status at all) are the server or the wire having a moment; a
+ * 4xx is the request being wrong and will be wrong again. Same rule as
+ * `registerRetry.ts`'s `isTransientRegisterFailure` (apps#493). Branch on
+ * `status`, not `code`: `httpError` takes `code` from the body when it has one,
+ * so a 502 can arrive as `BUSY`, not `HTTP_502`.
+ */
+function isTransientTick(error: StepError): boolean {
+  return (error.status !== undefined && error.status >= 500) || error.code === 'NETWORK'
+}
+
+/**
+ * The `POLL_TIMEOUT` message: today's wording, plus — when the budget ran out
+ * mid-streak — how many transient ticks preceded it and the last one's code, so
+ * "the poll never got an answer" reads differently from "the job never finished".
+ */
+function pollTimeoutMessage(timeout: string, streak: number, lastCode: string | undefined): string {
+  const base = `poll timed out after ${timeout}`
+  if (streak === 0 || lastCode === undefined) return base
+  return `${base}; the last ${streak} tick(s) were transient (last: ${lastCode})`
 }
 
 /**
@@ -411,6 +440,15 @@ async function runPoll(
   const requestCtx = scope({ response: initial })
   let last: unknown = initial
 
+  // A transient tick (5xx, or no answer at all) does not fail the step; the poll
+  // keeps going with a doubling backoff and lets the poll deadline above end a
+  // streak that never clears (apps#714). Like the plain `sleep(every)`, the
+  // backoff is not clamped to the deadline — the next iteration checks it.
+  const backoffCap = Math.max(POLL_BACKOFF_CAP_MS, every)
+  let wait = every
+  let streak = 0
+  let lastCode: string | undefined
+
   for (;;) {
     if (rt.signal.aborted) return { kind: 'cancelled' }
     const now = rt.clock.now()
@@ -418,7 +456,7 @@ async function runPoll(
     if (now >= pollDeadline) {
       return {
         kind: 'error',
-        error: { code: 'POLL_TIMEOUT', message: `poll timed out after ${timeout}` },
+        error: { code: 'POLL_TIMEOUT', message: pollTimeoutMessage(timeout, streak, lastCode) },
         response: last,
       }
     }
@@ -430,8 +468,23 @@ async function runPoll(
       body: poll.body === undefined ? undefined : evalDeep(poll.body, requestCtx),
     })
     if (tick.kind !== 'cancelled') noteLogId(tick.logId)
+    if (tick.kind === 'error' && isTransientTick(tick.error)) {
+      streak += 1
+      lastCode = tick.error.code
+      try {
+        await rt.clock.sleep(wait, rt.signal)
+      } catch {
+        return { kind: 'cancelled' }
+      }
+      if (rt.signal.aborted) return { kind: 'cancelled' }
+      wait = Math.min(backoffCap, wait * 2)
+      continue
+    }
+    // A 4xx tick is the request being wrong: final, as today.
     if (tick.kind !== 'ok') return tick.kind === 'error' ? { ...tick, response: last } : tick
     last = tick.body
+    wait = every
+    streak = 0
 
     // `fail` is evaluated before `until` (03).
     const answered = scope({ response: last })

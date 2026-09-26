@@ -49,9 +49,14 @@ Rules:
   `error.code` from the body's `code`/`error` field when present; network failure →
   `NETWORK`. Non-JSON 2xx → the raw text is exposed as `response` (string).
 - **`poll`** starts after a successful initial response. Each tick evaluates `fail` then
-  `until` against the tick's response. `timeout` → `error.code == 'POLL_TIMEOUT'`. The
-  initial response stays readable as `steps.<id>.response.initial`; `response` in `outputs`
-  is the final (last poll) response.
+  `until` against the tick's response. A tick that answers 5xx, or gets no answer at all
+  (`NETWORK`), is the server or the wire having a moment: the poll keeps going — sleeping
+  `every`, then 2×, 4×, … capped at `max(30s, every)`, back to `every` after a 2xx tick — until
+  `timeout`; a 4xx tick is the request being wrong and fails the step at once. `timeout` →
+  `error.code == 'POLL_TIMEOUT'` (mid-streak, the message also names how many ticks were
+  transient and the last one's code). Only the *initial* request's HTTP error reaches
+  `retry.if`; a tick's never does. The initial response stays readable as
+  `steps.<id>.response.initial`; `response` in `outputs` is the final (last poll) response.
 - **`retry`** re-runs the whole step (request + poll) after `delay`, at most `max` **extra**
   times (`max: 3` ⇒ up to 4 runs), while `if` holds (default: any failure). Each attempt is
   recorded on the run row (`attempt` counter) so the UI can show "retry 1 of 3".
