@@ -18,7 +18,8 @@ and interactive runs are the same code, the same rows, the same history.
 - A `file` input's value is a **whole File ref** — `{ path, name, contentType, size, url }`,
   exactly the object `/api/workflow/files/register` hands back (06) — not a bare path. The
   driver uploads through `prepare` → PUT → `register` before it opens the page and puts the
-  registered ref in the JSON; run inputs are stored verbatim, and nothing on this side turns a
+  registered ref in the JSON (a local path's bytes are streamed to the bucket from Node, not
+  through the page, except under `--mocks`; bffless/apps#710); run inputs are stored verbatim, and nothing on this side turns a
   path into a ref, so a bare string fails validation like any other wrong-shaped value. The
   page never fetches a url a caller handed it. The **driver** does (spec
   `2026-09-08-headless-url-file-inputs-design.md`): an `https://` value for a `file` input in

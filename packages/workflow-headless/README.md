@@ -37,8 +37,10 @@ A `file` input's value is a **local path** or an **`https://` URL**. Either way 
 driver ends up with a registered File ref in the URL, because that is what the page
 validates: a whole `{ path, name, contentType, size, url }`, never a bare string.
 
-- A local path is read and uploaded through the page (`files/prepare` → `PUT` →
-  `files/register`).
+- A local path is registered through the page (`files/prepare` → `files/register`) and
+  its bytes are **streamed from disk to the bucket from Node** (a 600 MB recording never
+  becomes one base64 string; the file must be complete when the driver starts). Under
+  `--mocks` the PUT goes through the page instead, so the mock backend sees it.
 - A URL is **downloaded first**, streamed to the runner's temp dir, then PUT to the
   bucket **from Node** with an explicit `Content-Length` (a presigned PUT refuses a
   chunked body), and registered. The stored object is named from `Content-Disposition`
