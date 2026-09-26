@@ -658,6 +658,224 @@ describe('runPipelineStep — poll (hello slow.start)', () => {
     expect(failed(h.events[2]!).error.code).toBe('POLL_TIMEOUT')
   })
 
+  // apps#714 — a tick that answers 5xx or gets no answer is transient: the poll
+  // keeps going with a doubling backoff and only `poll.timeout` ends a streak.
+  describe('transient ticks', () => {
+    /** `every: 2s`, a `timeout` wide enough that only the ladder is under test. */
+    function flakyPoll(timeout: string): Definition {
+      return toDefinition({
+        name: 'Flaky poll',
+        jobs: {
+          j: {
+            steps: [
+              {
+                id: 's',
+                uses: 'pipeline',
+                with: { path: 'start' },
+                poll: {
+                  path: 'tick',
+                  until: "${{ response.status == 'done' }}",
+                  every: '2s',
+                  timeout,
+                },
+              },
+            ],
+            outputs: {},
+          },
+        },
+        outputs: {},
+      }) as Definition
+    }
+
+    function runFlaky(h: ReturnType<typeof harness>, def: Definition, state: RunState) {
+      const k = stepKey('j', 0, 's')
+      return runPipelineStep(
+        { step: stepOf(def, 'j', 's'), key: k, job: 'j', index: 0, def, state },
+        h.rt,
+      )
+    }
+
+    it('polls through a 5xx and a thrown tick, sleeping `every` then 2×every, and succeeds', async () => {
+      const def = flakyPoll('1m')
+      const { http, calls } = fakeHttp([
+        { status: 200, body: { jobId: 'j1' } },
+        { status: 502, body: 'Bad Gateway' },
+        { throws: new TypeError('Failed to fetch') },
+        { status: 200, body: { status: 'done' } },
+      ])
+      const k = stepKey('j', 0, 's')
+      const state = baseState({ steps: { [k]: queuedStep('j', 0, 's') } })
+      const h = harness(state, http)
+
+      await runFlaky(h, def, state)
+
+      // No step.failed, and the row was never told about the blips.
+      expect(h.types()).toEqual(['step.started', 'step.polling', 'step.succeeded'])
+      expect(calls).toHaveLength(4) // initial + three ticks
+      expect(h.sleeps).toEqual([2_000, 4_000])
+      expect(succeeded(h.events[2]!).outputs).toEqual({ response: { status: 'done' } })
+      expect(h.state().steps[k]!.status).toBe('succeeded')
+    })
+
+    it('still fails at once on a 4xx tick', async () => {
+      const def = flakyPoll('1m')
+      const { http, calls } = fakeHttp([
+        { status: 200, body: { jobId: 'j1' } },
+        { status: 404, body: { message: 'no such job' } },
+        { status: 200, body: { status: 'done' } }, // never reached
+      ])
+      const k = stepKey('j', 0, 's')
+      const state = baseState({ steps: { [k]: queuedStep('j', 0, 's') } })
+      const h = harness(state, http)
+
+      await runFlaky(h, def, state)
+
+      expect(h.types()).toEqual(['step.started', 'step.polling', 'step.failed'])
+      expect(failed(h.events[2]!).error).toMatchObject({ code: 'HTTP_404', status: 404 })
+      expect(calls).toHaveLength(2) // the first bad tick is the last call
+      expect(h.sleeps).toEqual([])
+    })
+
+    it('fails POLL_TIMEOUT naming the streak when every tick is 5xx until the budget is spent', async () => {
+      const def = flakyPoll('10s')
+      const { http, calls } = fakeHttp([
+        { status: 200, body: { jobId: 'j1' } },
+        ...Array.from({ length: 8 }, () => ({ status: 502, body: 'Bad Gateway' })),
+      ])
+      const k = stepKey('j', 0, 's')
+      const state = baseState({ steps: { [k]: queuedStep('j', 0, 's') } })
+      const h = harness(state, http)
+
+      await runFlaky(h, def, state)
+
+      expect(h.types()).toEqual(['step.started', 'step.polling', 'step.failed'])
+      const error = failed(h.events[2]!).error
+      expect(error.code).toBe('POLL_TIMEOUT')
+      expect(error.message).toContain('HTTP_502')
+      expect(error.message).toBe(
+        'poll timed out after 10s; the last 3 tick(s) were transient (last: HTTP_502)',
+      )
+      // 2s → 4s → 8s: three transient ticks, then the deadline (t = 14s ≥ 10s) ends it.
+      expect(h.sleeps).toEqual([2_000, 4_000, 8_000])
+      expect(calls).toHaveLength(4)
+    })
+
+    it('emits step.cancelled when the run is aborted during a backoff sleep', async () => {
+      const def = flakyPoll('1m')
+      const { http, calls } = fakeHttp([
+        { status: 200, body: { jobId: 'j1' } },
+        { status: 503, body: 'Service Unavailable' },
+        { status: 200, body: { status: 'done' } }, // never reached
+      ])
+      const k = stepKey('j', 0, 's')
+      const state = baseState({ steps: { [k]: queuedStep('j', 0, 's') } })
+      const h: ReturnType<typeof harness> = harness(state, http, {
+        onSleep: () => h.controller.abort(),
+      })
+
+      await runFlaky(h, def, state)
+
+      expect(h.types()).toEqual(['step.started', 'step.polling', 'step.cancelled'])
+      expect(calls).toHaveLength(2) // initial + the 503 tick; nothing after the abort
+      expect(h.sleeps).toEqual([2_000])
+      expect(h.state().steps[k]!.status).toBe('cancelled')
+    })
+
+    it('resets the ladder and the streak after a 2xx tick', async () => {
+      const def = flakyPoll('10s')
+      const { http } = fakeHttp([
+        { status: 200, body: { jobId: 'j1' } },
+        { status: 502, body: 'Bad Gateway' },
+        { status: 502, body: 'Bad Gateway' },
+        { status: 200, body: { status: 'pending' } },
+        { status: 200, body: { status: 'pending' } },
+      ])
+      const k = stepKey('j', 0, 's')
+      const state = baseState({ steps: { [k]: queuedStep('j', 0, 's') } })
+      const h = harness(state, http)
+
+      await runFlaky(h, def, state)
+
+      // 2s, 4s for the streak; then the good tick puts the ladder back at `every`
+      // and zeroes the streak, so the budget ends with today's plain message.
+      expect(h.types()).toEqual(['step.started', 'step.polling', 'step.failed'])
+      expect(h.sleeps).toEqual([2_000, 4_000, 2_000, 2_000])
+      expect(failed(h.events[2]!).error).toEqual({
+        code: 'POLL_TIMEOUT',
+        message: 'poll timed out after 10s',
+      })
+    })
+
+    it('caps the ladder at 30s for a fast poll and never doubles a slow one', async () => {
+      const fast = toDefinition({
+        name: 'Fast poll',
+        jobs: {
+          j: {
+            steps: [
+              {
+                id: 's',
+                uses: 'pipeline',
+                with: { path: 'start' },
+                poll: { path: 'tick', until: "${{ response.status == 'done' }}", every: '1s', timeout: '2m' },
+              },
+            ],
+            outputs: {},
+          },
+        },
+        outputs: {},
+      }) as Definition
+      {
+        const { http } = fakeHttp([
+          { status: 200, body: { jobId: 'j1' } },
+          ...Array.from({ length: 8 }, () => ({ status: 502, body: 'Bad Gateway' })),
+        ])
+        const k = stepKey('j', 0, 's')
+        const state = baseState({ steps: { [k]: queuedStep('j', 0, 's') } })
+        const h = harness(state, http)
+
+        await runFlaky(h, fast, state)
+
+        // 1, 2, 4, 8, 16, then the 30 s cap holds until t = 121 s ≥ 2 m.
+        expect(failed(h.events[2]!).error.code).toBe('POLL_TIMEOUT')
+        expect(h.sleeps).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000])
+      }
+
+      const slow = toDefinition({
+        name: 'Slow poll',
+        jobs: {
+          j: {
+            steps: [
+              {
+                id: 's',
+                uses: 'pipeline',
+                with: { path: 'start' },
+                poll: { path: 'tick', until: "${{ response.status == 'done' }}", every: '1m', timeout: '5m' },
+              },
+            ],
+            outputs: {},
+          },
+        },
+        outputs: {},
+      }) as Definition
+      {
+        const { http } = fakeHttp([
+          { status: 200, body: { jobId: 'j1' } },
+          ...Array.from({ length: 5 }, () => ({ status: 502, body: 'Bad Gateway' })),
+        ])
+        const k = stepKey('j', 0, 's')
+        const state = baseState({ steps: { [k]: queuedStep('j', 0, 's') } })
+        const h = harness(state, http)
+
+        await runFlaky(h, slow, state)
+
+        // `every` ≥ 30 s: the cap is `every` itself, so a streak never polls
+        // slower — or faster — than the step asked for.
+        expect(failed(h.events[2]!).error.code).toBe('POLL_TIMEOUT')
+        expect(h.sleeps).toEqual([60_000, 60_000, 60_000, 60_000, 60_000])
+      }
+    })
+  })
+
   it('fails with TIMEOUT once the step `timeout-minutes` budget is spent', async () => {
     const bounded = toDefinition({
       name: 'Bounded',
@@ -732,6 +950,25 @@ describe('runPipelineStep — retry (hello slow.start, `retry.if` on BUSY)', () 
     expect(calls[1]!.path).toBe('/api/hello/slow') // the whole step re-ran
     expect(h.state().steps[SLOW_KEY]!.attempt).toBe(2)
     expect(succeeded(h.events[4]!).outputs).toMatchObject({ report: '# r' })
+  })
+
+  it('does not let a transient TICK reach `retry.if` — a 503 BUSY tick is polled through (apps#714)', async () => {
+    const { http, calls } = fakeHttp([
+      { status: 200, body: { jobId: 'j2' } },
+      { status: 503, body: { code: 'BUSY', message: 'server busy' } }, // on a tick, not the initial request
+      { status: 200, body: { id: 'j2', status: 'done', result: { markdown: '# r', posterPath: null, ms: 5 } } },
+    ])
+    const state = slowState()
+    const h = harness(state, http)
+
+    await runSlow(h, state)
+
+    // Same body the case above retries on — but as a tick it is transient
+    // (status ≥ 500), so no step.retrying, no second `slow` POST, one backoff.
+    expect(h.types()).toEqual(['step.started', 'step.polling', 'step.succeeded'])
+    expect(calls.map((c) => c.path)).toEqual(['/api/hello/slow', '/api/hello/job', '/api/hello/job'])
+    expect(h.sleeps).toEqual([2000]) // poll.every, not retry.delay
+    expect(h.state().steps[SLOW_KEY]!.attempt).toBe(1)
   })
 
   it('gives `retry.if` the last response alongside the error', async () => {
