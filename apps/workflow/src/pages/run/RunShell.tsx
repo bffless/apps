@@ -674,18 +674,38 @@ export function RunShell() {
   //
   // `busy` is the other half (`?resume=1`, just below): a resume this page
   // could not carry out because the lease is held elsewhere.
+  //
+  // `paused` (05 "The write path", apps#715): a live run whose write-ahead
+  // write failed twice (or whose resume or park was refused) — every
+  // controller is aborted and the heartbeat stopped, yet the row still says
+  // `running`, so without this a driver would wait out its whole timeout on a
+  // page that will never move. It starts from the banner's own check
+  // (`isLive && paused`, below) so the global and the banner agree on *when*
+  // the run is paused, and adds one guard the banner does not need: the run's
+  // own status must still be `running`. A `run.finished` whose sealing write
+  // failed leaves the slice terminal *and* paused, and the terminal status is
+  // the run's verdict (apps#539: "the page's own terminal status stays the
+  // run's verdict") — masking it with `paused` would hide a finished run from
+  // the driver and produce exactly the full-timeout hang this arm removes; the
+  // banner still renders there, so a person can still Retry the seal.
+  // `runReplaced` clears `paused` on a successful Retry, so the arm falls
+  // through by itself. The three page states are mutually exclusive by
+  // construction (`parked` is not live, `busy` requires `!isLive`, `paused`
+  // requires `isLive`), and all three are `running`-only facts, so no priority rule.
   const parkedHere = sliceMode === 'parked' && sliceState?.runId === runId
-  const pageState: 'parked' | 'busy' | null = parkedHere
+  const pageState: 'parked' | 'busy' | 'paused' | null = parkedHere
     ? 'parked'
-    : // `busy` is a fact about an adoption that lost, so it may only be
+    : isLive && paused && state?.status === 'running'
+      ? 'paused'
+      : // `busy` is a fact about an adoption that lost, so it may only be
       // published while this tab is still not driving the run. A person who
       // takes the run over in this very tab afterwards makes it stale
       // instantly — gating on `isLive` is the whole reset (no second effect,
       // no state to clear): the moment the slice says live, the global goes
       // back to reporting the run's own status.
       resumeOutcome === 'busy' && !isLive
-      ? 'busy'
-      : null
+        ? 'busy'
+        : null
   // A parked tab is no longer `live`, so `state` below falls through to the
   // *record* — which this tab never fetched while it was driving (the live path
   // passes `skipToken`). Publishing off that would take the global away for as

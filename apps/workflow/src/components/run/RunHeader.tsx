@@ -91,12 +91,13 @@ export interface RunHeaderProps {
   status: RunStatus
   /**
    * What the *page* is doing with the run, when that is not simply its status
-   * (07 `wait=park`): a `parked` run's record still reads `running`. It shows
-   * on the `run-status` element's `data-state` — the same fact
-   * `window.__workflow.status` carries — while the pill itself keeps rendering
-   * the run's own status, which has not changed.
+   * (07 `wait=park`): a `parked` run's record still reads `running`, and so
+   * does a `paused` one's (05, apps#715). It shows on the `run-status`
+   * element's `data-state` — the same fact `window.__workflow.status`
+   * carries — while the pill itself keeps rendering the run's own status,
+   * which has not changed.
    */
-  pageState?: 'parked' | 'busy' | null
+  pageState?: 'parked' | 'busy' | 'paused' | null
   /** Every annotation of the run, run-level and per step. */
   annotations: Annotation[]
   /** `/<impl>/<workflow>` — the run's screens hang off it. */

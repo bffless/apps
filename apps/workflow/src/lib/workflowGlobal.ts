@@ -14,14 +14,19 @@
  * `parked` and `busy` (07 `wait=park`) are page states of the same kind: the
  * run behind them is a perfectly ordinary `running` row, and what they report
  * is what *this page* is doing about it — nothing, and waiting for a person.
+ * `paused` (05 "The write path", apps#715) is the third: the row still says
+ * `running`, but this tab has stopped driving it until someone presses Retry.
+ * Like the other two it is only ever published over a `running` run — a run
+ * that reached a terminal status before its seal write failed keeps publishing
+ * that status, because it is the run's verdict (apps#539).
  */
 import type { RunState, RunStatus, StepKey, StepStatus } from './runner/types'
 
 export interface WorkflowGlobal {
   /** The run this page is showing; `''` when a start was refused before a run existed. */
   runId: string
-  /** `parked` and `busy` are page states like `invalid`: no row ever carries them (07). */
-  status: RunStatus | 'invalid' | 'parked' | 'busy'
+  /** `parked`, `busy` and `paused` are page states like `invalid`: no row ever carries them (07). */
+  status: RunStatus | 'invalid' | 'parked' | 'busy' | 'paused'
   /** Keys of the steps that are `running`, `polling` or `waiting` right now. */
   currentSteps: StepKey[]
   /** The run's top-level outputs — filled at completion (File refs, not bytes). */
@@ -45,7 +50,7 @@ declare global {
 
 /**
  * What `snapshotOf` produces: the same contract, narrowed to the run's **own**
- * status. The page states (`parked`, `busy`) are only ever put on top of one of
+ * status. The page states (`parked`, `busy`, `paused`) are only ever put on top of one of
  * these by `withPageState`, so anything reading a snapshot straight off a
  * `RunState` — `runSnapshotOf` (agent/snapshot.ts) and the `RunSnapshot` the
  * agent tools declare — still sees the persisted statuses and nothing else.
@@ -72,8 +77,8 @@ export function snapshotOf(state: RunState): RunGlobal {
   }
 }
 
-/** The run, with the page's own state on top of the record's (07: `parked`, `busy` are page states). */
-export function withPageState(snapshot: WorkflowGlobal, pageState: 'parked' | 'busy' | null): WorkflowGlobal {
+/** The run, with the page's own state on top of the record's (07: `parked`, `busy`, `paused` are page states). */
+export function withPageState(snapshot: WorkflowGlobal, pageState: 'parked' | 'busy' | 'paused' | null): WorkflowGlobal {
   return pageState === null ? snapshot : { ...snapshot, status: pageState }
 }
 
