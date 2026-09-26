@@ -16,6 +16,9 @@
  * is what *this page* is doing about it — nothing, and waiting for a person.
  * `paused` (05 "The write path", apps#715) is the third: the row still says
  * `running`, but this tab has stopped driving it until someone presses Retry.
+ * Like the other two it is only ever published over a `running` run — a run
+ * that reached a terminal status before its seal write failed keeps publishing
+ * that status, because it is the run's verdict (apps#539).
  */
 import type { RunState, RunStatus, StepKey, StepStatus } from './runner/types'
 

@@ -96,8 +96,11 @@ all, so a driver **polls for `runId` to appear** rather than reading the global 
 navigation lands. `invalid`, `parked`, `busy` and `paused` are **page** states, not run statuses: no
 row ever carries them, and they are deliberately absent from the persisted `RunStatus` vocabulary.
 `paused` is the 05 pause made visible on the contract: a live run whose write-ahead write failed
-twice (or whose resume was refused) stops driving and shows the Retry banner (`run-paused`), while
-its row still reads `running`; a successful Retry returns the global to the run's own status.
+twice (or whose resume or `wait=park` park was refused) stops driving and shows the Retry banner
+(`run-paused`), while its row still reads `running`; a successful Retry returns the global to the
+run's own status. Like `parked` and `busy` it is only ever published over a `running` run: a run
+that reached a terminal status before its sealing write failed keeps publishing that status — the
+page's own terminal status stays the run's verdict — even while the banner offers Retry.
 
 And stable `data-testid`s: `run-status[data-state=…]` (now also `parked`, `busy` and `paused`, the
 page states of a driven run), `step[data-key][data-state]` — on the job page's step rows since the

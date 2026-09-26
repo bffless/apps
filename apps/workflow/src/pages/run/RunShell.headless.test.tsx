@@ -205,6 +205,38 @@ describe('RunShell — window.__workflow on a paused run (05 "The write path", a
     expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'running')
     expect(within(page).queryByTestId('run-paused')).not.toBeInTheDocument()
   })
+
+  /**
+   * The seal case (apps#539, `runnerMiddleware.seal.test.ts`): `run.finished`
+   * is folded into the slice before its write goes out, so a sealing write
+   * that fails twice leaves the run terminal *and* paused, still `live`. The
+   * terminal status is the run's verdict and must keep reaching the driver —
+   * `paused` over it would turn a finished run into a full-timeout hang. The
+   * banner still shows, so a person can Retry the seal.
+   */
+  it('keeps publishing a terminal status when the pause landed after the run finished', async () => {
+    const { store, runId } = await startHelloAtConfirmWaiting()
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={[`/hello/hello/runs/${runId}`]}>
+          <App />
+        </MemoryRouter>
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(window.__workflow?.status).toBe('running'))
+
+    act(() => {
+      store.dispatch(runReplaced({ state: { ...store.getState().run.state!, status: 'succeeded' }, mode: 'live' }))
+      store.dispatch(runPaused('Could not save the run'))
+    })
+
+    await waitFor(() => expect(within(page).getByTestId('run-paused')).toBeInTheDocument())
+    expect(store.getState().run.paused).toBe('Could not save the run')
+    expect(window.__workflow?.status).toBe('succeeded')
+    expect(window.__workflow?.runId).toBe(runId)
+    expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'succeeded')
+  })
 })
 
 describe('RunShell — window.__workflow on a replayed run', () => {
