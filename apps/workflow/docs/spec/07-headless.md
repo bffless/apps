@@ -79,7 +79,7 @@ and interactive runs are the same code, the same rows, the same history.
 ```ts
 window.__workflow = {
   runId: string,           // '' when a start was refused before a run existed
-  status: 'running'|'succeeded'|'failed'|'cancelled'|'invalid'|'parked'|'busy',
+  status: 'running'|'succeeded'|'failed'|'cancelled'|'invalid'|'parked'|'busy'|'paused',
   currentSteps: string[],  // keys whose status is running | polling | waiting
   outputs: Record<string, unknown>,  // the run's outputs, filled at completion (File refs, not bytes)
   steps: Record<string, StepStatus>, // every step the run has reached → its status
@@ -93,11 +93,14 @@ It is `undefined` when no run page is mounted, and is cleared on unmount so a st
 never outlives the page that wrote it. That includes the seam a start goes through: between the
 kickoff page navigating and the run page's first publish there is one commit with no global at
 all, so a driver **polls for `runId` to appear** rather than reading the global the instant the
-navigation lands. `invalid`, `parked` and `busy` are **page** states, not run statuses: no row
-ever carries them, and they are deliberately absent from the persisted `RunStatus` vocabulary.
+navigation lands. `invalid`, `parked`, `busy` and `paused` are **page** states, not run statuses: no
+row ever carries them, and they are deliberately absent from the persisted `RunStatus` vocabulary.
+`paused` is the 05 pause made visible on the contract: a live run whose write-ahead write failed
+twice (or whose resume was refused) stops driving and shows the Retry banner (`run-paused`), while
+its row still reads `running`; a successful Retry returns the global to the run's own status.
 
-And stable `data-testid`s: `run-status[data-state=…]` (now also `parked` and `busy`, the page
-states of a driven run), `step[data-key][data-state]` — on the job page's step rows since the
+And stable `data-testid`s: `run-status[data-state=…]` (now also `parked`, `busy` and `paused`, the
+page states of a driven run), `step[data-key][data-state]` — on the job page's step rows since the
 2026-09-08 redesign, not the graph (the workflow page's own rows carry `data-state="declared"`,
 from phase 5 on). A driver never queries the DOM for a step's status — it waits on
 `window.__workflow.steps[key]` — and reaches a step's own URL,

@@ -4,7 +4,7 @@
  * whatever the page happens to have handy.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { publishWorkflowGlobal, snapshotOf } from './workflowGlobal'
+import { publishWorkflowGlobal, snapshotOf, withPageState } from './workflowGlobal'
 import type { RunState, StepState, StepStatus } from './runner/types'
 
 afterEach(() => {
@@ -118,5 +118,23 @@ describe('snapshotOf', () => {
 
   it('carries no `errors` key for a run — that half is the invalid-kickoff case', () => {
     expect('errors' in snapshotOf(runState())).toBe(false)
+  })
+})
+
+describe('withPageState', () => {
+  const snapshot = snapshotOf(
+    runState({ steps: [step('a/0/x', 'succeeded'), step('a/0/y', 'waiting')] }),
+  )
+
+  it('puts `paused` on top of the run’s own status and leaves every other key (apps#715)', () => {
+    expect(withPageState(snapshot, 'paused')).toEqual({ ...snapshot, status: 'paused' })
+  })
+
+  it.each(['parked', 'busy'] as const)('does the same for `%s`', (pageState) => {
+    expect(withPageState(snapshot, pageState)).toEqual({ ...snapshot, status: pageState })
+  })
+
+  it('returns the snapshot itself when the page has no state of its own', () => {
+    expect(withPageState(snapshot, null)).toBe(snapshot)
   })
 })

@@ -31,7 +31,7 @@ import { routes } from '../../routes'
 import { makeStore } from '../../store'
 import { newRunId } from '../../lib/runner/ids'
 import { startRun } from '../../store/runnerActions'
-import { runEvent, runOpened } from '../../store/runSlice'
+import { runEvent, runOpened, runPaused, runReplaced } from '../../store/runSlice'
 import { flush, pumpUntil as pumpClock, REVIEW_KEY, resetHelloHarness, startHelloAtConfirmWaiting, trackedHelloStore } from '../../test/helloHarness'
 import { islandStore, pumpUntil, resetIslandHarness } from '../../test/islandHarness'
 import type { FakeIslandHost } from '../../test/islandHarness'
@@ -156,6 +156,54 @@ describe('RunShell — window.__workflow on a parked run (07 `wait=park`)', () =
     expect(window.__workflow?.runId).toBe(runId)
     // The step the person is being handed, still where the driver left it.
     expect(window.__workflow?.steps[REVIEW_KEY]).toBe('waiting')
+  })
+})
+
+describe('RunShell — window.__workflow on a paused run (05 "The write path", apps#715)', () => {
+  /**
+   * A pause keeps the tab `live` — the slice still holds the run, and the row
+   * still says `running` — but every controller has been aborted and the
+   * heartbeat stopped, so a driver reading the record's status would wait out
+   * its whole timeout on a page that will never move. The global reads
+   * `paused` the moment the slice does, off the same `isLive && paused` check
+   * the banner renders from, and the rows stay exactly as the slice holds them.
+   */
+  it('publishes `paused` while the run is paused, and the run’s own status again once Retry replaces it', async () => {
+    const { store, runId } = await startHelloAtConfirmWaiting()
+    render(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={[`/hello/hello/runs/${runId}`]}>
+          <App />
+        </MemoryRouter>
+      </Provider>,
+    )
+    const page = screen.getByRole('main')
+    await waitFor(() => expect(window.__workflow?.status).toBe('running'))
+
+    act(() => {
+      store.dispatch(runPaused('boom'))
+    })
+
+    await waitFor(() => expect(window.__workflow?.status).toBe('paused'))
+    expect(window.__workflow?.runId).toBe(runId)
+    // The rows as the slice holds them: the pause is a fact about the page,
+    // not about any step.
+    expect(window.__workflow?.currentSteps).toContain(REVIEW_KEY)
+    expect(window.__workflow?.steps[REVIEW_KEY]).toBe('waiting')
+    expect(window.__workflow?.steps['greet/0/say']).toBe('succeeded')
+    // The same fact on the pill, and the banner a screenshot would capture.
+    expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'paused')
+    expect(within(page).getByTestId('run-paused')).toHaveTextContent('boom')
+
+    // A successful Retry lands as `runReplaced`, which clears `paused`: the
+    // global falls back to the run's own status with nothing else to reset.
+    act(() => {
+      store.dispatch(runReplaced({ state: store.getState().run.state!, mode: 'live' }))
+    })
+
+    await waitFor(() => expect(window.__workflow?.status).toBe('running'))
+    expect(within(page).getByTestId('run-status')).toHaveAttribute('data-state', 'running')
+    expect(within(page).queryByTestId('run-paused')).not.toBeInTheDocument()
   })
 })
 
