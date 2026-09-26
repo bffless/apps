@@ -365,7 +365,13 @@ export async function followRun(
   stalledOn?: string[]
 }> {
   const recordUrl = `/api/workflow/run?id=${encodeURIComponent(ctx.runId)}`
-  const stalled = async () => leaseLapsed((await ctx.api.json(recordUrl)).body, ctx.now())
+  // A record that could not be read says nothing — `leaseLapsed(null)` is
+  // `false`. `pageApi.json` *throws* on a request that got no response at all
+  // (a reset, a bundle swap under the tab), and a probe meant to shorten a
+  // hopeless wait must not turn one blip on a run that is progressing into a
+  // driver fault: the page is still being polled, and the next ask is 10 s out.
+  const stalled = async () =>
+    leaseLapsed(await ctx.api.json(recordUrl).then((r) => r.body, () => null), ctx.now())
 
   // `timeoutMs` is per leg, not per job: a resumed run has just been answered
   // by a person, and holding it to what was left of the first leg's budget
@@ -628,7 +634,7 @@ export async function runWorkflow(o: RunOptions, deps: RunDeps): Promise<RunRepo
       url,
       outputs,
       ...(followed.parkedOn.length > 0 ? { parkedOn: followed.parkedOn } : {}),
-      ...(followed.stalledOn ? { stalledOn: followed.stalledOn } : {}),
+      ...(followed.stalledOn && followed.stalledOn.length > 0 ? { stalledOn: followed.stalledOn } : {}),
       artifacts,
     }
   } finally {

@@ -16,6 +16,8 @@ import type { BrowserLike, ConsoleMessageLike, PageLike, RouteLike } from '../sr
 export interface Route {
   status: number
   text?: string
+  /** Set to answer as a request that got no response at all — what `pageApi.json` throws on. */
+  error?: string
 }
 
 export interface FakeOptions {
@@ -190,7 +192,7 @@ export function fakeBrowser(o: FakeOptions): { browser: BrowserLike; page: FakeP
         status: route?.status ?? 404,
         text: route?.text ?? '',
         base64: '',
-        error: null,
+        error: route?.error ?? null,
       }
     },
 

@@ -190,7 +190,7 @@ export async function resumeRun(o: ResumeOptions, deps: RunDeps): Promise<RunRep
       url: runUrl,
       outputs: done.outputs,
       ...(followed.parkedOn.length > 0 ? { parkedOn: followed.parkedOn } : {}),
-      ...(followed.stalledOn ? { stalledOn: followed.stalledOn } : {}),
+      ...(followed.stalledOn && followed.stalledOn.length > 0 ? { stalledOn: followed.stalledOn } : {}),
       artifacts: done.artifacts,
     }
   } finally {

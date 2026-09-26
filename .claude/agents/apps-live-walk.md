@@ -131,7 +131,7 @@ Return exactly:
   (`hello → headless → studio-audit → studio-headless`, stopping at the first
   `BLOCKED`) — it is still one invocation, not four separate ones you assemble.
 - At most one Studio kickoff per invocation; a second attempt only after a
-  driver-fault exit (2/4), never after a run failure (1) — the walk enforces this
+  driver-fault exit (2/4/6), never after a run failure (1) — the walk enforces this
   itself. Never run `studio-headless` twice in one invocation, and never bypass the
   walk's own cap by invoking the driver CLI (`@bffless/workflow-headless`'s `cli.js`)
   directly.

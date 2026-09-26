@@ -314,6 +314,60 @@ describe('runWorkflow — a page that stopped driving (apps#716)', () => {
     expect(page.fetched.filter((k) => k === RECORD)).toHaveLength(3)
   })
 
+  test('a record read that gets no response is not a stall, and not a driver fault — the follow goes on', async () => {
+    const clock = fakeClock()
+    const routes = helloRoutes('succeeded')
+    // The 10 s and 20 s asks hit a dead network; the 30 s one answers; the page then finishes.
+    const blip: Route = { status: 0, error: 'TypeError: Failed to fetch' }
+    const healthy = helloRoutes('running')[RECORD] as Route
+    routes[RECORD] = [blip, blip, healthy, routes[RECORD] as Route]
+    const script = Array.from({ length: 35 }, () => stuck[0]!)
+    script.push({ runId: 'run_1', status: 'succeeded', currentSteps: [], steps: { 'work/0/x': 'succeeded' } })
+    const { browser, page } = fakeBrowser({ globals: script, routes })
+
+    const report = await runWorkflow(options(120_000), quiet(browser, clock))
+
+    // `pageApi.json` throws on `error`; the probe swallows it, so the run it
+    // was watching is still followed to its own end rather than exit 2.
+    expect(report.status).toBe('succeeded')
+    expect(page.fetched.filter((k) => k === RECORD).length).toBeGreaterThanOrEqual(4)
+  })
+
+  test('the stall clock restarts on a resumed leg: park, answer, resume, then stall', async () => {
+    const clock = fakeClock()
+    const routes = helloRoutes('running')
+    const lapsed = { leaseOwner: 'tab', leaseUntil: clock.now() - 1 }
+    const answered = [{ key: 'ask/0/answer', status: 'succeeded' }]
+    const rec = (run: Record<string, unknown>): Route => ({
+      status: 200,
+      text: JSON.stringify({
+        run: { runId: 'run_1', status: 'running', impl: 'hello', workflow: 'demo', leaseOwner: null, leaseUntil: null, outputs: {}, ...run },
+        steps: answered,
+      }),
+    })
+    // Grace read at 10 s: answered, lease free → resume. Stall ask at 20 s: lapsed.
+    routes[RECORD] = [rec({}), rec(lapsed)]
+    const { browser, page } = fakeBrowser({
+      globals: [
+        { runId: 'run_1', status: 'running' },
+        { runId: 'run_1', status: 'parked', currentSteps: ['ask/0/answer'] },
+        { runId: 'run_1', status: 'running', currentSteps: ['b/0/y'] },
+      ],
+      routes,
+    })
+
+    const report = await runWorkflow(
+      { ...options(60_000), wait: 'park', graceMs: 60_000 },
+      quiet(browser, clock),
+    )
+
+    expect(page.gotos).toContain('https://harness.test/hello/demo/runs/run_1?resume=1&wait=park')
+    expect(report).toMatchObject({ status: 'stalled', stalledOn: ['b/0/y'] })
+    expect(report.parkedOn).toBeUndefined()
+    // 10 s of grace, then a full 10 s interval on the *resumed* leg before the first ask.
+    expect(clock.now() - 1_700_000_000_000).toBe(20_000)
+  })
+
   test('a terminal record under a page still saying `running` is not a stall either', async () => {
     const clock = fakeClock()
     const { browser } = fakeBrowser({
