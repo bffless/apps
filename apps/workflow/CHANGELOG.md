@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/bffless/apps/compare/workflow-v1.14.0...workflow-v1.14.1) (2026-09-27)
+
+
+### Performance Improvements
+
+* **workflow:** shrink the MCP function bundles inlined per rule-set push from 5.0 MiB to 1.0 MiB ([#722](https://github.com/bffless/apps/issues/722)) ([b9c29a4](https://github.com/bffless/apps/commit/b9c29a484928c36d458d4bb63c5e1f8011c0d1e0))
+
 ## [1.14.0](https://github.com/bffless/apps/compare/workflow-v1.13.4...workflow-v1.14.0) (2026-09-26)
 
 
