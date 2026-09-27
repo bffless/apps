@@ -276,7 +276,7 @@ export async function renderedRules() {
         order: 40,
         pipeline: {
           name: `MCP tool ${tool}`,
-          description: `One catalog tool as one rule (spec 10, GA shape): CE's mcp_handler invokes it in-process as the caller; the body is the tool's arguments, the answer is a catalog CallToolResult. The validator is where the tool's scope is enforced (D23). Functions are the shared bundles under mcp-fn/ (route → the flags this rule's static steps read; reply → the result).`,
+          description: `One catalog tool as one rule (spec 10, GA shape): CE's mcp_handler invokes it in-process as the caller; the body is the tool's arguments, the answer is a catalog CallToolResult. The validator is where the tool's scope is enforced (D23). Functions are bundles under mcp-fn/ (route → the flags this rule's static steps read; ${cfg.replyBundle(tool)} → the result), inlined into this rule at deploy.`,
           steps: [...steps, respondJson],
           validators: [{ type: 'auth_required', config: { allowApiKey: true, requiredScopes: [cfg.toolScope(tool)] } }],
         },

@@ -13,8 +13,11 @@ import { describe, expect, it } from 'vitest'
 import { join } from 'node:path'
 import { ENTRIES, OUT_DIR, SET, bundle, outFile, packageJsonForRev, renderedRules, sourceRev } from '../../scripts/build-mcp.mjs'
 import { runInCeSandbox } from '../test/ceSandbox'
-import { HELLO_INDEX, INTERACTIVE_YAML } from './fixtures/index'
+import { HELLO_INDEX, INTERACTIVE_YAML, RUN_ID, runRow, stepRows } from './fixtures/index'
+import { handler as replySource } from './reply'
 import { handler as replyDescribeSource } from './replyDescribe'
+import { handler as routeSource } from './route'
+import { handler as runGateSource } from './runGate'
 import { REFUSALS } from './refusals'
 import { DESCRIBE_ELSEWHERE, type StepOutputs } from './reply'
 import { TOOLS_PATH } from './route'
@@ -111,9 +114,13 @@ describe('the bundle byte budgets (apps#721)', () => {
     }
   })
 
-  it('keeps the YAML parser out of the shared reply bundle', () => {
-    // Only replyDescribe may carry it: its size is the tell.
-    expect(statSync(outFile('reply')).size).toBeLessThan(statSync(outFile('replyDescribe')).size / 3)
+  it('keeps the YAML parser out of every bundle but replyDescribe', () => {
+    // The yaml package's core schema tag prefix: present wherever the parser is bundled.
+    const PARSER = 'tag:yaml.org,2002:'
+    expect(readFileSync(outFile('replyDescribe'), 'utf8')).toContain(PARSER)
+    for (const name of ENTRIES.filter((n) => n !== 'replyDescribe')) {
+      expect(readFileSync(outFile(name), 'utf8'), name).not.toContain(PARSER)
+    }
   })
 })
 
@@ -165,6 +172,38 @@ describe('workflow.describe through its own bundle (apps#721)', () => {
       expect(refs.map((c) => c.split('/').pop()), rel).toEqual([want])
     }
     expect(codes.filter(([, refs]) => refs.some((c) => c.endsWith('replyDescribe.fn.js')))).toHaveLength(1)
+  })
+})
+
+/**
+ * A gated tool end to end through the COMMITTED, minified bundles (apps#721):
+ * the rules' `condition:` strings read bundle output keys by name
+ * (`steps.route.needsRun`, `steps.runGate.ok`), so a bundler setting that
+ * renamed a property would skip steps silently. Each committed bundle's
+ * answer must equal its source handler's, key for key.
+ */
+describe('workflow.status through the committed bundles', () => {
+  const DEPLOYMENT = { owner: 'o', repo: 'r', commitSha: 'c', alias: 'workflow' }
+  const user = { id: 'member@example.com', email: 'member@example.test', role: 'user', projectRole: 'contributor' }
+  const request = { body: { runId: RUN_ID }, headers: { host: 'h.example' }, method: 'POST', path: `${TOOLS_PATH}status` }
+  const committed = (name: string) => readFileSync(outFile(name), 'utf8')
+
+  it('route → runGate → reply answer what the sources answer, and the keys the rule conditions read are there', async () => {
+    const route = (await runInCeSandbox(committed('route'), { request, deployment: DEPLOYMENT, user })) as Record<string, unknown>
+    expect(route).toEqual(routeSource({ request, deployment: DEPLOYMENT, user } as Parameters<typeof routeSource>[0]))
+    expect(route.needsRun).toBe(true)
+    expect(route.runId).toBe(RUN_ID)
+
+    const run = [runRow()]
+    const gateData = { steps: { route, run }, request, user }
+    const runGate = (await runInCeSandbox(committed('runGate'), gateData)) as Record<string, unknown>
+    expect(runGate).toEqual(runGateSource(gateData as Parameters<typeof runGateSource>[0]))
+    expect(runGate.ok).toBe(true)
+
+    const steps = { route, run, runGate, steps: stepRows() } as unknown as StepOutputs
+    const out = (await runInCeSandbox(committed('reply'), { request, steps, deployment: DEPLOYMENT, user })) as { json: string }
+    expect(out.json).toBe(replySource({ request, steps, deployment: DEPLOYMENT }).json)
+    expect(JSON.parse(out.json).isError).toBeUndefined()
   })
 })
 
