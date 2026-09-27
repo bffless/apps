@@ -189,8 +189,10 @@ _Avoid_: run state (the engine's), run record (the rows)
 D22): from Phase 3 story 8 a single CE `mcp_handler` step whose config (the catalog's tools,
 the app-only four, the `ui://` resources) is rendered from `src/mcp/mcpConfig.ts`; every tool
 is its own sibling rule under `mcp-tools/`, invoked in-process as the caller with its own
-`requiredScopes`. The sibling rules' function steps are the shared bundles under `mcp-fn/`
-(`pnpm --filter workflow mcp:build` builds and renders everything).
+`requiredScopes`. The sibling rules' function steps point at the bundles under `mcp-fn/` —
+shared in the authored layout, but inlined into each referencing rule at deploy, so each bundle
+is minified and byte-budgeted, and only `workflow.describe` runs `replyDescribe` (the one carrying
+the YAML parser; apps#721) (`pnpm --filter workflow mcp:build` builds and renders everything).
 _Avoid_: a CE endpoint, `/_bffless/*`, the platform-admin MCP server, "streaming" (one POST,
 one JSON body), "the 24-step pipeline" (the Phase-2 prototype, retired)
 one JSON body)

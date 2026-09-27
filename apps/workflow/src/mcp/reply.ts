@@ -6,6 +6,10 @@
  * together), pre-serialized for the `respond` step (`{{{steps.reply.json}}}`,
  * apps#381). CE's `mcp_handler` passes a `content[]` body through verbatim.
  * The resources-list rule answers the array CE's `resources.list` reads.
+ *
+ * `workflow.describe` is the one tool this bundle does not answer itself: its
+ * rule runs `replyDescribe` as its `reply` step, which is this handler plus a
+ * YAML parser (apps#721) — so the other fifteen rules do not inline one.
  */
 import {
   errorResult,
@@ -19,9 +23,6 @@ import {
   type RunSnapshot,
   type StepRowLike,
 } from '@bffless/workflow-agent-tools'
-import { toDefinition } from '@bffless/workflow-lint/definition'
-import { parse } from 'yaml'
-import { describeText, describeWorkflow } from '../lib/describe'
 import { RESOURCE_MIME, isHostTool } from './hostTools'
 import { PENDING_WINDOW_MS, runIdTime, workflowId } from './ids'
 import type { Plan } from './plan'
@@ -90,7 +91,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function str(value: unknown): string | undefined {
+export function str(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
@@ -112,7 +113,7 @@ function jsonBody(step: HttpStep | undefined): Record<string, unknown> | null {
   return step?.ok === true ? bodyObject(step.body) : null
 }
 
-function refuse(key: string, message: string, extra: Record<string, unknown> = {}): CallToolResult {
+export function refuse(key: string, message: string, extra: Record<string, unknown> = {}): CallToolResult {
   return errorResult(message, { errors: { [key]: message }, ...extra })
 }
 
@@ -187,34 +188,6 @@ function list(route: Route, steps: StepOutputs): CallToolResult {
   const skipped = steps.plan?.skipped ?? []
   const text = listText(implementations) + (skipped.length ? `\n(+${skipped.length} more implementation${skipped.length === 1 ? '' : 's'} not listed by the prototype endpoint)` : '')
   return textResult(text, { implementations, ...(skipped.length ? { skipped } : {}) })
-}
-
-function describe(route: Route, steps: StepOutputs): CallToolResult {
-  if (route.impl === '') return refuse('impl', '`impl` is required')
-  if (route.workflow === '') return refuse('workflow', '`workflow` is required')
-  if (!route.isDescribe) return refuse('discovery', REFUSALS.discovery)
-  if (steps.index?.ok !== true) return refuse('workflow', REFUSALS.noWorkflow)
-  const plan = steps.plan
-  if (!plan?.hasYaml || !plan.listing) return refuse('workflow', REFUSALS.noWorkflow)
-  const yaml = steps.yaml
-  if (yaml?.ok !== true || typeof yaml.body !== 'string') return refuse('workflow', REFUSALS.fileUnreadable)
-  const entry = plan.listing
-  const listing = {
-    file: entry.file as string,
-    name: str(entry.name) ?? route.workflow,
-    ...(str(entry.description) === undefined ? {} : { description: entry.description as string }),
-    inputs: typeof entry.inputs === 'number' ? entry.inputs : 0,
-    jobs: typeof entry.jobs === 'number' ? entry.jobs : 0,
-    headlessSafe: entry.headlessSafe === true,
-  }
-  let described: ReturnType<typeof describeWorkflow>
-  try {
-    const def = toDefinition(parse(yaml.body))
-    described = describeWorkflow({ impl: route.impl, workflow: route.workflow, listing, def })
-  } catch {
-    return refuse('workflow', REFUSALS.doesNotLint)
-  }
-  return textResult(describeText(described), { ...described })
 }
 
 /** `No such run` — what an unknown id and a run this caller cannot reach both answer (spec 11, D26: 404, never 403). */
@@ -556,7 +529,21 @@ function notServed(tool: string): CallToolResult {
   return refuse('tool', message)
 }
 
-function callTool(route: Route, steps: StepOutputs): CallToolResult {
+/**
+ * A tool served by a bundle of its own rather than by this one. Only
+ * `workflow.describe` today: it parses the workflow's YAML, and the parser is
+ * most of what a bundle carrying it weighs, so it lives in `replyDescribe`
+ * — the `reply` step of the describe rule alone — instead of being inlined
+ * into all sixteen rules that run `reply` (apps#721).
+ */
+export interface ReplyExtensions {
+  describe?: (route: Route, steps: StepOutputs) => CallToolResult
+}
+
+/** What this bundle answers when a rule hands it `workflow.describe` without the describe bundle — a wiring fault, never a normal path. */
+export const DESCRIBE_ELSEWHERE = 'workflow.describe is served by its own bundle (mcp-fn/replyDescribe.fn.js), not by this rule'
+
+function callTool(route: Route, steps: StepOutputs, extensions: ReplyExtensions): CallToolResult {
   const tool = route.tool
   if (tool === '') return refuse('tool', 'A tool `name` is required')
   // `await` and `cancel` explain themselves rather than act — but only about a
@@ -571,7 +558,7 @@ function callTool(route: Route, steps: StepOutputs): CallToolResult {
     case 'workflow.list':
       return list(route, steps)
     case 'workflow.describe':
-      return describe(route, steps)
+      return extensions.describe ? extensions.describe(route, steps) : refuse('tool', DESCRIBE_ELSEWHERE)
     case 'workflow.status':
       return status(route, steps)
     case 'workflow.outputs':
@@ -628,7 +615,7 @@ export function resourcesList(steps: StepOutputs): Array<Record<string, unknown>
 
 // ---------------------------------------------------------------------------
 
-export function handler(data: { request?: FnRequest; steps: StepOutputs; deployment?: FnDeployment }): Reply {
+export function handler(data: { request?: FnRequest; steps: StepOutputs; deployment?: FnDeployment }, extensions: ReplyExtensions = {}): Reply {
   const steps = data.steps ?? {}
   const route = steps.route
   const json = (value: unknown): Reply => ({ json: JSON.stringify(value) })
@@ -637,7 +624,7 @@ export function handler(data: { request?: FnRequest; steps: StepOutputs; deploym
     case 'resourcesList':
       return json(resourcesList(steps))
     case 'toolsCall':
-      return json(callTool(route, steps))
+      return json(callTool(route, steps, extensions))
     default:
       return json(errorResult(route.message || 'Not a tool rule', { errors: { tool: route.message || 'Not a tool rule' } }))
   }

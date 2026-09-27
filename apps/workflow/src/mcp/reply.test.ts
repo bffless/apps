@@ -7,7 +7,9 @@ import { RUN_ID_PATTERN, mintRunId, runIdTime } from './ids'
 import { handler as mergeOf } from './merge'
 import { handler as planOf } from './plan'
 import { REFUSALS } from './refusals'
-import { driveErrorKey, handler as reply, type StepOutputs } from './reply'
+import { DESCRIBE_ELSEWHERE, driveErrorKey, handler as reply, type StepOutputs } from './reply'
+import { handler as replyDescribe } from './replyDescribe'
+import { replyBundle } from './mcpConfig'
 import { RESOURCES_PATH, TOOLS_PATH, handler as routeOf, type FnRequest } from './route'
 import { handler as runGateOf, type FnUser } from './runGate'
 
@@ -45,7 +47,10 @@ function run(req: FnRequest, fetched: Omit<StepOutputs, 'route' | 'plan'> = {}, 
   if (!fetched.runGate) steps.runGate = runGateOf({ steps: { route, run: steps.run }, request: req, user })
   if (!fetched.merge) steps.merge = mergeOf({ steps: { route, runGate: steps.runGate, run: steps.run, steps: steps.steps } })
   steps.plan = planOf({ steps: { route, runGate: steps.runGate, aliases: steps.aliases, index: steps.index, run: steps.run, steps: steps.steps, update: steps.update }, deployment: DEPLOYMENT })
-  const out = reply({ request: req, steps, deployment: DEPLOYMENT })
+  // The bundle the rendered rule's `reply` step runs: `replyDescribe` for
+  // workflow.describe, `reply` for everything else (apps#721).
+  const replyStep = route.kind === 'toolsCall' && replyBundle(route.tool) === 'replyDescribe' ? replyDescribe : reply
+  const out = replyStep({ request: req, steps, deployment: DEPLOYMENT })
   return { out, body: JSON.parse(out.json) as unknown, steps }
 }
 const result = (req: FnRequest, fetched?: Omit<StepOutputs, 'route' | 'plan'>, user?: FnUser) =>
@@ -118,6 +123,19 @@ describe('workflow.describe', () => {
     expect(result(callOf('workflow.describe', { impl: 'hello', workflow: 'interactive' }), { index: http(HELLO_INDEX), yaml: http('', 404) }).structuredContent!.errors).toEqual({ workflow: REFUSALS.fileUnreadable })
     expect(result(callOf('workflow.describe', { impl: 'hello', workflow: 'interactive' }), { index: http(HELLO_INDEX), yaml: http('jobs: [') }).structuredContent!.errors).toEqual({ workflow: REFUSALS.doesNotLint })
     expect(result(callOf('workflow.describe', { impl: 'hello' })).structuredContent!.errors).toHaveProperty('workflow')
+  })
+
+  it('is answered by replyDescribe alone; the shared reply bundle carries no parser and refuses it (apps#721)', () => {
+    const req = callOf('workflow.describe', { impl: 'hello', workflow: 'interactive' })
+    const { steps } = run(req, { index: http(HELLO_INDEX), yaml: http(INTERACTIVE_YAML) })
+    const slim = JSON.parse(reply({ request: req, steps, deployment: DEPLOYMENT }).json) as { isError?: boolean; structuredContent: { errors: unknown } }
+    expect(slim.isError).toBe(true)
+    expect(slim.structuredContent.errors).toEqual({ tool: DESCRIBE_ELSEWHERE })
+    // Every other tool answers the same through either bundle: replyDescribe is reply plus describe.
+    const status = callOf('workflow.status', { runId: RUN_ID })
+    const fetched = { run: [runRow()], steps: stepRows() }
+    const statusSteps = run(status, fetched).steps
+    expect(replyDescribe({ request: status, steps: statusSteps, deployment: DEPLOYMENT }).json).toBe(reply({ request: status, steps: statusSteps, deployment: DEPLOYMENT }).json)
   })
 })
 
