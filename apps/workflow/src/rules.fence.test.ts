@@ -151,7 +151,7 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       expect(auth, `${file} must be auth_required`).toBeDefined()
       expect(auth!.config?.requiredScopes, `${file} must require [${scope}]`).toEqual([scope])
       for (const s of doc.pipeline.steps as Array<{ handler: string; code?: string; config?: Record<string, unknown> }>) {
-        if (s.handler === 'function_handler') expect(s.code, `${file}: function steps point at mcp-fn/`).toMatch(/^(\.\.\/)+mcp-fn\/(route|plan|merge|reply|runGate)\.fn\.js$/)
+        if (s.handler === 'function_handler') expect(s.code, `${file}: function steps point at mcp-fn/`).toMatch(/^(\.\.\/)+mcp-fn\/(route|plan|merge|reply|replyDescribe|runGate)\.fn\.js$/)
         if (s.handler === 'http_request') expect(s.config?.forwardAuth, `${file}: sibling calls run as the caller`).toBe(true)
       }
       return
@@ -348,12 +348,18 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
       'rules/api/workflow/run/get/shape.fn.js',
     ].map((p) => join(SET, p)),
   )
+  /*
+   * A `.runGate` property read, not the literal `steps.runGate`: the
+   * `mcp-fn/` bundles are minified (apps#721), which renames the `steps`
+   * parameter (`t.runGate`) but never a property name. The allowlist above is
+   * still what decides membership; this only proves the listed file reads it.
+   */
   const readsGate = (file: string): boolean =>
     existsSync(file) &&
     readFileSync(file, 'utf8')
       .split('\n')
       .filter((line) => !/^\s*(?:\/\/|\/?\*)/.test(line))
-      .some((line) => /steps\.runGate\b/.test(line))
+      .some((line) => /[\w$)\]]\??\.runGate\b/.test(line))
   const selfGates = (ruleDir: string, code: string | undefined, allowed: Set<string>): boolean => {
     if (!code) return false
     const resolved = join(ruleDir, code)

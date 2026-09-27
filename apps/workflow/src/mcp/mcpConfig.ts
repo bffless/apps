@@ -145,6 +145,16 @@ export const TOOL_STEPS: Readonly<Record<ToolName | HostToolName, StepKey[]>> = 
 
 export const RESOURCES_STEPS: StepKey[] = ['route', ...DISCOVERY, 'reply']
 
+/**
+ * The `mcp-fn/` bundle a tool rule's `reply` step runs. The step id stays
+ * `reply` everywhere (the `respond` step reads `steps.reply.json`); only
+ * `workflow.describe` points it at `replyDescribe`, the one bundle carrying a
+ * YAML parser, so the other rules do not inline one (apps#721).
+ */
+export function replyBundle(tool: string): 'reply' | 'replyDescribe' {
+  return tool === 'workflow.describe' ? 'replyDescribe' : 'reply'
+}
+
 /** The scope a tool rule's `auth_required` requires: the catalog's map for the model-visible tools, the endpoint's for the app-only four. */
 export function toolScope(tool: string): string {
   if (Object.hasOwn(TOOL_SCOPES, tool)) return TOOL_SCOPES[tool as ToolName]

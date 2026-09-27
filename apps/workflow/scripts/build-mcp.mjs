@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // Build the MCP rules (spec 10, D22 GA; Phase 3 plan, Task B1):
 //
-//  1. the four function bundles — each `src/mcp/<entry>.ts` becomes one esbuild
-//     IIFE committed under `.bffless/proxy-rules/workflow/mcp-fn/<entry>.fn.js`,
-//     the `code:` file every tool rule's function step points at (the CLI
-//     confines `code:` to the rule-set directory, so one copy serves all);
+//  1. the function bundles — each `src/mcp/<entry>.ts` becomes one minified
+//     esbuild IIFE committed under `.bffless/proxy-rules/workflow/mcp-fn/<entry>.fn.js`,
+//     the `code:` file every tool rule's function step points at. One copy in
+//     the authored layout, but NOT one copy deployed: `deploy-proxy-rules`
+//     inlines the file's text into every rule that references it, so a
+//     bundle's size is paid once per referencing rule (apps#721) — hence the
+//     minification and the per-file budgets in `src/mcp/bundle.test.ts`;
 //  2. the endpoint rule — `rules/api/workflow/mcp/rule.yaml`, ONE `mcp_handler`
 //     step whose config is rendered from `src/mcp/mcpConfig.ts` (the catalog's
 //     descriptors byte for byte, D19);
@@ -79,10 +82,12 @@ export function sourceRev() {
  * rule's two steps (`drivePlan`/`driveGate`, ADR-0006) — a hand-written rule,
  * but its functions are built and held fresh here like every other — plus
  * `runGate`, the ownership gate every rule that names a run imports (spec 11,
- * D26). The RFC 9728 document is not here: CE's `oauth_protected_resource`
+ * D26) — plus `replyDescribe`, the `reply` step of the `workflow.describe`
+ * rule alone: `reply` with a YAML parser, which no other rule needs to carry
+ * (apps#721). The RFC 9728 document is not here: CE's `oauth_protected_resource`
  * handler serves it with no function of ours.
  */
-export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'drivePlan', 'driveGate', 'runGate']
+export const ENTRIES = ['route', 'plan', 'merge', 'reply', 'replyDescribe', 'drivePlan', 'driveGate', 'runGate']
 
 export const OUT_DIR = join(SET, 'mcp-fn')
 
@@ -108,7 +113,12 @@ export async function bundle(name) {
     platform: 'neutral',
     target: 'es2022',
     treeShaking: true,
-    minify: false,
+    // Minified (apps#721): `deploy-proxy-rules` inlines a bundle's text into
+    // every rule whose step points at it, so its bytes are paid once per
+    // referencing rule. `keepNames` keeps function names for stack traces;
+    // HEADER (prepended below, outside esbuild) still says how the file was made.
+    minify: true,
+    keepNames: true,
     legalComments: 'none',
     logLevel: 'silent',
     inject: [join(app, 'src/mcp/polyfills.ts')],
@@ -257,7 +267,8 @@ export async function renderedRules() {
     const short = cfg.shortName(tool)
     const rel = `rules/api/workflow/mcp-tools/${short}/post/rule.yaml`
     const defs = stepDefs(join(SET, dirname(rel)))
-    const steps = cfg.TOOL_STEPS[tool].map((key) => defs[key])
+    // The step id stays `reply`; only the bundle it runs differs (apps#721).
+    const steps = cfg.TOOL_STEPS[tool].map((key) => (key === 'reply' ? { ...defs.reply, code: codeRef(join(SET, dirname(rel)), cfg.replyBundle(tool)) } : defs[key]))
     files.push([
       rel,
       yaml({

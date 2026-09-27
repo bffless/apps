@@ -713,7 +713,11 @@ resource, the island template `ui://bffless/{impl}/{path+}` → `/w/{impl}/{path
 resources-list rule — and every tool is a **sibling rule** under `rules/api/workflow/mcp-tools/
 <name>/post/` with exactly the steps that tool needs and `requiredScopes` from the catalog's map
 (D23). The sibling rules share four function bundles under `mcp-fn/` (route / plan / merge /
-reply — the Phase-2 functions minus the JSON-RPC envelope, which CE owns now). CE invokes a
+reply — the Phase-2 functions minus the JSON-RPC envelope, which CE owns now). *Shared* in the
+authored layout only: `deploy-proxy-rules` inlines a bundle's text into every rule that points at
+it, so the deployed set carries one copy per referencing rule. Since apps#721 the bundles are
+minified, `workflow.describe`'s `reply` step runs its own `replyDescribe.fn.js` (the only bundle
+carrying the `yaml` parser), and `bundle.test.ts` holds each file to a byte budget. CE invokes a
 sibling in-process as the caller (cookie or Bearer app token forwarded), the sibling's validator
 is where a tool's scope is refused, and the per-request cost is one small pipeline per tool
 instead of the prototype's 24-step chain. `pnpm --filter workflow mcp:build` builds the bundles

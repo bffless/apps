@@ -40,7 +40,7 @@ pipeline:
     - id: reply
       name: reply
       handler: function_handler
-      code: ../../../../../../mcp-fn/reply.fn.js
+      code: ../../../../../../mcp-fn/replyDescribe.fn.js
     - id: respond
       name: respond
       handler: response_handler
