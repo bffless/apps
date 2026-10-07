@@ -6,7 +6,7 @@ fields:
   - { name: index, type: number, required: true }
   - { name: step, type: string, required: true }
   - { name: kind, type: string, required: true }
-  - { name: status, type: string, required: true }
+  - { name: status, type: string, required: true, indexed: true }
   - { name: attempt, type: number, required: false }
   - { name: inputs, type: json, required: false }
   - { name: response, type: json, required: false }

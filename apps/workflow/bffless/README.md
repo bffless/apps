@@ -336,6 +336,26 @@ git pull --ff-only origin main
 npx --yes bffless rules push .bffless/proxy-rules/workflow --api-url <instance admin url> --api-key "$KEY" --project bffless/workflow --adopt-fields
 ```
 
+**Indexed fields (apps#724, bffless/ce#821).** CE keeps a partial expression index on
+`pipeline_data` per schema field marked `indexed: true`; without one, a `data_query` filter scans
+and JSON-extracts every row of the schema. On 2026-10-06 that pegged the one-core
+`workflow.j5s.dev` host: the run page's 5 s poll filtering `workflow_run_steps` by `runId`
+(22,000 rows) and the runs list's `status = waiting` scan, five such `SELECT`s each tens of
+minutes old. The flags in the schema files: `workflow_run_steps` `runId`, `key`, `status`,
+`rowKey` (the `data_upsert_many` dedup key of `run/fork`, a lookup, not a filter);
+`workflow_runs` `runId`, `startedBy`; `workflow_run_claims` `runId`, `startedBy`. Left
+unindexed on purpose, a handful of distinct values each: `impl`, `workflow`, `workflow_runs.status`.
+`src/rules.fence.test.ts` pins the parity both ways. Not flagged: `workflow_files.sub_dir` — the
+live schema has not adopted the snake_case fields (above), and its hot filters are anchored
+`LIKE`, which a plain btree on the extracted text does not serve anyway.
+
+CE floor: a CE **before** ce#821 answers a schema carrying `indexed` with a 400
+(`forbidNonWhitelisted`), so the deploy's rules sync fails on it; the flags need the CE release
+carrying ce#821 on **both** instances before this merges, and `requires.ceMin` bumped to it. The
+push is what creates the indexes (the backend logs `Created index pd_<schema>_<field>_<hash>`);
+on `workflow.j5s.dev` (CE preview 2026-10-07) a hand push from the branch on 2026-10-07 built
+five in seven seconds and took the load average from 4.8 to 0.5.
+
 **New schema `workflow_run_claims`** — `{ runId, impl, workflow, startedBy, startedByEmail?,
 driveKey, createdAt }`, one row per dispatch from the MCP endpoint, consumed (deleted) by
 `runs/post`. A row nobody consumes holds its `runId` against other members for ten minutes

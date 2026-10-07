@@ -20,5 +20,5 @@ fields:
   - { name: content_type, type: string, required: false }
   - { name: size, type: number, required: false }
   - { name: url, type: string, required: false }
-  - { name: sub_dir, type: string, required: false, indexed: true }
+  - { name: sub_dir, type: string, required: false }
   - { name: original_name, type: string, required: false }
