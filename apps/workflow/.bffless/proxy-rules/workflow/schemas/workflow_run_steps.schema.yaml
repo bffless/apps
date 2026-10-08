@@ -1,12 +1,12 @@
 name: workflow_run_steps
 fields:
-  - { name: runId, type: string, required: true }
-  - { name: key, type: string, required: true }
+  - { name: runId, type: string, required: true, indexed: true }
+  - { name: key, type: string, required: true, indexed: true }
   - { name: job, type: string, required: true }
   - { name: index, type: number, required: true }
   - { name: step, type: string, required: true }
   - { name: kind, type: string, required: true }
-  - { name: status, type: string, required: true }
+  - { name: status, type: string, required: true, indexed: true }
   - { name: attempt, type: number, required: false }
   - { name: inputs, type: json, required: false }
   - { name: response, type: json, required: false }
@@ -31,4 +31,4 @@ fields:
   # as the `data_upsert_many` dedup column (apps#501). The handler dedups on one
   # column and `key` repeats across runs, so the scoped copy is what makes a
   # retried fork insert nothing. NULL on every row the step upsert writes.
-  - { name: rowKey, type: string, required: false }
+  - { name: rowKey, type: string, required: false, indexed: true }

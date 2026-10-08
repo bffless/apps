@@ -556,6 +556,54 @@ describe.each(['workflow'])('%s rule set fence', (name) => {
     }
   })
 
+  /**
+   * Filter/index parity (apps#724, ce#821). CE keeps a partial expression index per schema
+   * field marked `indexed: true`; a `data_query` filter on an unindexed field scans and
+   * JSON-extracts every row of the schema — which pegged the one-core harness host under
+   * load (2026-10-06). Every field a rule filters on with `eq` or `in` must be indexed unless
+   * it is in the allow-list below, and nothing is flagged that no rule looks up by.
+   */
+  it('indexes every field its rules filter on by equality, and nothing else', () => {
+    /** Deliberately unindexed: a handful of distinct values each, so an index buys nothing. */
+    const UNINDEXED: Record<string, string[]> = {
+      workflow_runs: ['impl', 'workflow', 'status'],
+      workflow_run_claims: ['impl', 'workflow'],
+    }
+    /** Flagged for a lookup that is not a `filters:` block: the dedup key of a data_upsert_many. */
+    const LOOKUPS: Record<string, string[]> = { workflow_run_steps: ['rowKey'] }
+    /** Fields the live schema has not adopted (snake_case, see bffless/README.md): a flag there would create nothing. */
+    const NOT_LIVE: Record<string, string[]> = { workflow_files: ['sub_dir', 'storage_path', 'filename', 'content_type', 'url', 'original_name'] }
+
+    const filtered = new Map<string, Set<string>>()
+    for (const file of files) {
+      const doc = parse(readFileSync(file, 'utf8'))
+      if (doc.targetUrl !== 'pipeline') continue
+      for (const step of doc.pipeline.steps ?? []) {
+        if (!['data_query', 'data_update', 'data_delete'].includes(step.handler)) continue
+        const schema = String(step.config?.schemaId ?? '').replace(/^\$schema:/, '')
+        for (const [field, filter] of Object.entries((step.config?.filters ?? {}) as Record<string, { op?: string }>)) {
+          if (!['eq', 'in'].includes(String(filter?.op))) continue
+          if (!filtered.has(schema)) filtered.set(schema, new Set())
+          filtered.get(schema)!.add(field)
+        }
+      }
+    }
+    expect(filtered.size, 'at least one rule filters a data table').toBeGreaterThan(0)
+
+    for (const schema of SCHEMAS[name]) {
+      const doc = parse(readFileSync(join(SET, 'schemas', `${schema}.schema.yaml`), 'utf8'))
+      const flagged = new Set<string>((doc.fields ?? []).filter((f: { indexed?: boolean }) => f.indexed === true).map((f: { name: string }) => f.name))
+      for (const field of filtered.get(schema) ?? []) {
+        if (UNINDEXED[schema]?.includes(field) || NOT_LIVE[schema]?.includes(field)) continue
+        expect(flagged.has(field), `${schema}.${field} is filtered on by equality but not indexed: true (or listed as deliberately unindexed)`).toBe(true)
+      }
+      for (const field of flagged) {
+        const used = filtered.get(schema)?.has(field) || LOOKUPS[schema]?.includes(field)
+        expect(used, `${schema}.${field} is indexed but no rule filters on it (add it to LOOKUPS with why, or drop the flag)`).toBe(true)
+      }
+    }
+  })
+
   it('ships its schemas', () => {
     for (const s of SCHEMAS[name]) {
       const doc = parse(readFileSync(join(SET, 'schemas', `${s}.schema.yaml`), 'utf8'))

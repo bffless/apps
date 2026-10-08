@@ -7,10 +7,10 @@
 # in place (apps#672).
 name: workflow_run_claims
 fields:
-  - { name: runId, type: string, required: true }
+  - { name: runId, type: string, required: true, indexed: true }
   - { name: impl, type: string, required: true }
   - { name: workflow, type: string, required: true }
-  - { name: startedBy, type: string, required: true }
+  - { name: startedBy, type: string, required: true, indexed: true }
   - { name: startedByEmail, type: string, required: false }
   - { name: driveKey, type: string, required: true }
   - { name: createdAt, type: number, required: true }
