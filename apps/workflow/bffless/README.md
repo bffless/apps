@@ -351,7 +351,9 @@ live schema has not adopted the snake_case fields (above), and its hot filters a
 
 CE floor: a CE **before** ce#821 answers a schema carrying `indexed` with a 400
 (`forbidNonWhitelisted`), so the deploy's rules sync fails on it; the flags need the CE release
-carrying ce#821 on **both** instances before this merges, and `requires.ceMin` bumped to it. The
+carrying ce#821 on **both** instances before this merges, and `requires.ceMin` bumped to it —
+**v0.4.64**, deployed to `workflow.bffless.dev` on 2026-10-08 (and the dashboard's index
+toggle, ce#822, is in the same release). The
 push is what creates the indexes (the backend logs `Created index pd_<schema>_<field>_<hash>`);
 on `workflow.j5s.dev` (CE preview 2026-10-07) a hand push from the branch on 2026-10-07 built
 five in seven seconds and took the load average from 4.8 to 0.5.
@@ -415,7 +417,7 @@ request*, not a scheduler run). The endpoint stays protected by the **private al
 HTTP is edge-bounced to login); the scheduler bypasses the edge and runs the pipeline directly. It
 never consults `runGate` either — `rules.fence.test.ts` places it as NEITHER and holds it to no
 validator, no gate, and list-only deletes. The sweep's `file_delete` runs in `prefixes` mode, which
-is why `requires.ceMin` is `0.4.58` (bffless/ce#792): on an older CE the step fails config
+is why `requires.ceMin` was `0.4.58` (bffless/ce#792; now `0.4.64` for the indexed fields, above): on an older CE the step fails config
 validation and nothing is deleted. Running it by hand (a keyed `POST` from a member, or the admin
 panel's *Run now*) is the same pass the schedule makes — any member can, and it deletes other
 members' due runs; spec 11 §Neither records why that is accepted.
